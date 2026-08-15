@@ -1,0 +1,183 @@
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import {
+  Clock, PlayCircle, Users, Globe, BarChart3, CheckCircle2, FileText, Award,
+} from "lucide-react";
+import { api, formatDuration, formatPrice } from "@/lib/api";
+import { Course } from "@/types";
+import RatingStars from "@/components/ui/RatingStars";
+import LevelBadge from "@/components/ui/LevelBadge";
+import CourseCurriculum from "@/components/course/CourseCurriculum";
+import { AddCourseToCartButton } from "@/components/course/AddToCartButtons";
+
+async function getCourse(slug: string): Promise<Course | null> {
+  try {
+    return await api.get<Course>(`/catalog/courses/${slug}/`);
+  } catch {
+    return null;
+  }
+}
+
+export default async function CourseDetailPage({ params }: { params: { slug: string } }) {
+  const course = await getCourse(params.slug);
+  if (!course) notFound();
+
+  return (
+    <div>
+      {/* HEADER */}
+      <section className="bg-ink text-white">
+        <div className="container-app grid grid-cols-1 gap-10 py-10 lg:grid-cols-[1fr_380px] lg:py-14">
+          <div>
+            {course.category && (
+              <Link href={`/courses?category=${course.category.slug}`} className="text-sm font-semibold text-brand-400">
+                {course.category.name}
+              </Link>
+            )}
+            <h1 className="mt-2 text-3xl font-extrabold leading-tight sm:text-4xl">{course.title}</h1>
+            <p className="mt-3 max-w-2xl text-gray-300">{course.subtitle}</p>
+
+            <div className="mt-4 flex flex-wrap items-center gap-4 text-sm">
+              <RatingStars value={parseFloat(course.rating_avg)} count={course.rating_count} />
+              <span className="flex items-center gap-1 text-gray-300"><Users size={16} /> {course.students_count} étudiants</span>
+              <LevelBadge level={course.level} />
+            </div>
+
+            <p className="mt-3 text-sm text-gray-300">
+              Créé par <span className="font-semibold text-white">{course.instructor.full_name}</span>
+              {course.instructor.headline ? ` — ${course.instructor.headline}` : ""}
+            </p>
+
+            <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-300">
+              <span className="flex items-center gap-1"><Globe size={16} /> {course.language}</span>
+              <span className="flex items-center gap-1"><Clock size={16} /> {formatDuration(course.total_duration_minutes)} au total</span>
+              <span className="flex items-center gap-1"><PlayCircle size={16} /> {course.total_lessons} vidéos</span>
+              {course.pdf_resources && course.pdf_resources.length > 0 && (
+                <span className="flex items-center gap-1"><FileText size={16} /> {course.pdf_resources.length} PDF inclus</span>
+              )}
+            </div>
+          </div>
+
+          {/* PURCHASE CARD (desktop) */}
+          <div className="hidden lg:block">
+            <PurchaseCard course={course} />
+          </div>
+        </div>
+      </section>
+
+      {/* PURCHASE CARD (mobile) */}
+      <div className="container-app -mt-6 lg:hidden">
+        <PurchaseCard course={course} />
+      </div>
+
+      {/* BODY */}
+      <div className="container-app grid grid-cols-1 gap-10 py-10 lg:grid-cols-[1fr_380px]">
+        <div className="flex flex-col gap-10">
+          {course.what_you_will_learn && course.what_you_will_learn.length > 0 && (
+            <section className="card p-6">
+              <h2 className="mb-4 text-xl font-bold">Ce que vous allez apprendre</h2>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {course.what_you_will_learn.map((point, i) => (
+                  <div key={i} className="flex items-start gap-2 text-sm">
+                    <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-brand-600" />
+                    <span>{point}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold">Programme du cours</h2>
+              <span className="text-sm text-gray-500">
+                {course.sections?.length || 0} sections · {course.total_lessons} vidéos · {formatDuration(course.total_duration_minutes)}
+              </span>
+            </div>
+            <CourseCurriculum sections={course.sections || []} pdfResources={course.pdf_resources || []} />
+          </section>
+
+          {course.requirements && course.requirements.length > 0 && (
+            <section className="card p-6">
+              <h2 className="mb-3 text-xl font-bold">Prérequis</h2>
+              <ul className="list-inside list-disc space-y-1 text-sm text-gray-600">
+                {course.requirements.map((r, i) => <li key={i}>{r}</li>)}
+              </ul>
+            </section>
+          )}
+
+          <section className="card p-6">
+            <h2 className="mb-3 text-xl font-bold">Description</h2>
+            <p className="whitespace-pre-line text-sm leading-relaxed text-gray-600">{course.description}</p>
+          </section>
+
+          <section className="card p-6">
+            <h2 className="mb-4 flex items-center gap-2 text-xl font-bold">
+              <BarChart3 size={20} /> Instructeur
+            </h2>
+            <div className="flex items-start gap-4">
+              <div className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-brand-100 text-xl font-bold text-brand-700">
+                {course.instructor.full_name[0]}
+              </div>
+              <div>
+                <p className="font-bold">{course.instructor.full_name}</p>
+                <p className="text-sm text-gray-500">{course.instructor.headline}</p>
+                <p className="mt-2 text-sm text-gray-600">{course.instructor.bio}</p>
+                <p className="mt-2 text-xs text-gray-400">
+                  {course.instructor.years_experience} ans d'expérience · {course.instructor.courses_count} cours publiés
+                </p>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div className="hidden lg:block" />
+      </div>
+    </div>
+  );
+}
+
+function PurchaseCard({ course }: { course: Course }) {
+  return (
+    <div className="card overflow-hidden lg:-mt-40">
+      <div className="aspect-video w-full bg-gradient-to-br from-brand-100 to-brand-50">
+        {course.thumbnail ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={course.thumbnail} alt={course.title} className="h-full w-full object-cover" />
+        ) : (
+          <div className="grid h-full place-items-center text-brand-300"><PlayCircle size={48} /></div>
+        )}
+      </div>
+      <div className="p-5">
+        <div className="mb-4 flex items-baseline gap-2">
+          {course.discount_price ? (
+            <>
+              <span className="text-3xl font-extrabold">{formatPrice(course.discount_price)}</span>
+              <span className="text-base text-gray-400 line-through">{formatPrice(course.price)}</span>
+            </>
+          ) : (
+            <span className="text-3xl font-extrabold">{formatPrice(course.effective_price)}</span>
+          )}
+        </div>
+
+        {course.is_enrolled ? (
+          <Link href={`/learn/${course.slug}`} className="btn-primary w-full">
+            <PlayCircle size={18} /> Continuer le cours
+          </Link>
+        ) : (
+          <AddCourseToCartButton course={course} />
+        )}
+
+        <p className="mt-3 text-center text-xs text-gray-400">Accès complet à la playlist — garantie satisfait ou remboursé 14 jours</p>
+
+        <div className="mt-5 flex flex-col gap-2 border-t border-gray-100 pt-4 text-sm text-gray-600">
+          <span className="flex items-center gap-2"><PlayCircle size={16} /> {course.total_lessons} vidéos en accès illimité</span>
+          <span className="flex items-center gap-2"><Clock size={16} /> {formatDuration(course.total_duration_minutes)} de contenu</span>
+          {course.pdf_resources && course.pdf_resources.length > 0 && (
+            <span className="flex items-center gap-2"><FileText size={16} /> {course.pdf_resources.length} ressources PDF</span>
+          )}
+          <span className="flex items-center gap-2"><Award size={16} /> Certificat de fin de formation</span>
+        </div>
+      </div>
+    </div>
+  );
+}
