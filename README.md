@@ -15,12 +15,19 @@ dashboards dédiés par rôle).
 
 ```
 learneas/
-├── backend/     Django 5 + Django REST Framework (API JSON, JWT, admin)
-└── frontend/    Next.js 14 (App Router) + TypeScript + Tailwind CSS
+├── docker-compose.yml       Orchestration production (db, redis, backend, celery, frontend, nginx)
+├── docker-compose.dev.yml   Orchestration développement (hot-reload)
+├── .env.docker.example      Variables d'environnement Docker
+├── Makefile                 Raccourcis (make up, make logs, make migrate...)
+├── docker/nginx/            Configuration du reverse proxy
+├── backend/     Django 5 + Django REST Framework (API JSON, JWT, admin) — Dockerfile inclus
+└── frontend/    Next.js 14 (App Router) + TypeScript + Tailwind CSS — Dockerfile inclus
 ```
 
 Les deux projets communiquent exclusivement via l'API REST (`/api/...`). Le frontend n'accède jamais
-directement à la base de données.
+directement à la base de données. En Docker, `nginx` est l'unique point d'entrée public : il route
+`/api` et `/admin` vers le backend, `/static` et `/media` vers les volumes partagés, et tout le reste
+vers le frontend Next.js.
 
 ---
 
@@ -63,9 +70,52 @@ directement à la base de données.
 
 ---
 
-## 🚀 Lancer le projet en local
+## 🚀 Lancer le projet
 
-### 1. Backend (Django)
+### Option A — Docker (recommandé, tout est orchestré)
+
+Prérequis : [Docker](https://docs.docker.com/get-docker/) et Docker Compose v2.
+
+```bash
+cp .env.docker.example .env      # à adapter (SECRET_KEY, mots de passe...)
+docker compose up -d --build
+```
+
+Cela démarre 6 services orchestrés ensemble :
+
+| Service | Rôle |
+|---|---|
+| `db` | PostgreSQL 16 |
+| `redis` | Cache + broker Celery |
+| `backend` | Django + Gunicorn (API REST) |
+| `celery_worker` | Tâches asynchrones (emails, etc.) |
+| `frontend` | Next.js en mode standalone |
+| `nginx` | Reverse proxy unique — point d'entrée sur `http://localhost` |
+
+Au premier lancement :
+```bash
+docker compose exec backend python manage.py migrate
+docker compose exec backend python manage.py seed_demo      # données de démo (facultatif)
+docker compose exec backend python manage.py createsuperuser # votre compte admin
+```
+(ou passez `SEED_DEMO=true` dans `.env` pour que ce soit fait automatiquement au démarrage).
+
+L'application est alors disponible sur **http://localhost** (frontend), l'API sur
+**http://localhost/api**, l'admin Django sur **http://localhost/admin**.
+
+Un `Makefile` simplifie les commandes usuelles : `make up`, `make logs`, `make migrate`,
+`make seed`, `make superuser`, `make backend-shell`, `make down`. Voir `make help`.
+
+**Mode développement (hot-reload)** — code monté en volume, rechargement automatique :
+```bash
+make dev
+# ou : docker compose -f docker-compose.dev.yml up --build
+```
+Backend sur http://localhost:8000, frontend sur http://localhost:3000, sans nginx devant.
+
+### Option B — Installation manuelle (sans Docker)
+
+#### 1. Backend (Django)
 
 ```bash
 cd backend
@@ -87,7 +137,7 @@ Comptes créés par `seed_demo` :
 Admin Django : http://localhost:8000/admin
 Documentation API (Swagger) : http://localhost:8000/api/docs
 
-### 2. Frontend (Next.js)
+#### 2. Frontend (Next.js)
 
 ```bash
 cd frontend
@@ -128,8 +178,11 @@ simplifiés pour rester un point de départ clair. À finaliser avant lancement 
    si le catalogue grossit.
 4. **Emails transactionnels** : confirmation de commande, réinitialisation de mot de passe — à
    brancher (Django email backend + templates).
-5. **`SECRET_KEY`, `DEBUG=False`, `ALLOWED_HOSTS`, base PostgreSQL** : à configurer via `.env` avant
-   déploiement (le projet est déjà prêt pour PostgreSQL, voir `DB_ENGINE` dans `.env.example`).
+5. **`SECRET_KEY`, `DEBUG=False`, `ALLOWED_HOSTS`, base PostgreSQL** : déjà gérés par
+   `docker-compose.yml` via le fichier `.env` (voir `.env.docker.example`). Pensez à changer
+   `SECRET_KEY` et les mots de passe Postgres avant toute mise en ligne, et à passer le service
+   `nginx` derrière un certificat HTTPS (ex: via un reverse proxy Traefik/Caddy ou Let's Encrypt +
+   Certbot en amont de la stack).
 6. **Upload de fichiers depuis le dashboard instructeur** : le formulaire de création de cours ajoute
    des vidéos par URL pour aller vite ; un upload multipart de fichier vidéo direct (comme pour les
    PDF) est facile à ajouter sur le même modèle que `NewPdfPage`.

@@ -1,0 +1,89 @@
+# Usage développement (hot-reload) :
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# Backend accessible sur http://localhost:8000, frontend sur http://localhost:3000.
+# Le code source est monté en volume : toute modification est prise en compte à chaud.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: learneas
+      POSTGRES_USER: learneas
+      POSTGRES_PASSWORD: learneas
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U learneas -d learneas"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - learneas_dev_net
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - learneas_dev_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+    restart: unless-stopped
+    environment:
+      SECRET_KEY: dev-secret-key
+      DEBUG: "True"
+      ALLOWED_HOSTS: "*"
+      DATABASE_URL: postgres://learneas:learneas@db:5432/learneas
+      REDIS_URL: redis://redis:6379/0
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      FRONTEND_URL: http://localhost:3000
+      SEED_DEMO: "true"
+    volumes:
+      - ./backend:/app
+      - static_data_dev:/app/staticfiles
+      - media_data_dev:/app/media
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - learneas_dev_net
+
+  frontend:
+    image: node:20-slim
+    working_dir: /app
+    command: sh -c "npm install --no-audit --no-fund && npm run dev"
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - learneas_dev_net
+
+networks:
+  learneas_dev_net:
+    driver: bridge
+
+volumes:
+  postgres_data_dev:
+  static_data_dev:
+  media_data_dev:
+  frontend_node_modules:
