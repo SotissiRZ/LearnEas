@@ -2,16 +2,17 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CreditCard, Loader2, ShieldCheck } from "lucide-react";
+import { CreditCard, Loader2, ShieldCheck, Smartphone } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { useAuth } from "@/hooks/useAuth";
-import { api, formatPrice } from "@/lib/api";
+import { api, formatPrice, ApiError } from "@/lib/api";
 
 export default function CheckoutPage() {
   const { items, total, clear } = useCart();
   const { user } = useAuth();
   const router = useRouter();
-  const [provider, setProvider] = useState<"stripe" | "paypal">("stripe");
+  const [provider, setProvider] = useState<"stripe" | "paypal" | "mobile_money">("mobile_money");
+  const [mobileOperator, setMobileOperator] = useState("orange_money");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -21,22 +22,23 @@ export default function CheckoutPage() {
     try {
       const course_ids = items.filter((i) => i.type === "course").map((i) => i.id);
       const pdf_ids = items.filter((i) => i.type === "pdf").map((i) => i.id);
+      const formation_ids = items.filter((i) => i.type === "formation").map((i) => i.id);
 
       const res = await api.post<{ order: { id: number }; requires_payment: boolean }>(
         "/payments/checkout/",
-        { course_ids, pdf_ids, provider }
+        { course_ids, pdf_ids, formation_ids, provider }
       );
 
       if (res.requires_payment) {
-        // En production : redirection vers Stripe Checkout / PayPal.
-        // Ici on confirme directement pour la démo (webhook simulé).
+        // En production : redirection vers Stripe Checkout / PayPal / l'agrégateur Mobile
+        // Money (CinetPay, Flutterwave, PawaPay...). Ici on confirme directement pour la démo.
         await api.post(`/payments/orders/${res.order.id}/confirm/`);
       }
 
       clear();
       router.push("/dashboard/student?purchased=1");
-    } catch (e: any) {
-      setError(e.message || "Une erreur est survenue lors du paiement.");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Une erreur est survenue lors du paiement.");
     } finally {
       setLoading(false);
     }
@@ -57,7 +59,15 @@ export default function CheckoutPage() {
 
         <div className="card p-5">
           <h2 className="mb-3 font-semibold">Mode de paiement</h2>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <button
+              onClick={() => setProvider("mobile_money")}
+              className={`rounded-xl border p-4 text-left ${provider === "mobile_money" ? "border-brand-600 bg-brand-50" : "border-gray-200"}`}
+            >
+              <Smartphone className="mb-2 text-brand-600" />
+              <p className="font-semibold">Mobile Money</p>
+              <p className="text-xs text-gray-500">Orange Money, MTN MoMo, Wave, M-Pesa</p>
+            </button>
             <button
               onClick={() => setProvider("stripe")}
               className={`rounded-xl border p-4 text-left ${provider === "stripe" ? "border-brand-600 bg-brand-50" : "border-gray-200"}`}
@@ -74,6 +84,32 @@ export default function CheckoutPage() {
               <p className="text-xs text-gray-500">Payer avec votre compte PayPal</p>
             </button>
           </div>
+
+          {provider === "mobile_money" && (
+            <div className="mt-5 flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  { id: "orange_money", label: "Orange Money" },
+                  { id: "mtn_momo", label: "MTN MoMo" },
+                  { id: "wave", label: "Wave" },
+                  { id: "mpesa", label: "M-Pesa" },
+                ].map((op) => (
+                  <button
+                    key={op.id}
+                    type="button"
+                    onClick={() => setMobileOperator(op.id)}
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold ${mobileOperator === op.id ? "border-brand-600 bg-brand-50 text-brand-700" : "border-gray-200 text-gray-600"}`}
+                  >
+                    {op.label}
+                  </button>
+                ))}
+              </div>
+              <input placeholder="Numéro de téléphone (ex: 07 00 00 00 00)" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+              <p className="text-xs text-gray-400">
+                Vous recevrez une demande de confirmation par USSD/notification sur votre téléphone.
+              </p>
+            </div>
+          )}
 
           {provider === "stripe" && (
             <div className="mt-5 grid grid-cols-2 gap-3">

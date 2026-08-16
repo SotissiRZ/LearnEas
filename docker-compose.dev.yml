@@ -68,6 +68,9 @@ services:
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000/api
+      # Comme en production : côté serveur (SSR), "localhost" désignerait ce conteneur
+      # lui-même. On utilise le nom du service Docker pour joindre le backend en interne.
+      INTERNAL_API_URL: http://backend:8000/api
     volumes:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules

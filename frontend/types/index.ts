@@ -134,3 +134,49 @@ export interface CourseEnrollment {
   completed: boolean;
   certificate_issued: boolean;
 }
+
+export interface FormationSession {
+  id: number;
+  session_number: number;
+  scheduled_at: string;
+  duration_minutes: number;
+  meeting_link: string | null;
+  completed: boolean;
+  notes: string;
+}
+
+export type FormationStatus = "draft" | "scheduled" | "in_progress" | "completed" | "cancelled";
+
+export interface InteractiveFormation {
+  id: number;
+  title: string;
+  slug: string;
+  category: Category | null;
+  instructor: Instructor;
+  co_instructor: Instructor | null;
+  level: Level;
+  language: string;
+  price: string;
+  num_sessions: number;
+  session_duration_minutes: number;
+  max_students: number;
+  thumbnail: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  status: FormationStatus;
+  published: boolean;
+  students_count: number;
+  seats_left: number;
+  is_full: boolean;
+  created_at: string;
+  description?: string;
+  sessions?: FormationSession[];
+  is_enrolled?: boolean;
+}
+
+export interface FormationEnrollment {
+  id: number;
+  formation: InteractiveFormation;
+  enrolled_at: string;
+  certificate_issued: boolean;
+}

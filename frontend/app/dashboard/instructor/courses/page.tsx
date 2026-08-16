@@ -5,17 +5,23 @@ import Link from "next/link";
 import { PlusCircle, Users, PlayCircle, Pencil } from "lucide-react";
 import { api, formatDuration } from "@/lib/api";
 import { Course } from "@/types";
+import { useAuthGuard } from "@/hooks/useAuthGuard";
 import DashboardNav from "@/components/dashboard/DashboardNav";
+import GuardScreen from "@/components/ui/GuardScreen";
 
 export default function InstructorCoursesPage() {
+  const { ready } = useAuthGuard({ roles: ["instructor", "admin"], redirectTo: "/dashboard/instructor" });
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!ready) return;
     api.get<{ results: Course[] } | Course[]>("/catalog/courses/my_courses/")
       .then((d: any) => setCourses(d.results || d))
       .finally(() => setLoading(false));
-  }, []);
+  }, [ready]);
+
+  if (!ready) return <GuardScreen />;
 
   return (
     <div className="container-app py-10">

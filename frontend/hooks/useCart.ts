@@ -1,10 +1,10 @@
 "use client";
 
 import { create } from "zustand";
-import { Course, PDFProduct } from "@/types";
+import { Course, PDFProduct, InteractiveFormation } from "@/types";
 
 export interface CartItem {
-  type: "course" | "pdf";
+  type: "course" | "pdf" | "formation";
   id: number;
   title: string;
   price: number;
@@ -18,7 +18,8 @@ interface CartState {
   hydrate: () => void;
   addCourse: (course: Course) => void;
   addPdf: (pdf: PDFProduct) => void;
-  remove: (type: "course" | "pdf", id: number) => void;
+  addFormation: (formation: InteractiveFormation) => void;
+  remove: (type: "course" | "pdf" | "formation", id: number) => void;
   clear: () => void;
   total: () => number;
 }
@@ -67,6 +68,23 @@ export const useCart = create<CartState>((set, get) => ({
         price: parseFloat(pdf.price),
         thumbnail: pdf.cover_image,
         slug: pdf.slug,
+      },
+    ];
+    set({ items });
+    persist(items);
+  },
+
+  addFormation: (formation) => {
+    if (get().items.some((i) => i.type === "formation" && i.id === formation.id)) return;
+    const items = [
+      ...get().items,
+      {
+        type: "formation" as const,
+        id: formation.id,
+        title: formation.title,
+        price: parseFloat(formation.price),
+        thumbnail: formation.thumbnail,
+        slug: formation.slug,
       },
     ];
     set({ items });

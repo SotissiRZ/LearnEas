@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Trash2, ShoppingBag, FileText, PlayCircle, ArrowRight } from "lucide-react";
+import { Trash2, ShoppingBag, FileText, PlayCircle, Video, ArrowRight } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { useAuth } from "@/hooks/useAuth";
 import { formatPrice } from "@/lib/api";
@@ -44,12 +44,16 @@ export default function CartPage() {
                   <img src={item.thumbnail} alt={item.title} className="h-full w-full object-cover" />
                 ) : item.type === "course" ? (
                   <PlayCircle className="text-gray-300" />
+                ) : item.type === "formation" ? (
+                  <Video className="text-gray-300" />
                 ) : (
                   <FileText className="text-gray-300" />
                 )}
               </div>
               <div className="flex-1">
-                <span className="badge mb-1 bg-gray-100 text-gray-600">{item.type === "course" ? "Cours complet" : "PDF"}</span>
+                <span className="badge mb-1 bg-gray-100 text-gray-600">
+                  {item.type === "course" ? "Cours complet" : item.type === "formation" ? "Formation interactive" : "PDF"}
+                </span>
                 <p className="font-semibold">{item.title}</p>
               </div>
               <span className="font-bold">{formatPrice(item.price)}</span>

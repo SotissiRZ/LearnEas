@@ -1,8 +1,74 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+/**
+ * En environnement Docker, le frontend a besoin de DEUX URLs différentes pour joindre l'API :
+ *  - Côté NAVIGATEUR (client) : une URL publique, accessible depuis la machine de l'utilisateur
+ *    (ex: http://localhost/api, routée par nginx). C'est NEXT_PUBLIC_API_URL.
+ *  - Côté SERVEUR (rendu SSR des Server Components, qui s'exécute DANS le conteneur Next.js) :
+ *    "localhost" y désigne le conteneur frontend lui-même, pas nginx/backend ! Il faut donc une
+ *    URL interne au réseau Docker (ex: http://backend:8000/api). C'est INTERNAL_API_URL, une
+ *    variable serveur-only (non préfixée NEXT_PUBLIC_), donc pas besoin de rebuild l'image pour
+ *    la changer : elle est lue à l'exécution.
+ * En dehors de Docker (dev local classique), les deux valeurs sont identiques et ce mécanisme
+ * est transparent.
+ */
+const API_URL =
+  typeof window === "undefined"
+    ? process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+    : process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("learneas_access");
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  username: "Nom d'utilisateur",
+  email: "Email",
+  password: "Mot de passe",
+  password2: "Confirmation du mot de passe",
+  first_name: "Prénom",
+  last_name: "Nom",
+  country: "Pays",
+  non_field_errors: "",
+  detail: "",
+};
+
+/** Transforme une réponse d'erreur DRF ({champ: [messages]} ou {detail: "..."})
+ * en un message clair, lisible par un humain, sans JSON brut. */
+export class ApiError extends Error {
+  fieldErrors: Record<string, string[]>;
+  constructor(message: string, fieldErrors: Record<string, string[]> = {}) {
+    super(message);
+    this.fieldErrors = fieldErrors;
+  }
+}
+
+function buildErrorMessage(status: number, data: unknown): ApiError {
+  if (data && typeof data === "object") {
+    const obj = data as Record<string, unknown>;
+
+    if (typeof obj.detail === "string") {
+      return new ApiError(obj.detail);
+    }
+
+    const fieldErrors: Record<string, string[]> = {};
+    const messages: string[] = [];
+    for (const [key, value] of Object.entries(obj)) {
+      const list = Array.isArray(value) ? value.map(String) : [String(value)];
+      fieldErrors[key] = list;
+      const label = FIELD_LABELS[key] ?? key;
+      for (const msg of list) {
+        messages.push(label ? `${label} : ${msg}` : msg);
+      }
+    }
+    if (messages.length > 0) {
+      return new ApiError(messages.join(" — "), fieldErrors);
+    }
+  }
+  if (status === 401) return new ApiError("Identifiants invalides ou session expirée.");
+  if (status === 403) return new ApiError("Vous n'avez pas les droits nécessaires pour cette action.");
+  if (status === 404) return new ApiError("Ressource introuvable.");
+  if (status >= 500) return new ApiError("Erreur serveur, veuillez réessayer dans quelques instants.");
+  return new ApiError(`Une erreur est survenue (${status}).`);
 }
 
 export async function apiFetch<T>(
@@ -18,20 +84,30 @@ export async function apiFetch<T>(
     ...((options.headers as Record<string, string>) || {}),
   };
 
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers, cache: "no-store" });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { ...options, headers, cache: "no-store" });
+  } catch {
+    throw new ApiError(
+      "Impossible de contacter le serveur. Vérifiez votre connexion ou réessayez plus tard."
+    );
+  }
 
   if (!res.ok) {
-    let detail = `Erreur ${res.status}`;
+    let data: unknown = null;
     try {
-      const data = await res.json();
-      detail = (data as any).detail || JSON.stringify(data);
+      data = await res.json();
     } catch {
-      /* noop */
+      /* corps vide ou non-JSON */
     }
-    throw new Error(detail);
+    throw buildErrorMessage(res.status, data);
   }
   if (res.status === 204) return undefined as unknown as T;
-  return res.json();
+  try {
+    return await res.json();
+  } catch {
+    return undefined as unknown as T;
+  }
 }
 
 export const api = {
@@ -42,6 +118,24 @@ export const api = {
     apiFetch<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   del: <T>(path: string) => apiFetch<T>(path, { method: "DELETE" }),
 };
+
+/**
+ * Pour les Server Components : tente l'appel API et retourne `fallback` en cas d'échec,
+ * SANS masquer l'information. `ok: false` signale une vraie panne (API injoignable) à distinguer
+ * d'un résultat simplement vide (`ok: true`, tableau/liste vide) — évite la confusion "aucune
+ * donnée" alors qu'il s'agit en réalité d'une erreur réseau/configuration.
+ */
+export async function safeGet<T>(
+  path: string,
+  fallback: T
+): Promise<{ data: T; ok: boolean; error?: string }> {
+  try {
+    const data = await apiFetch<T>(path);
+    return { data, ok: true };
+  } catch (e) {
+    return { data: fallback, ok: false, error: e instanceof ApiError ? e.message : String(e) };
+  }
+}
 
 export function formatPrice(value: number | string): string {
   const n = typeof value === "string" ? parseFloat(value) : value;

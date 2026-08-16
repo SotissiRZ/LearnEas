@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { GraduationCap, Loader2, Mail, Lock } from "lucide-react";
+import { GraduationCap, Loader2, Mail, AlertCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { ApiError } from "@/lib/api";
+import PasswordInput from "@/components/ui/PasswordInput";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,8 +19,8 @@ export default function LoginPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
     setError("");
+    setLoading(true);
     try {
       const user = await login(email, password);
       const next = searchParams.get("next");
@@ -26,8 +28,12 @@ export default function LoginPage() {
       else if (user.role === "admin") router.push("/dashboard/admin");
       else if (user.role === "instructor") router.push("/dashboard/instructor");
       else router.push("/dashboard/student");
-    } catch (err: any) {
-      setError("Identifiants invalides. Veuillez réessayer.");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError("Email ou mot de passe incorrect.");
+      } else {
+        setError("Une erreur inattendue est survenue. Veuillez réessayer.");
+      }
     } finally {
       setLoading(false);
     }
@@ -44,7 +50,7 @@ export default function LoginPage() {
           <p className="text-sm text-gray-500">Connectez-vous à votre compte LearnEas</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
           <div>
             <label className="mb-1 block text-sm font-medium">Email</label>
             <div className="relative">
@@ -57,18 +63,20 @@ export default function LoginPage() {
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Mot de passe</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input
-                type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 py-2.5 pl-10 pr-3 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-                placeholder="••••••••"
-              />
+            <div className="mb-1 flex items-center justify-between">
+              <label className="block text-sm font-medium">Mot de passe</label>
+              <Link href="/forgot-password" className="text-xs font-semibold text-brand-700">
+                Mot de passe oublié ?
+              </Link>
             </div>
+            <PasswordInput required value={password} onChange={(e: any) => setPassword(e.target.value)} placeholder="••••••••" />
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && (
+            <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" /> {error}
+            </div>
+          )}
 
           <button type="submit" disabled={loading} className="btn-primary w-full">
             {loading && <Loader2 className="animate-spin" size={18} />}

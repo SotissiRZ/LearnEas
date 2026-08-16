@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Download, FileText } from "lucide-react";
 import { api } from "@/lib/api";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuthGuard } from "@/hooks/useAuthGuard";
 import DashboardNav from "@/components/dashboard/DashboardNav";
+import GuardScreen from "@/components/ui/GuardScreen";
 
 interface PDFPurchase {
   id: number;
@@ -14,16 +15,18 @@ interface PDFPurchase {
 }
 
 export default function StudentPdfsPage() {
-  const { user, hydrated } = useAuth();
+  const { ready } = useAuthGuard();
   const [purchases, setPurchases] = useState<PDFPurchase[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!hydrated || !user) { setLoading(false); return; }
+    if (!ready) return;
     api.get<{ results: PDFPurchase[] } | PDFPurchase[]>("/enrollments/my-pdfs/")
       .then((data: any) => setPurchases(data.results || data))
       .finally(() => setLoading(false));
-  }, [user, hydrated]);
+  }, [ready]);
+
+  if (!ready) return <GuardScreen />;
 
   return (
     <div className="container-app py-10">

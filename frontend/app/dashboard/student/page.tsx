@@ -6,30 +6,23 @@ import { PlayCircle, Award, Clock, BookOpen } from "lucide-react";
 import { api, formatDuration } from "@/lib/api";
 import { CourseEnrollment } from "@/types";
 import ProgressBar from "@/components/ui/ProgressBar";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuthGuard } from "@/hooks/useAuthGuard";
 import DashboardNav from "@/components/dashboard/DashboardNav";
+import GuardScreen from "@/components/ui/GuardScreen";
 
 export default function StudentDashboard() {
-  const { user, hydrated } = useAuth();
+  const { ready } = useAuthGuard();
   const [enrollments, setEnrollments] = useState<CourseEnrollment[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!hydrated) return;
-    if (!user) { setLoading(false); return; }
+    if (!ready) return;
     api.get<{ results: CourseEnrollment[] } | CourseEnrollment[]>("/enrollments/my-courses/")
       .then((data: any) => setEnrollments(data.results || data))
       .finally(() => setLoading(false));
-  }, [user, hydrated]);
+  }, [ready]);
 
-  if (hydrated && !user) {
-    return (
-      <div className="container-app py-20 text-center">
-        <p className="mb-4 text-gray-500">Connectez-vous pour accéder à votre espace.</p>
-        <Link href="/login" className="btn-primary">Se connecter</Link>
-      </div>
-    );
-  }
+  if (!ready) return <GuardScreen />;
 
   const inProgress = enrollments.filter((e) => !e.completed);
   const completed = enrollments.filter((e) => e.completed);

@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 
 from apps.catalog.models import Course, PDFProduct
 from apps.enrollments.models import CourseEnrollment, PDFPurchase
+from apps.formations.models import InteractiveFormation, FormationEnrollment
 from .models import Order, OrderItem
 from .serializers import OrderSerializer, CheckoutSerializer
 
@@ -24,8 +25,10 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
 
 class CheckoutView(APIView):
     """
-    Crée une commande (panier -> cours complets + pdfs) puis simule/route le paiement.
-    En prod: intégrer réellement Stripe PaymentIntent / PayPal Orders API ici.
+    Crée une commande (panier -> cours complets + pdfs + formations interactives)
+    puis simule/route le paiement.
+    En prod: intégrer réellement Stripe PaymentIntent / PayPal Orders API / un agrégateur
+    Mobile Money (ex: CinetPay, Flutterwave, PawaPay) selon le pays de l'utilisateur.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -38,11 +41,24 @@ class CheckoutView(APIView):
 
         courses = Course.objects.filter(id__in=data["course_ids"], published=True)
         pdfs = PDFProduct.objects.filter(id__in=data["pdf_ids"], published=True)
+        formations = InteractiveFormation.objects.filter(id__in=data["formation_ids"], published=True)
 
-        if not courses and not pdfs:
+        if not courses and not pdfs and not formations:
             return Response({"detail": "Panier vide."}, status=status.HTTP_400_BAD_REQUEST)
 
-        total = sum((c.discount_price or c.price) for c in courses) + sum(p.price for p in pdfs)
+        full_formations = [f for f in formations if f.is_full]
+        if full_formations:
+            noms = ", ".join(f.title for f in full_formations)
+            return Response(
+                {"detail": f"Formation(s) complète(s), plus de places disponibles : {noms}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        total = (
+            sum((c.discount_price or c.price) for c in courses)
+            + sum(p.price for p in pdfs)
+            + sum(f.price for f in formations)
+        )
 
         order = Order.objects.create(user=user, provider=data["provider"], total_amount=total)
         for c in courses:
@@ -54,9 +70,14 @@ class CheckoutView(APIView):
             OrderItem.objects.create(
                 order=order, item_type=OrderItem.ItemType.PDF, pdf_product=p, unit_price=p.price,
             )
+        for f in formations:
+            OrderItem.objects.create(
+                order=order, item_type=OrderItem.ItemType.FORMATION, formation=f, unit_price=f.price,
+            )
 
-        # NOTE: en environnement réel, on renverrait ici un client_secret Stripe
-        # ou une redirect_url PayPal, et la confirmation se ferait via webhook.
+        # NOTE: en environnement réel, on renverrait ici un client_secret Stripe,
+        # une redirect_url PayPal, ou une redirect_url de l'agrégateur Mobile Money,
+        # et la confirmation se ferait via webhook.
         # Pour ce scaffold, si le total est 0 (contenu gratuit) on valide directement.
         if total == 0:
             self._fulfill(order)
@@ -76,13 +97,15 @@ class CheckoutView(APIView):
         order.save()
         for item in order.items.all():
             if item.course:
-                enrollment, _ = CourseEnrollment.objects.get_or_create(user=order.user, course=item.course)
+                CourseEnrollment.objects.get_or_create(user=order.user, course=item.course)
                 item.course.students_count = item.course.enrollments.count()
                 item.course.save(update_fields=["students_count"])
             if item.pdf_product:
                 PDFPurchase.objects.get_or_create(user=order.user, pdf_product=item.pdf_product)
                 item.pdf_product.downloads_count += 1
                 item.pdf_product.save(update_fields=["downloads_count"])
+            if item.formation:
+                FormationEnrollment.objects.get_or_create(user=order.user, formation=item.formation)
 
 
 class ConfirmPaymentView(APIView):

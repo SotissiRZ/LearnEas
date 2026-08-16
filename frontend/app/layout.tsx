@@ -5,10 +5,10 @@ import Footer from "@/components/layout/Footer";
 import AppHydrator from "@/components/layout/AppHydrator";
 
 export const metadata: Metadata = {
-  title: "LearnEas — Apprenez sans limites",
+  title: "LearnEas — La formation en ligne pensée pour l'Afrique",
   description:
-    "LearnEas est la plateforme de formation en ligne qui vous permet d'acheter des cours complets " +
-    "(playlists vidéo) et des ressources PDF, avec suivi de progression et certificats.",
+    "LearnEas est la plateforme africaine de formation en ligne : cours complets (playlists vidéo), " +
+    "formations interactives en direct et ressources PDF, avec paiement par Mobile Money, carte ou PayPal.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

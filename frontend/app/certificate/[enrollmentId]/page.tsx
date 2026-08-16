@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Award, Printer, GraduationCap } from "lucide-react";
 import { api } from "@/lib/api";
+import { useAuthGuard } from "@/hooks/useAuthGuard";
+import GuardScreen from "@/components/ui/GuardScreen";
 
 interface CertificateData {
   student_name: string;
@@ -15,15 +17,19 @@ interface CertificateData {
 }
 
 export default function CertificatePage() {
+  const { ready } = useAuthGuard();
   const params = useParams<{ enrollmentId: string }>();
   const [data, setData] = useState<CertificateData | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!ready) return;
     api.get<CertificateData>(`/enrollments/my-courses/${params.enrollmentId}/certificate/`)
       .then(setData)
       .catch((e) => setError(e.message || "Certificat indisponible."));
-  }, [params.enrollmentId]);
+  }, [ready, params.enrollmentId]);
+
+  if (!ready) return <GuardScreen />;
 
   if (error) {
     return <div className="container-app py-20 text-center text-gray-500">{error}</div>;

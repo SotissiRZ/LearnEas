@@ -1,16 +1,9 @@
-import { api } from "@/lib/api";
+import { safeGet } from "@/lib/api";
 import { Category, PDFProduct, Paginated } from "@/types";
 import PdfCard from "@/components/pdf/PdfCard";
 import CourseFilters from "@/components/course/CourseFilters";
+import ApiErrorBanner from "@/components/ui/ApiErrorBanner";
 import { SlidersHorizontal } from "lucide-react";
-
-async function safeGet<T>(path: string, fallback: T): Promise<T> {
-  try {
-    return await api.get<T>(path);
-  } catch {
-    return fallback;
-  }
-}
 
 interface Props {
   searchParams: {
@@ -32,15 +25,20 @@ export default async function PdfsPage({ searchParams }: Props) {
   params.set("ordering", searchParams.ordering || "-created_at");
   if (searchParams.page) params.set("page", searchParams.page);
 
-  const [data, categories] = await Promise.all([
+  const [pdfsResult, categoriesResult] = await Promise.all([
     safeGet<Paginated<PDFProduct>>(`/catalog/pdfs/?${params.toString()}`, {
       count: 0, next: null, previous: null, results: [],
     }),
     safeGet<Category[]>("/catalog/categories/", []),
   ]);
+  const data = pdfsResult.data;
+  const categories = categoriesResult.data;
+  const hasError = !pdfsResult.ok || !categoriesResult.ok;
 
   return (
     <div className="container-app py-10">
+      {hasError && <ApiErrorBanner message={pdfsResult.error || categoriesResult.error} />}
+
       <div className="mb-6">
         <h1 className="text-3xl font-extrabold">PDF & Guides</h1>
         <p className="mt-1 text-gray-500">
@@ -60,7 +58,9 @@ export default async function PdfsPage({ searchParams }: Props) {
 
         <div>
           {data.results.length === 0 ? (
-            <div className="card p-10 text-center text-gray-500">Aucun PDF ne correspond à votre recherche.</div>
+            <div className="card p-10 text-center text-gray-500">
+              {hasError ? "Le catalogue n'a pas pu être chargé." : "Aucun PDF ne correspond à votre recherche."}
+            </div>
           ) : (
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
               {data.results.map((p) => <PdfCard key={p.id} pdf={p} />)}

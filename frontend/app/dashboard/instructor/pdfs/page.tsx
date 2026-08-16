@@ -5,17 +5,23 @@ import Link from "next/link";
 import { PlusCircle, FileText, Download } from "lucide-react";
 import { api, formatPrice } from "@/lib/api";
 import { PDFProduct } from "@/types";
+import { useAuthGuard } from "@/hooks/useAuthGuard";
 import DashboardNav from "@/components/dashboard/DashboardNav";
+import GuardScreen from "@/components/ui/GuardScreen";
 
 export default function InstructorPdfsPage() {
+  const { ready } = useAuthGuard({ roles: ["instructor", "admin"], redirectTo: "/dashboard/instructor" });
   const [pdfs, setPdfs] = useState<PDFProduct[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!ready) return;
     api.get<{ results: PDFProduct[] } | PDFProduct[]>("/catalog/pdfs/my_pdfs/")
       .then((d: any) => setPdfs(d.results || d))
       .finally(() => setLoading(false));
-  }, []);
+  }, [ready]);
+
+  if (!ready) return <GuardScreen />;
 
   return (
     <div className="container-app py-10">

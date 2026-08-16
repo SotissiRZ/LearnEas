@@ -6,22 +6,27 @@ import { BookOpen, FileText, Users, Star, PlusCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { Course, PDFProduct } from "@/types";
 import { useAuth } from "@/hooks/useAuth";
+import { useAuthGuard } from "@/hooks/useAuthGuard";
 import DashboardNav from "@/components/dashboard/DashboardNav";
+import GuardScreen from "@/components/ui/GuardScreen";
 
 export default function InstructorDashboard() {
-  const { user, hydrated } = useAuth();
+  const { ready } = useAuthGuard(); // connexion requise, tous rôles acceptés (un étudiant peut devenir instructeur)
+  const { user } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
   const [pdfs, setPdfs] = useState<PDFProduct[]>([]);
 
   useEffect(() => {
-    if (!hydrated || !user) return;
+    if (!ready || !user) return;
     api.get<{ results: Course[] } | Course[]>("/catalog/courses/my_courses/")
       .then((d: any) => setCourses(d.results || d)).catch(() => {});
     api.get<{ results: PDFProduct[] } | PDFProduct[]>("/catalog/pdfs/my_pdfs/")
       .then((d: any) => setPdfs(d.results || d)).catch(() => {});
-  }, [user, hydrated]);
+  }, [ready, user]);
 
-  if (hydrated && user && user.role !== "instructor" && user.role !== "admin") {
+  if (!ready) return <GuardScreen />;
+
+  if (user && user.role !== "instructor" && user.role !== "admin") {
     return <BecomeInstructor />;
   }
 

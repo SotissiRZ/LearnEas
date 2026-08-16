@@ -1,47 +1,53 @@
 import Link from "next/link";
 import { ArrowRight, ShieldCheck, Infinity as InfinityIcon, Award, Sparkles } from "lucide-react";
-import { api } from "@/lib/api";
+import { safeGet } from "@/lib/api";
 import { Category, Course, PDFProduct } from "@/types";
 import CourseCard from "@/components/course/CourseCard";
 import PdfCard from "@/components/pdf/PdfCard";
 import CategoryIcon from "@/components/ui/CategoryIcon";
-
-async function safeGet<T>(path: string, fallback: T): Promise<T> {
-  try {
-    return await api.get<T>(path);
-  } catch {
-    return fallback;
-  }
-}
+import ApiErrorBanner from "@/components/ui/ApiErrorBanner";
 
 export default async function HomePage() {
-  const [categories, featuredCourses, pdfs] = await Promise.all([
+  const [categoriesResult, featuredResult, pdfsResult] = await Promise.all([
     safeGet<Category[]>("/catalog/categories/", []),
     safeGet<Course[]>("/catalog/courses/featured/", []),
     safeGet<{ results: PDFProduct[] }>("/catalog/pdfs/?ordering=-created_at", { results: [] }),
   ]);
+  const categories = categoriesResult.data;
+  const featuredCourses = featuredResult.data;
+  const pdfs = pdfsResult.data;
+  const hasError = !categoriesResult.ok || !featuredResult.ok || !pdfsResult.ok;
 
   return (
     <div>
+      {hasError && (
+        <div className="container-app pt-6">
+          <ApiErrorBanner message={categoriesResult.error || featuredResult.error || pdfsResult.error} />
+        </div>
+      )}
       {/* HERO */}
       <section className="relative overflow-hidden bg-ink text-white">
         <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand-600/30 blur-3xl" />
         <div className="absolute -left-24 bottom-0 h-72 w-72 rounded-full bg-brand-500/20 blur-3xl" />
         <div className="container-app relative flex flex-col items-center gap-8 py-20 text-center lg:py-28">
           <span className="badge bg-white/10 text-brand-200">
-            <Sparkles size={14} /> Nouveau : cours complets en playlist + bibliothèque de PDF
+            <Sparkles size={14} /> La plateforme de formation en ligne pensée pour l'Afrique
           </span>
           <h1 className="max-w-3xl text-4xl font-extrabold leading-tight sm:text-5xl">
             Apprenez une compétence entière,
             <span className="text-brand-400"> pas juste une vidéo.</span>
           </h1>
           <p className="max-w-2xl text-lg text-gray-300">
-            Sur LearnEas, chaque achat vous donne accès à un cours <strong>complet</strong> (toutes ses vidéos,
-            organisées en modules) ou à un <strong>PDF</strong> détaillé — au choix.
+            Cours complets, formations interactives en direct et PDF détaillés — accessibles partout
+            en Afrique, avec paiement par <strong>Mobile Money</strong> (Orange Money, MTN, Wave, M-Pesa),
+            carte bancaire ou PayPal.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Link href="/courses" className="btn-primary !px-6 !py-3 text-base">
               Explorer les cours <ArrowRight size={18} />
+            </Link>
+            <Link href="/formations" className="btn-outline !border-white/20 !bg-white/5 !px-6 !py-3 text-base !text-white hover:!bg-white/10">
+              Formations en direct
             </Link>
             <Link href="/pdfs" className="btn-outline !border-white/20 !bg-white/5 !px-6 !py-3 text-base !text-white hover:!bg-white/10">
               Explorer les PDF
@@ -59,7 +65,7 @@ export default async function HomePage() {
             </div>
             <div className="rounded-xl2 bg-white/5 p-4">
               <ShieldCheck className="mb-2 text-brand-400" size={22} />
-              <p className="text-sm text-gray-300">Paiement sécurisé (carte / PayPal)</p>
+              <p className="text-sm text-gray-300">Mobile Money, carte ou PayPal — paiement sécurisé</p>
             </div>
           </div>
         </div>

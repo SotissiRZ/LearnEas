@@ -1,6 +1,21 @@
 from rest_framework import permissions
 
 
+def _resolve_owner(obj):
+    """Retrouve l'instructeur propriétaire d'un objet, quelle que soit sa profondeur
+    dans le graphe de relations (Course, Section -> Course, Lesson -> Section -> Course,
+    PDFResource -> Course, PDFProduct direct...)."""
+    if hasattr(obj, "instructor"):
+        return obj.instructor
+    if hasattr(obj, "course") and obj.course is not None:
+        return obj.course.instructor
+    if hasattr(obj, "section") and obj.section is not None:
+        return obj.section.course.instructor
+    if hasattr(obj, "formation") and obj.formation is not None:
+        return obj.formation.instructor
+    return None
+
+
 class IsInstructorOrAdmin(permissions.BasePermission):
     """Seuls les instructeurs (sur leur propre contenu) et les admins peuvent écrire."""
 
@@ -12,5 +27,5 @@ class IsInstructorOrAdmin(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         if request.method in permissions.SAFE_METHODS:
             return True
-        owner = getattr(obj, "instructor", None) or getattr(getattr(obj, "course", None), "instructor", None)
+        owner = _resolve_owner(obj)
         return request.user.role == "admin" or owner == request.user

@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "apps.reviews",
     "apps.faq",
     "apps.chat",
+    "apps.formations",
 ]
 
 MIDDLEWARE = [
@@ -159,6 +160,22 @@ STRIPE_PUBLISHABLE_KEY = config("STRIPE_PUBLISHABLE_KEY", default="")
 FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:3000")
 
 # ---------------------------------------------------------------------------
+# Email — console en développement (le lien de réinitialisation s'affiche dans les
+# logs du conteneur backend), SMTP réel en production via variables d'environnement.
+# ---------------------------------------------------------------------------
+EMAIL_BACKEND = config(
+    "EMAIL_BACKEND",
+    default="django.core.mail.backends.console.EmailBackend" if DEBUG
+    else "django.core.mail.backends.smtp.EmailBackend",
+)
+EMAIL_HOST = config("EMAIL_HOST", default="")
+EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
+EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="LearnEas <no-reply@learneas.com>")
+
+# ---------------------------------------------------------------------------
 # Redis / Celery (emails asynchrones, tâches planifiées) — service "redis" du docker-compose
 # ---------------------------------------------------------------------------
 REDIS_URL = config("REDIS_URL", default="redis://localhost:6379/0")
@@ -168,11 +185,22 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 
 # ---------------------------------------------------------------------------
-# Sécurité production — activée uniquement si DEBUG=False et derrière HTTPS
+# Sécurité production — activée uniquement si DEBUG=False.
+# IMPORTANT : les cookies "Secure" (SESSION_COOKIE_SECURE / CSRF_COOKIE_SECURE) ne doivent être
+# activés QUE si le site est réellement servi en HTTPS. Sinon le navigateur refuse de renvoyer
+# ces cookies, et TOUT formulaire (dont la connexion à /admin/) échoue avec une erreur CSRF 403,
+# même avec des identifiants corrects. Par défaut (installation Docker locale en http://localhost),
+# USE_HTTPS reste à False. Passez USE_HTTPS=True dans votre .env uniquement si nginx/un reverse
+# proxy termine bien du HTTPS devant l'application.
 # ---------------------------------------------------------------------------
 if not DEBUG:
-    SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=False, cast=bool)
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
+    USE_HTTPS = config("USE_HTTPS", default=False, cast=bool)
+    SECURE_SSL_REDIRECT = USE_HTTPS
+    SESSION_COOKIE_SECURE = USE_HTTPS
+    CSRF_COOKIE_SECURE = USE_HTTPS
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-    CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
+    CSRF_TRUSTED_ORIGINS = config(
+        "CSRF_TRUSTED_ORIGINS",
+        default="http://localhost,http://127.0.0.1",
+        cast=Csv(),
+    )

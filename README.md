@@ -1,5 +1,9 @@
 # LearnEas
 
+> **Mise à jour majeure** — voir [`CHANGELOG.md`](./CHANGELOG.md) pour le détail des corrections de
+> sécurité, du module Formation Interactive, de l'orientation Afrique (Mobile Money, pays africains)
+> et de toutes les vérifications effectuées.
+
 Plateforme de formation en ligne — refonte du projet PFE "Gestion de la formation en ligne" (Laravel)
 en **Django REST Framework + Next.js**, avec un nouveau paradigme :
 
@@ -132,7 +136,10 @@ python manage.py runserver        # http://localhost:8000
 
 Comptes créés par `seed_demo` :
 - Admin : `admin@learneas.com` / `admin1234`
-- Instructeur : `sarah@learneas.com` / `instructor1234`
+- Instructeurs : `sarah@learneas.com`, `koffi@learneas.com`, `amina@learneas.com` (mot de passe `instructor1234`)
+- Étudiants : `fatou@learneas.com`, `jean@learneas.com`, `aicha@learneas.com` (mot de passe `student1234`)
+
+Voir [`CHANGELOG.md`](./CHANGELOG.md) pour le détail complet des comptes et des données de démo.
 
 Admin Django : http://localhost:8000/admin
 Documentation API (Swagger) : http://localhost:8000/api/docs

@@ -6,9 +6,16 @@ x-backend-env: &backend-env
   REDIS_URL: redis://redis:6379/0
   CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost,http://localhost:3000}
   CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost}
+  USE_HTTPS: ${USE_HTTPS:-False}
   FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
   STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
   STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+  EMAIL_HOST: ${EMAIL_HOST:-}
+  EMAIL_PORT: ${EMAIL_PORT:-587}
+  EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+  EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+  EMAIL_USE_TLS: ${EMAIL_USE_TLS:-True}
+  DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-LearnEas <no-reply@learneas.com>}
   SEED_DEMO: ${SEED_DEMO:-false}
 
 services:
@@ -90,6 +97,10 @@ services:
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost/api}
+      # URL interne au réseau Docker, utilisée UNIQUEMENT côté serveur (rendu SSR des pages
+      # catalogue/détail) — "backend" est le nom du service ci-dessous, résolu par le DNS interne
+      # de Docker. Ne pas mettre "localhost" ici : depuis CE conteneur, localhost = lui-même.
+      INTERNAL_API_URL: http://backend:8000/api
     depends_on:
       - backend
     networks:

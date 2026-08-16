@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, ShoppingBag, BookOpen, FileText, DollarSign } from "lucide-react";
 import { api, formatPrice } from "@/lib/api";
+import { useAuthGuard } from "@/hooks/useAuthGuard";
 import DashboardNav from "@/components/dashboard/DashboardNav";
+import GuardScreen from "@/components/ui/GuardScreen";
 
 interface Order {
   id: number;
@@ -15,14 +17,18 @@ interface Order {
 }
 
 export default function AdminDashboard() {
+  const { ready } = useAuthGuard({ roles: ["admin"], redirectTo: "/" });
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!ready) return;
     api.get<{ results: Order[] } | Order[]>("/payments/orders/")
       .then((d: any) => setOrders(d.results || d))
       .finally(() => setLoading(false));
-  }, []);
+  }, [ready]);
+
+  if (!ready) return <GuardScreen />;
 
   const revenue = orders.filter((o) => o.status === "paid").reduce((sum, o) => sum + parseFloat(o.total_amount), 0);
 

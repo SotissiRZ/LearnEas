@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation";
 import { Loader2, Save, Upload } from "lucide-react";
 import { api } from "@/lib/api";
 import { Category } from "@/types";
+import { useAuthGuard } from "@/hooks/useAuthGuard";
 import DashboardNav from "@/components/dashboard/DashboardNav";
+import GuardScreen from "@/components/ui/GuardScreen";
 
 export default function NewPdfPage() {
+  const { ready } = useAuthGuard({ roles: ["instructor", "admin"], redirectTo: "/dashboard/instructor" });
   const router = useRouter();
   const [categories, setCategories] = useState<Category[]>([]);
   const [saving, setSaving] = useState(false);
@@ -45,6 +48,8 @@ export default function NewPdfPage() {
       setSaving(false);
     }
   }
+
+  if (!ready) return <GuardScreen />;
 
   return (
     <div className="container-app py-10">

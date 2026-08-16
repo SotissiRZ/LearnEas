@@ -2,12 +2,15 @@
 
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { api } from "@/lib/api";
 import DashboardNav from "@/components/dashboard/DashboardNav";
+import GuardScreen from "@/components/ui/GuardScreen";
 import { Save, Loader2 } from "lucide-react";
 
 export default function StudentProfilePage() {
-  const { user, refreshMe } = useAuth();
+  const { user, ready } = useAuthGuard();
+  const { refreshMe } = useAuth();
   const [form, setForm] = useState({
     first_name: user?.first_name || "",
     last_name: user?.last_name || "",
@@ -28,7 +31,7 @@ export default function StudentProfilePage() {
     }
   }
 
-  if (!user) return <div className="container-app py-20 text-center text-gray-500">Connectez-vous.</div>;
+  if (!ready || !user) return <GuardScreen />;
 
   return (
     <div className="container-app py-10">

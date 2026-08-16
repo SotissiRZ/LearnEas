@@ -25,6 +25,7 @@ export default function Footer() {
           <h4 className="mb-3 text-sm font-semibold text-gray-900">Découvrir</h4>
           <ul className="space-y-2 text-sm text-gray-500">
             <li><Link href="/courses">Tous les cours</Link></li>
+            <li><Link href="/formations">Formations interactives</Link></li>
             <li><Link href="/pdfs">Tous les PDF</Link></li>
             <li><Link href="/instructors">Instructeurs</Link></li>
           </ul>
