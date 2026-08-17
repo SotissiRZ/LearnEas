@@ -9,6 +9,7 @@ import {
 import { Course, Lesson, Section, CourseEnrollment } from "@/types";
 import { api, formatDuration } from "@/lib/api";
 import ProgressBar from "@/components/ui/ProgressBar";
+import PdfViewer from "@/components/ui/PdfViewer";
 import { useAuth } from "@/hooks/useAuth";
 
 export default function LearnClient({ course }: { course: Course }) {
@@ -126,9 +127,15 @@ export default function LearnClient({ course }: { course: Course }) {
               key={activeLesson.id}
               src={activeLesson.video_url || activeLesson.video_file || undefined}
               controls
+              controlsList="nodownload"
+              playsInline
+              preload="metadata"
+              poster={course.thumbnail || undefined}
               className="h-full w-full"
               onEnded={() => activeLesson && markComplete(activeLesson)}
-            />
+            >
+              Votre navigateur ne prend pas en charge la lecture vidéo intégrée.
+            </video>
           ) : (
             <div className="grid h-full place-items-center text-white/50">
               <PlayCircle size={56} />
@@ -171,11 +178,7 @@ export default function LearnClient({ course }: { course: Course }) {
                 {(course.pdf_resources || []).map((pdf) => (
                   <div key={pdf.id} className="card flex items-center justify-between p-3 text-sm">
                     <span className="flex items-center gap-2"><FileText size={16} className="text-amber-600" /> {pdf.title}</span>
-                    {pdf.file && (
-                      <a href={pdf.file} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-brand-700">
-                        <Download size={14} /> Télécharger
-                      </a>
-                    )}
+                    {pdf.file && <PdfViewer url={pdf.file} title={pdf.title} />}
                   </div>
                 ))}
               </div>

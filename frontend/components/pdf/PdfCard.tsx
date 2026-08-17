@@ -4,6 +4,7 @@ import { PDFProduct } from "@/types";
 import { formatPrice } from "@/lib/api";
 import RatingStars from "@/components/ui/RatingStars";
 import LevelBadge from "@/components/ui/LevelBadge";
+import QuickAddButton from "@/components/course/QuickAddButton";
 
 export default function PdfCard({ pdf }: { pdf: PDFProduct }) {
   return (
@@ -40,8 +41,9 @@ export default function PdfCard({ pdf }: { pdf: PDFProduct }) {
           <span className="flex items-center gap-1"><Download size={14} /> {pdf.downloads_count}</span>
         </div>
 
-        <div className="mt-auto pt-2">
+        <div className="mt-auto flex items-center justify-between gap-2 pt-2">
           <span className="text-lg font-extrabold text-ink">{formatPrice(pdf.price)}</span>
+          <QuickAddButton item={{ kind: "pdf", data: pdf }} />
         </div>
       </div>
     </Link>

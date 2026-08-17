@@ -4,6 +4,7 @@ import { useState } from "react";
 import { PlayCircle, Lock, ChevronDown, FileText, Download, Clock } from "lucide-react";
 import { Section, PDFResource } from "@/types";
 import { formatDuration } from "@/lib/api";
+import PdfViewer from "@/components/ui/PdfViewer";
 
 export default function CourseCurriculum({
   sections,
@@ -71,11 +72,7 @@ export default function CourseCurriculum({
                   <span className={pdf.locked ? "text-gray-500" : "text-ink"}>{pdf.title}</span>
                   <span className="text-xs text-gray-400">({pdf.page_count} pages)</span>
                 </div>
-                {!pdf.locked && pdf.file && (
-                  <a href={pdf.file} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-brand-700 hover:underline">
-                    <Download size={14} /> Télécharger
-                  </a>
-                )}
+                {!pdf.locked && pdf.file && <PdfViewer url={pdf.file} title={pdf.title} />}
                 {pdf.is_free_sample && <span className="badge bg-brand-50 text-brand-700">Extrait gratuit</span>}
               </div>
             ))}

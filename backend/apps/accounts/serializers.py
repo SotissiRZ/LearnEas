@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
+from apps.common.fields import RelativeImageField
 
 User = get_user_model()
 
@@ -8,6 +9,7 @@ class UserPublicSerializer(serializers.ModelSerializer):
     """Utilisé pour afficher un instructeur sur une fiche cours."""
     full_name = serializers.SerializerMethodField()
     courses_count = serializers.SerializerMethodField()
+    avatar = RelativeImageField(read_only=True)
 
     class Meta:
         model = User
@@ -24,6 +26,8 @@ class UserPublicSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    avatar = RelativeImageField(read_only=True)
+
     class Meta:
         model = User
         fields = [

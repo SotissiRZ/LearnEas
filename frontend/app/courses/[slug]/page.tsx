@@ -9,6 +9,7 @@ import RatingStars from "@/components/ui/RatingStars";
 import LevelBadge from "@/components/ui/LevelBadge";
 import CourseCurriculum from "@/components/course/CourseCurriculum";
 import { AddCourseToCartButton } from "@/components/course/AddToCartButtons";
+import ContactInstructorButton from "@/components/chat/ContactInstructorButton";
 
 async function getCourse(slug: string): Promise<Course | null> {
   try {
@@ -26,8 +27,8 @@ export default async function CourseDetailPage({ params }: { params: { slug: str
     <div>
       {/* HEADER */}
       <section className="bg-ink text-white">
-        <div className="container-app grid grid-cols-1 gap-10 py-10 lg:grid-cols-[1fr_380px] lg:py-14">
-          <div>
+        <div className="container-app py-10 lg:py-14">
+          <div className="max-w-3xl">
             {course.category && (
               <Link href={`/courses?category=${course.category.slug}`} className="text-sm font-semibold text-brand-400">
                 {course.category.name}
@@ -56,16 +57,11 @@ export default async function CourseDetailPage({ params }: { params: { slug: str
               )}
             </div>
           </div>
-
-          {/* PURCHASE CARD (desktop) */}
-          <div className="hidden lg:block">
-            <PurchaseCard course={course} />
-          </div>
         </div>
       </section>
 
-      {/* PURCHASE CARD (mobile) */}
-      <div className="container-app -mt-6 lg:hidden">
+      {/* PURCHASE CARD (mobile uniquement, juste sous le hero, sans chevauchement) */}
+      <div className="container-app pt-6 lg:hidden">
         <PurchaseCard course={course} />
       </div>
 
@@ -118,19 +114,25 @@ export default async function CourseDetailPage({ params }: { params: { slug: str
               <div className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-brand-100 text-xl font-bold text-brand-700">
                 {course.instructor.full_name[0]}
               </div>
-              <div>
+              <div className="flex-1">
                 <p className="font-bold">{course.instructor.full_name}</p>
                 <p className="text-sm text-gray-500">{course.instructor.headline}</p>
                 <p className="mt-2 text-sm text-gray-600">{course.instructor.bio}</p>
                 <p className="mt-2 text-xs text-gray-400">
                   {course.instructor.years_experience} ans d'expérience · {course.instructor.courses_count} cours publiés
                 </p>
+                <ContactInstructorButton instructor={course.instructor} />
               </div>
             </div>
           </section>
         </div>
 
-        <div className="hidden lg:block" />
+        {/* PURCHASE CARD (desktop, colonne latérale sticky — jamais sous la navbar) */}
+        <div className="hidden lg:block">
+          <div className="sticky top-24">
+            <PurchaseCard course={course} />
+          </div>
+        </div>
       </div>
     </div>
   );

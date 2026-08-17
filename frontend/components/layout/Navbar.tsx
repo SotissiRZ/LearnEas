@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   Search, ShoppingCart, GraduationCap, ChevronDown, LayoutDashboard,
-  BookOpen, FileText, LogOut, User as UserIcon, Menu, X,
+  BookOpen, FileText, LogOut, User as UserIcon, Menu, X, MessageCircle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useCart } from "@/hooks/useCart";
@@ -95,6 +95,9 @@ export default function Navbar() {
                   </Link>
                   <Link href="/dashboard/student/pdfs" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
                     <FileText size={16} /> Mes PDF
+                  </Link>
+                  <Link href="/dashboard/messages" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
+                    <MessageCircle size={16} /> Messages
                   </Link>
                   <Link href="/dashboard/student/profile" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
                     <UserIcon size={16} /> Profil

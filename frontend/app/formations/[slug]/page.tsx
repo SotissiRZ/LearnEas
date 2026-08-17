@@ -4,6 +4,7 @@ import { api, formatPrice } from "@/lib/api";
 import { InteractiveFormation } from "@/types";
 import LevelBadge from "@/components/ui/LevelBadge";
 import { AddFormationToCartButton } from "@/components/formation/AddFormationToCartButton";
+import ContactInstructorButton from "@/components/chat/ContactInstructorButton";
 
 async function getFormation(slug: string): Promise<InteractiveFormation | null> {
   try {
@@ -31,6 +32,7 @@ export default async function FormationDetailPage({ params }: { params: { slug: 
             Animée par <span className="font-semibold">{formation.instructor.full_name}</span>
             {formation.co_instructor && <> et <span className="font-semibold">{formation.co_instructor.full_name}</span></>}
           </p>
+          <ContactInstructorButton instructor={formation.instructor} />
         </div>
 
         <div className="card p-6">

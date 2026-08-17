@@ -4,8 +4,8 @@ x-backend-env: &backend-env
   ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
   DATABASE_URL: postgres://${POSTGRES_USER:-learneas}:${POSTGRES_PASSWORD:-learneas}@db:5432/${POSTGRES_DB:-learneas}
   REDIS_URL: redis://redis:6379/0
-  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost,http://localhost:3000}
-  CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1,http://localhost:3000,http://127.0.0.1:3000}
+  CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost,http://127.0.0.1}
   USE_HTTPS: ${USE_HTTPS:-False}
   FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
   STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
@@ -93,10 +93,10 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost/api}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost/api}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
       # URL interne au réseau Docker, utilisée UNIQUEMENT côté serveur (rendu SSR des pages
       # catalogue/détail) — "backend" est le nom du service ci-dessous, résolu par le DNS interne
       # de Docker. Ne pas mettre "localhost" ici : depuis CE conteneur, localhost = lui-même.

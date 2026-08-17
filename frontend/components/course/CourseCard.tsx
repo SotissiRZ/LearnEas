@@ -4,6 +4,7 @@ import { Course } from "@/types";
 import { formatDuration, formatPrice } from "@/lib/api";
 import RatingStars from "@/components/ui/RatingStars";
 import LevelBadge from "@/components/ui/LevelBadge";
+import QuickAddButton from "@/components/course/QuickAddButton";
 
 export default function CourseCard({ course }: { course: Course }) {
   return (
@@ -51,15 +52,18 @@ export default function CourseCard({ course }: { course: Course }) {
           <span className="flex items-center gap-1"><Users size={14} /> {course.students_count}</span>
         </div>
 
-        <div className="mt-auto flex items-center gap-2 pt-2">
-          {course.discount_price ? (
-            <>
-              <span className="text-lg font-extrabold text-ink">{formatPrice(course.discount_price)}</span>
-              <span className="text-sm text-gray-400 line-through">{formatPrice(course.price)}</span>
-            </>
-          ) : (
-            <span className="text-lg font-extrabold text-ink">{formatPrice(course.effective_price)}</span>
-          )}
+        <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+          <div className="flex items-center gap-2">
+            {course.discount_price ? (
+              <>
+                <span className="text-lg font-extrabold text-ink">{formatPrice(course.discount_price)}</span>
+                <span className="text-sm text-gray-400 line-through">{formatPrice(course.price)}</span>
+              </>
+            ) : (
+              <span className="text-lg font-extrabold text-ink">{formatPrice(course.effective_price)}</span>
+            )}
+          </div>
+          <QuickAddButton item={{ kind: "course", data: course }} />
         </div>
       </div>
     </Link>

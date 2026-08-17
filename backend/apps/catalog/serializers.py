@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from apps.accounts.serializers import UserPublicSerializer
+from apps.common.fields import RelativeImageField, RelativeFileField
 from .models import Category, Course, Section, Lesson, PDFResource, PDFProduct
 
 
@@ -16,6 +17,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
 class LessonSerializer(serializers.ModelSerializer):
     locked = serializers.SerializerMethodField()
+    video_file = RelativeFileField(read_only=True)
 
     class Meta:
         model = Lesson
@@ -51,6 +53,7 @@ class SectionSerializer(serializers.ModelSerializer):
 
 class PDFResourceSerializer(serializers.ModelSerializer):
     locked = serializers.SerializerMethodField()
+    file = RelativeFileField(read_only=True)
 
     class Meta:
         model = PDFResource
@@ -74,6 +77,7 @@ class CourseListSerializer(serializers.ModelSerializer):
     instructor = UserPublicSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
     effective_price = serializers.SerializerMethodField()
+    thumbnail = RelativeImageField(read_only=True)
 
     class Meta:
         model = Course
@@ -157,6 +161,7 @@ class PDFResourceWriteSerializer(serializers.ModelSerializer):
 class PDFProductListSerializer(serializers.ModelSerializer):
     instructor = UserPublicSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
+    cover_image = RelativeImageField(read_only=True)
 
     class Meta:
         model = PDFProduct
@@ -169,6 +174,8 @@ class PDFProductListSerializer(serializers.ModelSerializer):
 
 class PDFProductDetailSerializer(PDFProductListSerializer):
     is_purchased = serializers.SerializerMethodField()
+    file = RelativeFileField(read_only=True)
+    preview_file = RelativeFileField(read_only=True)
 
     class Meta(PDFProductListSerializer.Meta):
         fields = PDFProductListSerializer.Meta.fields + ["description", "file", "preview_file", "is_purchased"]

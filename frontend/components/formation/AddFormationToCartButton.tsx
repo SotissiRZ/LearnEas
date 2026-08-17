@@ -1,14 +1,28 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { ShoppingCart, Check } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
+import { ShoppingCart, Check, LogIn } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
+import { useAuth } from "@/hooks/useAuth";
 import { InteractiveFormation } from "@/types";
 
 export function AddFormationToCartButton({ formation }: { formation: InteractiveFormation }) {
   const { items, addFormation } = useCart();
+  const { user, hydrated } = useAuth();
   const inCart = items.some((i) => i.type === "formation" && i.id === formation.id);
   const router = useRouter();
+  const pathname = usePathname();
+
+  if (!user) {
+    return (
+      <button
+        onClick={() => hydrated && router.push(`/login?next=${encodeURIComponent(pathname)}`)}
+        className="btn-outline w-full"
+      >
+        <LogIn size={18} /> Se connecter pour s'inscrire
+      </button>
+    );
+  }
 
   return (
     <button

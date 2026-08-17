@@ -5,6 +5,8 @@ import { PDFProduct } from "@/types";
 import RatingStars from "@/components/ui/RatingStars";
 import LevelBadge from "@/components/ui/LevelBadge";
 import { AddPdfToCartButton } from "@/components/course/AddToCartButtons";
+import ContactInstructorButton from "@/components/chat/ContactInstructorButton";
+import PdfViewer from "@/components/ui/PdfViewer";
 
 async function getPdf(slug: string): Promise<PDFProduct | null> {
   try {
@@ -49,6 +51,7 @@ export default async function PdfDetailPage({ params }: { params: { slug: string
             <div>
               <p className="font-bold">{pdf.instructor.full_name}</p>
               <p className="text-sm text-gray-500">{pdf.instructor.headline}</p>
+              <ContactInstructorButton instructor={pdf.instructor} />
             </div>
           </div>
         </div>
@@ -70,9 +73,7 @@ export default async function PdfDetailPage({ params }: { params: { slug: string
             <div className="mt-4">
               {unlocked ? (
                 pdf.file ? (
-                  <a href={pdf.file} target="_blank" rel="noreferrer" className="btn-primary w-full">
-                    <Download size={18} /> Télécharger le PDF
-                  </a>
+                  <PdfViewer url={pdf.file} title={pdf.title} />
                 ) : (
                   <p className="text-sm text-gray-500">Fichier indisponible.</p>
                 )
@@ -82,9 +83,9 @@ export default async function PdfDetailPage({ params }: { params: { slug: string
             </div>
 
             {!unlocked && pdf.preview_file && (
-              <a href={pdf.preview_file} target="_blank" rel="noreferrer" className="btn-outline mt-2 w-full">
-                <Lock size={16} /> Voir un extrait gratuit
-              </a>
+              <div className="mt-2">
+                <PdfViewer url={pdf.preview_file} title={`${pdf.title} — extrait gratuit`} />
+              </div>
             )}
 
             <div className="mt-5 flex flex-col gap-2 border-t border-gray-100 pt-4 text-sm text-gray-600">

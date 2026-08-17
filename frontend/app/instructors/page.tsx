@@ -1,6 +1,7 @@
 import { api } from "@/lib/api";
 import { Course, Paginated } from "@/types";
 import { Star, Users, BookOpen } from "lucide-react";
+import ContactInstructorButton from "@/components/chat/ContactInstructorButton";
 
 async function safeGet<T>(path: string, fallback: T): Promise<T> {
   try { return await api.get<T>(path); } catch { return fallback; }
@@ -42,6 +43,7 @@ export default async function InstructorsPage() {
                 <span className="flex items-center gap-1"><BookOpen size={14} /> {courses} cours</span>
                 <span className="flex items-center gap-1"><Users size={14} /> {students} étudiants</span>
               </div>
+              <ContactInstructorButton instructor={instructor} />
             </div>
           ))}
         </div>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowRight, ShieldCheck, Infinity as InfinityIcon, Award, Sparkles } from "lucide-react";
 import { safeGet } from "@/lib/api";
 import { Category, Course, PDFProduct } from "@/types";
@@ -27,9 +28,18 @@ export default async function HomePage() {
       )}
       {/* HERO */}
       <section className="relative overflow-hidden bg-ink text-white">
-        <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand-600/30 blur-3xl" />
-        <div className="absolute -left-24 bottom-0 h-72 w-72 rounded-full bg-brand-500/20 blur-3xl" />
-        <div className="container-app relative flex flex-col items-center gap-8 py-20 text-center lg:py-28">
+        <Image
+          src="/images/hero-background.png"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover object-center"
+        />
+        {/* Voile sombre pour garantir la lisibilité du texte quel que soit le contenu de l'image */}
+        <div className="absolute inset-0 bg-gradient-to-r from-ink via-ink/90 to-ink/50" />
+        <div className="absolute inset-0 bg-ink/30" />
+        <div className="container-app relative z-10 flex flex-col items-center gap-8 py-20 text-center lg:py-28">
           <span className="badge bg-white/10 text-brand-200">
             <Sparkles size={14} /> La plateforme de formation en ligne pensée pour l'Afrique
           </span>

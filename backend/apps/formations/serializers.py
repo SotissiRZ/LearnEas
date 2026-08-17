@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from apps.accounts.serializers import UserPublicSerializer
 from apps.catalog.serializers import CategorySerializer
+from apps.common.fields import RelativeImageField
 from .models import InteractiveFormation, FormationSession, FormationEnrollment
 
 
@@ -43,6 +44,7 @@ class InteractiveFormationListSerializer(serializers.ModelSerializer):
     students_count = serializers.ReadOnlyField()
     seats_left = serializers.ReadOnlyField()
     is_full = serializers.ReadOnlyField()
+    thumbnail = RelativeImageField(read_only=True)
 
     class Meta:
         model = InteractiveFormation

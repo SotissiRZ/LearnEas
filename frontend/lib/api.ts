@@ -12,9 +12,11 @@
  */
 const API_URL =
   typeof window === "undefined"
-    ? process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
-    : process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
-
+    ? process.env.INTERNAL_API_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      "http://backend:8000/api"
+    : process.env.NEXT_PUBLIC_API_URL || "/api";
+    
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("learneas_access");
