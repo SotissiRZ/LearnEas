@@ -183,3 +183,42 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Ajout de raccourcis de création de contenu depuis le back-office admin.
 - Les filtres issus des URL/KPI sont réinitialisés correctement lorsqu’on change de lien dans un même onglet admin.
 
+
+
+## 2026-08-28 — Back-office instructeur v5
+
+- Ajout d’une **sidebar instructeur** persistante et responsive : Aperçu, Mes cours, Mes PDF,
+  Formations live, Séances live, Étudiants, Statistiques, Avis & questions, Revenus & versements,
+  Messages et Profil & paramètres.
+- Refonte de l’aperçu avec KPI cliquables et données strictement limitées aux contenus de
+  l’instructeur : contenus publiés, étudiants uniques, note moyenne, questions, ventes et solde.
+- Ajout d’une vue **Étudiants** avec recherche, filtre par type d’accès (cours/formation/PDF),
+  progression et raccourci vers la messagerie.
+- Ajout d’une vue **Statistiques** avec chiffre d’affaires, gains instructeur, évolution mensuelle et
+  classement des contenus par ventes/revenus.
+- Ajout d’un espace **Revenus & versements** : ventes récentes, export CSV, profil de paiement,
+  solde disponible, demande de retrait et historique des versements.
+- Ajout d’une vue **Avis & questions** avec consultation des notes et réponse aux questions liées aux
+  leçons de l’instructeur.
+- Ajout d’une vue **Séances live** avec filtres, accès à la salle LearnEas et rapports de présence
+  (heures d’entrée/sortie et durée).
+- Ajout de la **messagerie instructeur** dans le shell du dashboard et possibilité de démarrer une
+  conversation depuis la liste des étudiants.
+- Ajout de **Profil & paramètres** : photo, identité publique, bio, expertise, expérience et changement
+  de mot de passe. L’email reste l’identifiant de connexion ; le username demeure technique.
+- Gestion enrichie des cours, PDF et formations : recherche, filtres, édition des métadonnées et
+  couvertures, publication/dépublication, suppression et accès direct à la gestion du contenu/planning.
+- Nouveaux endpoints instructeur agrégés pour l’aperçu, les étudiants, les séances, les avis/questions
+  et les statistiques financières, avec contrôle de rôle et scoping côté serveur.
+- Ajout de tests de régression pour l’isolation des données instructeur, le changement de mot de passe
+  et le filtrage des séances.
+- Les comptes de test restent documentés dans le README.
+
+## 2026-08-28 — Correctif build frontend v6
+
+- Correction du typage TypeScript de `InstructorSidebar.tsx` qui bloquait `next build` avec
+  `Property 'exact' does not exist...`.
+- La configuration des éléments de navigation utilise maintenant un type explicite
+  `InstructorNavItem` avec `exact?: boolean`, et la valeur est normalisée à `false` lors du rendu.
+- Aucun changement fonctionnel ou visuel de la sidebar : ce correctif vise uniquement la compilation
+  de production et conserve la navigation introduite en v5.

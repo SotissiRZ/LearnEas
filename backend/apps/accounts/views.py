@@ -3,6 +3,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Avg, Count, Q
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils import timezone
@@ -70,6 +71,177 @@ class MeView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class InstructorOverviewView(APIView):
+    """Vue consolidée de l'activité d'un instructeur.
+
+    Les chiffres sont calculés côté serveur afin que le dashboard n'ait pas à agréger
+    plusieurs endpoints publics et ne puisse jamais mélanger les données d'un autre instructeur.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role not in (User.Role.INSTRUCTOR, User.Role.ADMIN):
+            return Response({"detail": "Compte instructeur requis."}, status=403)
+
+        from apps.catalog.models import Course, PDFProduct
+        from apps.enrollments.models import CourseEnrollment, PDFPurchase
+        from apps.formations.models import InteractiveFormation, FormationEnrollment, FormationSession
+        from apps.reviews.models import Review, LessonComment
+
+        instructor = request.user
+        courses = Course.objects.filter(instructor=instructor)
+        pdfs = PDFProduct.objects.filter(instructor=instructor)
+        formations = InteractiveFormation.objects.filter(Q(instructor=instructor) | Q(co_instructor=instructor)).distinct()
+
+        course_enrollments = CourseEnrollment.objects.filter(course__instructor=instructor)
+        formation_enrollments = FormationEnrollment.objects.filter(formation__in=formations)
+        pdf_purchases = PDFPurchase.objects.filter(pdf_product__instructor=instructor)
+        student_ids = set(course_enrollments.values_list("user_id", flat=True))
+        student_ids.update(formation_enrollments.values_list("user_id", flat=True))
+        student_ids.update(pdf_purchases.values_list("user_id", flat=True))
+
+        reviews = Review.objects.filter(Q(course__instructor=instructor) | Q(pdf_product__instructor=instructor))
+        review_stats = reviews.aggregate(avg=Avg("rating"), count=Count("id"))
+        questions = LessonComment.objects.filter(lesson__section__course__instructor=instructor, parent__isnull=True)
+        upcoming = FormationSession.objects.filter(
+            Q(formation__instructor=instructor) | Q(formation__co_instructor=instructor),
+            completed=False, scheduled_at__gte=timezone.now(),
+        ).select_related("formation").order_by("scheduled_at")[:5]
+
+        recent_students = []
+        for enrollment in course_enrollments.select_related("user", "course").order_by("-purchased_at")[:5]:
+            recent_students.append({
+                "user_id": enrollment.user_id,
+                "name": enrollment.user.get_full_name() or enrollment.user.username,
+                "email": enrollment.user.email,
+                "content_type": "course",
+                "content_title": enrollment.course.title,
+                "progress_percent": enrollment.progress_percent,
+                "acquired_at": enrollment.purchased_at,
+            })
+
+        recent_reviews = [
+            {
+                "id": r.id,
+                "student": r.user.get_full_name() or r.user.username,
+                "rating": r.rating,
+                "comment": r.comment,
+                "target_title": (r.course or r.pdf_product).title if (r.course or r.pdf_product) else "",
+                "created_at": r.created_at,
+            }
+            for r in reviews.select_related("user", "course", "pdf_product").order_by("-created_at")[:5]
+        ]
+
+        return Response({
+            "courses": courses.count(),
+            "published_courses": courses.filter(published=True).count(),
+            "pdfs": pdfs.count(),
+            "published_pdfs": pdfs.filter(published=True).count(),
+            "formations": formations.count(),
+            "published_formations": formations.filter(published=True).count(),
+            "unique_students": len(student_ids),
+            "course_enrollments": course_enrollments.count(),
+            "formation_enrollments": formation_enrollments.count(),
+            "pdf_purchases": pdf_purchases.count(),
+            "rating_avg": round(float(review_stats["avg"] or 0), 2),
+            "reviews_count": review_stats["count"] or 0,
+            "questions_count": questions.count(),
+            "upcoming_sessions": [
+                {
+                    "id": session.id,
+                    "formation_id": session.formation_id,
+                    "formation_title": session.formation.title,
+                    "session_number": session.session_number,
+                    "scheduled_at": session.scheduled_at,
+                    "duration_minutes": session.duration_minutes,
+                    "started_at": session.started_at,
+                }
+                for session in upcoming
+            ],
+            "recent_students": recent_students,
+            "recent_reviews": recent_reviews,
+        })
+
+
+class InstructorStudentsView(APIView):
+    """Liste des apprenants/acheteurs rattachés aux contenus de l'instructeur."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role not in (User.Role.INSTRUCTOR, User.Role.ADMIN):
+            return Response({"detail": "Compte instructeur requis."}, status=403)
+
+        from apps.enrollments.models import CourseEnrollment, PDFPurchase
+        from apps.formations.models import FormationEnrollment
+
+        rows = []
+        for e in CourseEnrollment.objects.filter(course__instructor=request.user).select_related("user", "course"):
+            rows.append({
+                "id": f"course-{e.id}",
+                "user_id": e.user_id,
+                "name": e.user.get_full_name() or e.user.username,
+                "email": e.user.email,
+                "content_type": "course",
+                "content_id": e.course_id,
+                "content_title": e.course.title,
+                "progress_percent": e.progress_percent,
+                "completed": e.completed,
+                "acquired_at": e.purchased_at,
+            })
+        for e in FormationEnrollment.objects.filter(
+            Q(formation__instructor=request.user) | Q(formation__co_instructor=request.user)
+        ).select_related("user", "formation").distinct():
+            rows.append({
+                "id": f"formation-{e.id}",
+                "user_id": e.user_id,
+                "name": e.user.get_full_name() or e.user.username,
+                "email": e.user.email,
+                "content_type": "formation",
+                "content_id": e.formation_id,
+                "content_title": e.formation.title,
+                "progress_percent": None,
+                "completed": e.certificate_issued,
+                "acquired_at": e.enrolled_at,
+            })
+        for e in PDFPurchase.objects.filter(pdf_product__instructor=request.user).select_related("user", "pdf_product"):
+            rows.append({
+                "id": f"pdf-{e.id}",
+                "user_id": e.user_id,
+                "name": e.user.get_full_name() or e.user.username,
+                "email": e.user.email,
+                "content_type": "pdf",
+                "content_id": e.pdf_product_id,
+                "content_title": e.pdf_product.title,
+                "progress_percent": None,
+                "completed": True,
+                "acquired_at": e.purchased_at,
+            })
+        rows.sort(key=lambda r: r["acquired_at"], reverse=True)
+        return Response({
+            "count": len(rows),
+            "unique_students": len({r["user_id"] for r in rows}),
+            "results": rows,
+        })
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        current_password = request.data.get("current_password", "")
+        new_password = request.data.get("new_password", "")
+        new_password2 = request.data.get("new_password2", "")
+        if not request.user.check_password(current_password):
+            return Response({"current_password": ["Mot de passe actuel incorrect."]}, status=400)
+        if len(new_password) < 8:
+            return Response({"new_password": ["Doit contenir au moins 8 caractères."]}, status=400)
+        if new_password != new_password2:
+            return Response({"new_password2": ["Les mots de passe ne correspondent pas."]}, status=400)
+        request.user.set_password(new_password)
+        request.user.save(update_fields=["password"])
+        return Response({"detail": "Mot de passe modifié avec succès."})
 
 
 class InstructorApplyView(APIView):

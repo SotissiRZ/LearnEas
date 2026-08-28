@@ -6,7 +6,6 @@ import { ImagePlus, Loader2, Save } from "lucide-react";
 import { api, apiUploadWithProgress, ApiError } from "@/lib/api";
 import { Category } from "@/types";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
-import DashboardNav from "@/components/dashboard/DashboardNav";
 import GuardScreen from "@/components/ui/GuardScreen";
 import UploadProgressBar from "@/components/ui/UploadProgressBar";
 
@@ -59,8 +58,7 @@ export default function NewCoursePage() {
   if (!ready) return <GuardScreen />;
 
   return (
-    <div className="container-app py-10">
-      <DashboardNav role="instructor" />
+    <div className="min-w-0">
       <div className="card max-w-2xl p-6">
         <h1 className="mb-1 text-xl font-bold">Créer un nouveau cours</h1>
         <p className="mb-6 text-sm text-gray-500">Vous pourrez ensuite ajouter vos sections, vidéos et PDF depuis la page de gestion du cours.</p>

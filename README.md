@@ -102,8 +102,12 @@ Admin Django : **http://localhost/admin**
 - Un étudiant peut déposer une **demande pour devenir instructeur** depuis son dashboard ; le rôle n’est accordé qu’après validation explicite par un administrateur.
 - Dashboards dédiés :
   - **Étudiant** : mes cours, ma progression, mes PDF, mon profil, mes certificats.
-  - **Instructeur** : aperçu (stats), gestion des cours (créer/ajouter sections+vidéos/publier),
-    gestion des PDF (créer + upload).
+  - **Instructeur** : back-office complet avec sidebar dédiée : aperçu, cours, PDF, formations live,
+    séances, étudiants, statistiques, avis/questions, revenus/versements, messages et profil/paramètres.
+    Les KPI sont navigables vers les vues détaillées. L’instructeur peut créer, modifier, publier ou
+    dépublier ses contenus, suivre ses étudiants et leur progression, consulter ses ventes, configurer
+    sa destination de versement, demander un retrait, répondre aux questions de cours, contrôler les
+    présences des séances live et gérer son profil public ainsi que son mot de passe.
   - **Admin** : back-office complet avec sidebar dédiée : aperçu, utilisateurs, demandes instructeur, contenus, commandes,
     versements instructeurs, séances live, catégories, FAQ/avis et paramètres de la plateforme.
     L'admin peut créer/désactiver des comptes, gérer les rôles, approuver/refuser les demandes instructeur, modérer le catalogue et les avis. Tous les KPI
@@ -249,9 +253,10 @@ simplifiés pour rester un point de départ clair. À finaliser avant lancement 
    `SECRET_KEY` et les mots de passe Postgres avant toute mise en ligne, et à passer le service
    `nginx` derrière un certificat HTTPS (ex: via un reverse proxy Traefik/Caddy ou Let's Encrypt +
    Certbot en amont de la stack).
-6. **Upload de fichiers depuis le dashboard instructeur** : le formulaire de création de cours ajoute
-   des vidéos par URL pour aller vite ; un upload multipart de fichier vidéo direct (comme pour les
-   PDF) est facile à ajouter sur le même modèle que `NewPdfPage`.
+6. **Stockage média en production** : l’upload direct des vidéos, PDF et images de couverture est
+   disponible. Pour une mise en production à charge importante, remplacer le stockage disque local par
+   un stockage objet/CDN (S3, Backblaze, Bunny, etc.) et configurer un serveur TURN pour les séances
+   WebRTC lorsque les participants sont derrière des NAT/pare-feu stricts.
 
 ---
 
@@ -274,7 +279,7 @@ simplifiés pour rester un point de départ clair. À finaliser avant lancement 
 - Notifications (email + in-app) sur achat, nouveau commentaire, réponse instructeur.
 - Recherche full-text avancée (Algolia/Meilisearch), comme dans le projet Laravel d'origine.
 - Chat en direct temps réel (WebSocket / Django Channels) — le modèle `ChatMessage` est déjà prêt.
-- Upload vidéo direct + génération automatique de la durée (ffprobe) au lieu de la saisir à la main.
+- Stockage objet/CDN pour les médias volumineux et supervision de la qualité des séances WebRTC.
 - Système d'abonnement "Premium" (accès illimité à un catalogue) en complément de l'achat à l'unité.
 
 Bon lancement avec **LearnEas** 🚀

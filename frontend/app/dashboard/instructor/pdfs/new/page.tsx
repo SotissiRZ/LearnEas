@@ -6,7 +6,6 @@ import { Loader2, Save, Upload } from "lucide-react";
 import { api, apiUploadWithProgress, ApiError } from "@/lib/api";
 import { Category } from "@/types";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
-import DashboardNav from "@/components/dashboard/DashboardNav";
 import GuardScreen from "@/components/ui/GuardScreen";
 import UploadProgressBar from "@/components/ui/UploadProgressBar";
 
@@ -65,8 +64,7 @@ export default function NewPdfPage() {
   if (!ready) return <GuardScreen />;
 
   return (
-    <div className="container-app py-10">
-      <DashboardNav role="instructor" />
+    <div className="min-w-0">
       <div className="card max-w-2xl p-6">
         <h1 className="mb-1 text-xl font-bold">Publier un nouveau PDF</h1>
         <p className="mb-6 text-sm text-gray-500">Vendu indépendamment, dans votre propre catalogue PDF.</p>

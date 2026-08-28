@@ -1,5 +1,7 @@
 from rest_framework import viewsets, permissions, filters
-from django.db.models import Avg, Count
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from django.db.models import Avg, Count, Q
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Review, LessonComment
 from .serializers import ReviewSerializer, LessonCommentSerializer
@@ -21,6 +23,18 @@ class ReviewViewSet(viewsets.ModelViewSet):
     search_fields = ["comment", "user__email", "user__first_name", "user__last_name", "course__title", "pdf_product__title"]
     ordering_fields = ["created_at", "rating"]
     ordering = ["-created_at"]
+
+    @action(detail=False, methods=["get"], permission_classes=[permissions.IsAuthenticated], url_path="mine")
+    def mine(self, request):
+        if request.user.role not in ("instructor", "admin"):
+            return Response({"detail": "Compte instructeur requis."}, status=403)
+        qs = self.get_queryset().filter(
+            Q(course__instructor=request.user) | Q(pdf_product__instructor=request.user)
+        ).distinct()
+        qs = self.filter_queryset(qs)
+        page = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page if page is not None else qs, many=True)
+        return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
 
     def perform_destroy(self, instance):
         course = instance.course
@@ -44,3 +58,15 @@ class LessonCommentViewSet(viewsets.ModelViewSet):
     search_fields = ["content", "user__email", "user__first_name", "user__last_name", "lesson__title"]
     ordering_fields = ["created_at"]
     ordering = ["created_at"]
+
+    @action(detail=False, methods=["get"], permission_classes=[permissions.IsAuthenticated], url_path="mine")
+    def mine(self, request):
+        if request.user.role not in ("instructor", "admin"):
+            return Response({"detail": "Compte instructeur requis."}, status=403)
+        qs = LessonComment.objects.filter(
+            parent__isnull=True, lesson__section__course__instructor=request.user
+        ).select_related("user", "lesson", "lesson__section", "lesson__section__course").prefetch_related("replies__user")
+        qs = self.filter_queryset(qs)
+        page = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page if page is not None else qs, many=True)
+        return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)

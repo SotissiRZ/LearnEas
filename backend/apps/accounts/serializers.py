@@ -27,7 +27,7 @@ class UserPublicSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    avatar = RelativeImageField(read_only=True)
+    avatar = RelativeImageField(required=False, allow_null=True)
 
     class Meta:
         model = User

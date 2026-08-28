@@ -120,6 +120,18 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
             Q(formation__instructor=user) | Q(formation__co_instructor=user) | Q(formation_id__in=enrolled_ids)
         ).distinct()
 
+    @action(detail=False, methods=["get"], permission_classes=[permissions.IsAuthenticated], url_path="mine")
+    def mine(self, request):
+        if request.user.role not in ("instructor", "admin"):
+            return Response({"detail": "Compte instructeur requis."}, status=403)
+        qs = FormationSession.objects.select_related(
+            "formation__instructor", "formation__co_instructor"
+        ).filter(Q(formation__instructor=request.user) | Q(formation__co_instructor=request.user)).distinct()
+        qs = self.filter_queryset(qs)
+        page = self.paginate_queryset(qs)
+        serializer = FormationSessionSerializer(page if page is not None else qs, many=True, context=self.get_serializer_context())
+        return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
+
     def get_serializer_class(self):
         if self.action in ("create", "update", "partial_update"):
             return FormationSessionWriteSerializer

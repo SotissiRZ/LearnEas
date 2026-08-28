@@ -148,3 +148,60 @@ class InstructorApplicationRegressionTests(APITestCase):
         self.assertEqual(second.status_code, status.HTTP_201_CREATED, second.data)
         self.assertEqual(second.data["id"], first.data["id"])
         self.assertEqual(second.data["status"], "pending")
+
+
+class InstructorWorkspaceRegressionTests(APITestCase):
+    def setUp(self):
+        from apps.catalog.models import Category, Course
+        from apps.enrollments.models import CourseEnrollment
+        from apps.reviews.models import Review
+
+        self.instructor = User.objects.create_user(
+            username="instructor_workspace", email="instructor-workspace@example.com",
+            password="passpass123", role=User.Role.INSTRUCTOR,
+        )
+        self.other_instructor = User.objects.create_user(
+            username="other_workspace", email="other-workspace@example.com",
+            password="passpass123", role=User.Role.INSTRUCTOR,
+        )
+        self.student = User.objects.create_user(
+            username="student_workspace", email="student-workspace@example.com",
+            password="passpass123", role=User.Role.STUDENT,
+        )
+        category = Category.objects.create(name="Workspace")
+        self.course = Course.objects.create(
+            instructor=self.instructor, category=category, title="Cours instructeur",
+            description="Test", published=True,
+        )
+        other_course = Course.objects.create(
+            instructor=self.other_instructor, category=category, title="Cours autre",
+            description="Test", published=True,
+        )
+        CourseEnrollment.objects.create(user=self.student, course=self.course, progress_percent=45)
+        Review.objects.create(user=self.student, course=self.course, rating=5, comment="Excellent")
+        # Ce contenu ne doit jamais apparaître dans l'espace du premier instructeur.
+        CourseEnrollment.objects.create(user=self.student, course=other_course)
+        self.client.force_authenticate(self.instructor)
+
+    def test_instructor_overview_and_students_are_scoped_to_owner(self):
+        overview = self.client.get("/api/auth/instructor/overview/")
+        self.assertEqual(overview.status_code, status.HTTP_200_OK, overview.data)
+        self.assertEqual(overview.data["courses"], 1)
+        self.assertEqual(overview.data["unique_students"], 1)
+        self.assertEqual(overview.data["reviews_count"], 1)
+
+        students = self.client.get("/api/auth/instructor/students/")
+        self.assertEqual(students.status_code, status.HTTP_200_OK, students.data)
+        self.assertEqual(students.data["unique_students"], 1)
+        self.assertEqual(len(students.data["results"]), 1)
+        self.assertEqual(students.data["results"][0]["content_title"], self.course.title)
+
+    def test_authenticated_user_can_change_password(self):
+        response = self.client.post(
+            "/api/auth/change-password/",
+            {"current_password": "passpass123", "new_password": "new-pass-1234", "new_password2": "new-pass-1234"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.instructor.refresh_from_db()
+        self.assertTrue(self.instructor.check_password("new-pass-1234"))

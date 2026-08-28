@@ -46,10 +46,12 @@ class ReviewSerializer(serializers.ModelSerializer):
 class LessonCommentSerializer(serializers.ModelSerializer):
     user = UserPublicSerializer(read_only=True)
     replies = serializers.SerializerMethodField()
+    lesson_title = serializers.CharField(source="lesson.title", read_only=True)
+    course_title = serializers.CharField(source="lesson.section.course.title", read_only=True)
 
     class Meta:
         model = LessonComment
-        fields = ["id", "user", "lesson", "parent", "content", "created_at", "replies"]
+        fields = ["id", "user", "lesson", "lesson_title", "course_title", "parent", "content", "created_at", "replies"]
         read_only_fields = ["user"]
 
     def get_replies(self, obj):

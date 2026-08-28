@@ -91,3 +91,24 @@ class InteractiveFormationRegressionTests(APITestCase):
         joined = self.client.post(f"/api/sessions/{session.id}/join/", {}, format="json")
         self.assertEqual(joined.status_code, status.HTTP_201_CREATED, joined.data)
 
+
+    def test_instructor_mine_sessions_excludes_sessions_from_other_instructors(self):
+        session = FormationSession.objects.create(
+            formation=self.formation, session_number=1, scheduled_at=timezone.now(), duration_minutes=75
+        )
+        other = User.objects.create_user(
+            username="other_live_instructor", email="other-live@example.com", password="passpass123",
+            role=User.Role.INSTRUCTOR,
+        )
+        other_formation = InteractiveFormation.objects.create(
+            instructor=other, title="Autre atelier", description="Autre", price=0,
+            num_sessions=1, session_duration_minutes=60, max_students=5,
+        )
+        FormationSession.objects.create(
+            formation=other_formation, session_number=1, scheduled_at=timezone.now(), duration_minutes=60
+        )
+        self.client.force_authenticate(self.organizer)
+        response = self.client.get("/api/sessions/mine/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        rows = response.data.get("results", response.data)
+        self.assertEqual([row["id"] for row in rows], [session.id])

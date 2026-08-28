@@ -2,6 +2,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Sum, Count
+from django.db.models.functions import TruncMonth
 from django.utils import timezone
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
@@ -250,6 +251,36 @@ class InstructorFinanceView(APIView):
             instructor=request.user, order__status=Order.Status.PAID
         ).select_related("order", "course", "pdf_product", "formation").order_by("-order__paid_at")[:10]
         profile = PayoutProfile.objects.filter(instructor=request.user).first()
+        paid_items = OrderItem.objects.filter(instructor=request.user, order__status=Order.Status.PAID)
+        monthly = (
+            paid_items.exclude(order__paid_at__isnull=True)
+            .annotate(month=TruncMonth("order__paid_at"))
+            .values("month")
+            .annotate(gross=Sum("unit_price"), earning=Sum("instructor_earning_amount"), sales=Count("id"))
+            .order_by("month")
+        )
+        top_rows = []
+        for item_type in (OrderItem.ItemType.COURSE, OrderItem.ItemType.PDF, OrderItem.ItemType.FORMATION):
+            field = {
+                OrderItem.ItemType.COURSE: "course__title",
+                OrderItem.ItemType.PDF: "pdf_product__title",
+                OrderItem.ItemType.FORMATION: "formation__title",
+            }[item_type]
+            id_field = {
+                OrderItem.ItemType.COURSE: "course_id",
+                OrderItem.ItemType.PDF: "pdf_product_id",
+                OrderItem.ItemType.FORMATION: "formation_id",
+            }[item_type]
+            rows = (paid_items.filter(item_type=item_type)
+                .values(id_field, field)
+                .annotate(sales=Count("id"), gross=Sum("unit_price"), earning=Sum("instructor_earning_amount")))
+            for row in rows:
+                top_rows.append({
+                    "id": row[id_field], "type": item_type, "title": row[field] or "",
+                    "sales": row["sales"], "gross": str(row["gross"] or 0),
+                    "earning": str(row["earning"] or 0),
+                })
+        top_rows.sort(key=lambda r: (r["sales"], Decimal(r["gross"])), reverse=True)
         return Response({
             **{k: str(v) if isinstance(v, Decimal) else v for k, v in totals.items()},
             "commission_percent": float(_platform_finance_settings()[0]),
@@ -266,6 +297,16 @@ class InstructorFinanceView(APIView):
                 }
                 for item in recent
             ],
+            "monthly_revenue": [
+                {
+                    "month": row["month"],
+                    "gross": str(row["gross"] or 0),
+                    "earning": str(row["earning"] or 0),
+                    "sales": row["sales"],
+                }
+                for row in monthly
+            ],
+            "top_content": top_rows[:10],
         })
 
 

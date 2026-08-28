@@ -5,7 +5,6 @@ import { PlusCircle, Trash2, PlayCircle, FileText, Eye, EyeOff, Loader2, Upload,
 import { api, apiUploadWithProgress, ApiError } from "@/lib/api";
 import { Course } from "@/types";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
-import DashboardNav from "@/components/dashboard/DashboardNav";
 import GuardScreen from "@/components/ui/GuardScreen";
 import UploadProgressBar from "@/components/ui/UploadProgressBar";
 import PdfViewer from "@/components/ui/PdfViewer";
@@ -105,8 +104,7 @@ export default function ManageCoursePage({ params }: { params: { id: string } })
   const canPublish = (course.sections?.length || 0) > 0 && course.total_lessons > 0;
 
   return (
-    <div className="container-app py-10">
-      <DashboardNav role="instructor" />
+    <div className="min-w-0">
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>

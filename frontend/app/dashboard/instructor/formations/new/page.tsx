@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { ImagePlus, Loader2, Save } from "lucide-react";
 import { apiUploadWithProgress, ApiError } from "@/lib/api";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
-import DashboardNav from "@/components/dashboard/DashboardNav";
 import GuardScreen from "@/components/ui/GuardScreen";
 import UploadProgressBar from "@/components/ui/UploadProgressBar";
 
@@ -37,7 +36,7 @@ export default function NewFormationPage() {
   }
 
   if (!ready) return <GuardScreen />;
-  return <div className="container-app py-10"><DashboardNav role="instructor" /><div className="card max-w-2xl p-6">
+  return <div className="min-w-0"><div className="card max-w-2xl p-6">
     <h1 className="mb-1 text-xl font-bold">Créer une formation interactive</h1>
     <p className="mb-6 text-sm text-gray-500">Les séances ont lieu directement dans une salle LearnEas. Après création, vous planifiez simplement les dates et heures.</p>
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
