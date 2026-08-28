@@ -1,22 +1,54 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import {
   Search, ShoppingCart, GraduationCap, ChevronDown, LayoutDashboard,
   BookOpen, FileText, LogOut, User as UserIcon, Menu, X, MessageCircle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useCart } from "@/hooks/useCart";
+import { api } from "@/lib/api";
 
 export default function Navbar() {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, logout } = useAuth();
   const items = useCart((s) => s.items);
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [platform, setPlatform] = useState({ site_name: "LearnEas", registration_enabled: true });
+  const profileMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setMenuOpen(false);
+    setMobileOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    api.get<{ site_name: string; registration_enabled: boolean }>("/auth/platform-settings/")
+      .then((data) => setPlatform({ site_name: data.site_name || "LearnEas", registration_enabled: data.registration_enabled }))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    function closeOutside(event: MouseEvent) {
+      if (menuOpen && profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    function closeEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", closeOutside);
+    document.addEventListener("keydown", closeEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOutside);
+      document.removeEventListener("keydown", closeEscape);
+    };
+  }, [menuOpen]);
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -34,7 +66,7 @@ export default function Navbar() {
             <GraduationCap size={20} />
           </div>
           <span className="text-lg font-extrabold tracking-tight">
-            Learn<span className="text-brand-600">Eas</span>
+            {platform.site_name === "LearnEas" ? <>Learn<span className="text-brand-600">Eas</span></> : platform.site_name}
           </span>
         </Link>
 
@@ -68,12 +100,12 @@ export default function Navbar() {
           {!user && (
             <div className="hidden items-center gap-2 sm:flex">
               <Link href="/login" className="btn-ghost">Connexion</Link>
-              <Link href="/register" className="btn-primary">S'inscrire</Link>
+              {platform.registration_enabled && <Link href="/register" className="btn-primary">S'inscrire</Link>}
             </div>
           )}
 
           {user && (
-            <div className="relative hidden sm:block">
+            <div ref={profileMenuRef} className="relative hidden sm:block">
               <button
                 onClick={() => setMenuOpen((v) => !v)}
                 className="flex items-center gap-2 rounded-full border border-gray-200 py-1 pl-1 pr-2 hover:bg-gray-50"
@@ -87,19 +119,19 @@ export default function Navbar() {
                 <div className="absolute right-0 top-12 w-56 rounded-xl border border-gray-100 bg-white p-2 shadow-soft">
                   <p className="px-2 py-1 text-sm font-semibold">{user.first_name || user.username}</p>
                   <p className="px-2 pb-2 text-xs capitalize text-gray-500">{user.role}</p>
-                  <Link href={dashboardHref} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
+                  <Link href={dashboardHref} onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
                     <LayoutDashboard size={16} /> Tableau de bord
                   </Link>
-                  <Link href="/dashboard/student" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
+                  <Link href="/dashboard/student" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
                     <BookOpen size={16} /> Mes cours
                   </Link>
-                  <Link href="/dashboard/student/pdfs" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
+                  <Link href="/dashboard/student/pdfs" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
                     <FileText size={16} /> Mes PDF
                   </Link>
-                  <Link href="/dashboard/messages" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
+                  <Link href="/dashboard/messages" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
                     <MessageCircle size={16} /> Messages
                   </Link>
-                  <Link href="/dashboard/student/profile" className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
+                  <Link href="/dashboard/student/profile" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
                     <UserIcon size={16} /> Profil
                   </Link>
                   <button
@@ -138,7 +170,7 @@ export default function Navbar() {
             {!user ? (
               <>
                 <Link href="/login" className="rounded-lg px-3 py-2 hover:bg-gray-50">Connexion</Link>
-                <Link href="/register" className="rounded-lg px-3 py-2 font-semibold text-brand-700">S'inscrire</Link>
+                {platform.registration_enabled && <Link href="/register" className="rounded-lg px-3 py-2 font-semibold text-brand-700">S'inscrire</Link>}
               </>
             ) : (
               <Link href={dashboardHref} className="rounded-lg px-3 py-2 font-semibold text-brand-700">Tableau de bord</Link>

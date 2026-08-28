@@ -1,12 +1,11 @@
 import { notFound } from "next/navigation";
-import { FileText, Download, Globe, BarChart3, Lock, CheckCircle2 } from "lucide-react";
-import { api, formatPrice } from "@/lib/api";
+import { FileText, Globe, BarChart3 } from "lucide-react";
+import { api } from "@/lib/api";
 import { PDFProduct } from "@/types";
 import RatingStars from "@/components/ui/RatingStars";
 import LevelBadge from "@/components/ui/LevelBadge";
-import { AddPdfToCartButton } from "@/components/course/AddToCartButtons";
 import ContactInstructorButton from "@/components/chat/ContactInstructorButton";
-import PdfViewer from "@/components/ui/PdfViewer";
+import PdfAccessCard from "@/components/course/PdfAccessCard";
 
 async function getPdf(slug: string): Promise<PDFProduct | null> {
   try {
@@ -20,7 +19,6 @@ export default async function PdfDetailPage({ params }: { params: { slug: string
   const pdf = await getPdf(params.slug);
   if (!pdf) notFound();
 
-  const unlocked = pdf.is_free || pdf.is_purchased;
 
   return (
     <div className="container-app grid grid-cols-1 gap-10 py-10 lg:grid-cols-[1fr_380px]">
@@ -58,43 +56,7 @@ export default async function PdfDetailPage({ params }: { params: { slug: string
       </div>
 
       <div>
-        <div className="card sticky top-24 overflow-hidden">
-          <div className="flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br from-amber-50 to-orange-50">
-            {pdf.cover_image ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={pdf.cover_image} alt={pdf.title} className="h-full w-full object-cover" />
-            ) : (
-              <FileText size={56} className="text-amber-300" />
-            )}
-          </div>
-          <div className="p-5">
-            <span className="text-3xl font-extrabold">{formatPrice(pdf.price)}</span>
-
-            <div className="mt-4">
-              {unlocked ? (
-                pdf.file ? (
-                  <PdfViewer url={pdf.file} title={pdf.title} />
-                ) : (
-                  <p className="text-sm text-gray-500">Fichier indisponible.</p>
-                )
-              ) : (
-                <AddPdfToCartButton pdf={pdf} />
-              )}
-            </div>
-
-            {!unlocked && pdf.preview_file && (
-              <div className="mt-2">
-                <PdfViewer url={pdf.preview_file} title={`${pdf.title} — extrait gratuit`} />
-              </div>
-            )}
-
-            <div className="mt-5 flex flex-col gap-2 border-t border-gray-100 pt-4 text-sm text-gray-600">
-              <span className="flex items-center gap-2"><CheckCircle2 size={16} /> Téléchargement illimité après achat</span>
-              <span className="flex items-center gap-2"><CheckCircle2 size={16} /> Mises à jour incluses</span>
-              <span className="flex items-center gap-2"><CheckCircle2 size={16} /> Paiement sécurisé</span>
-            </div>
-          </div>
-        </div>
+        <PdfAccessCard initialPdf={pdf} />
       </div>
     </div>
   );

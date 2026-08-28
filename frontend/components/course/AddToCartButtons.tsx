@@ -1,51 +1,34 @@
 "use client";
 
 import { useRouter, usePathname } from "next/navigation";
-import { ShoppingCart, Check, LogIn } from "lucide-react";
+import { ShoppingCart, Check } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { useAuth } from "@/hooks/useAuth";
 import { Course, PDFProduct } from "@/types";
 
 /**
  * Un achat doit toujours être rattaché à un compte (c'est ce compte qui recevra l'accès
- * après paiement). On exige donc la connexion AVANT d'ajouter quoi que ce soit au panier,
- * plutôt que de laisser un panier "anonyme" dont on ne saurait pas à qui l'attribuer.
+ * après paiement). Le bouton reste TOUJOURS le même (achat), qu'on soit connecté ou non :
+ * si l'utilisateur n'est pas connecté, le clic redirige vers /login puis revient ici,
+ * plutôt que de changer l'apparence/le texte du bouton selon l'état de connexion.
  */
-function useRequireAuthForCart() {
+export function AddCourseToCartButton({ course }: { course: Course }) {
+  const { items, addCourse } = useCart();
   const { user, hydrated } = useAuth();
+  const inCart = items.some((i) => i.type === "course" && i.id === course.id);
   const router = useRouter();
   const pathname = usePathname();
 
-  function requireAuth(action: () => void) {
+  function handleClick() {
     if (!hydrated) return;
-    if (!user) {
-      router.push(`/login?next=${encodeURIComponent(pathname)}`);
-      return;
-    }
-    action();
-  }
-
-  return requireAuth;
-}
-
-export function AddCourseToCartButton({ course }: { course: Course }) {
-  const { items, addCourse } = useCart();
-  const { user } = useAuth();
-  const requireAuth = useRequireAuthForCart();
-  const inCart = items.some((i) => i.type === "course" && i.id === course.id);
-  const router = useRouter();
-
-  if (!user) {
-    return (
-      <button onClick={() => requireAuth(() => {})} className="btn-outline w-full">
-        <LogIn size={18} /> Se connecter pour acheter
-      </button>
-    );
+    if (inCart) { router.push("/cart"); return; }
+    if (!user) { router.push(`/login?next=${encodeURIComponent(pathname)}`); return; }
+    addCourse(course);
   }
 
   return (
     <button
-      onClick={() => (inCart ? router.push("/cart") : requireAuth(() => addCourse(course)))}
+      onClick={handleClick}
       className={inCart ? "btn-outline w-full !border-brand-600 !text-brand-700" : "btn-primary w-full"}
     >
       {inCart ? <Check size={18} /> : <ShoppingCart size={18} />}
@@ -56,22 +39,21 @@ export function AddCourseToCartButton({ course }: { course: Course }) {
 
 export function AddPdfToCartButton({ pdf }: { pdf: PDFProduct }) {
   const { items, addPdf } = useCart();
-  const { user } = useAuth();
-  const requireAuth = useRequireAuthForCart();
+  const { user, hydrated } = useAuth();
   const inCart = items.some((i) => i.type === "pdf" && i.id === pdf.id);
   const router = useRouter();
+  const pathname = usePathname();
 
-  if (!user) {
-    return (
-      <button onClick={() => requireAuth(() => {})} className="btn-outline w-full">
-        <LogIn size={18} /> Se connecter pour acheter
-      </button>
-    );
+  function handleClick() {
+    if (!hydrated) return;
+    if (inCart) { router.push("/cart"); return; }
+    if (!user) { router.push(`/login?next=${encodeURIComponent(pathname)}`); return; }
+    addPdf(pdf);
   }
 
   return (
     <button
-      onClick={() => (inCart ? router.push("/cart") : requireAuth(() => addPdf(pdf)))}
+      onClick={handleClick}
       className={inCart ? "btn-outline w-full !border-brand-600 !text-brand-700" : "btn-primary w-full"}
     >
       {inCart ? <Check size={18} /> : <ShoppingCart size={18} />}

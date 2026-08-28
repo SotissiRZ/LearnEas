@@ -6,7 +6,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.enrollments.models import CourseEnrollment, PDFPurchase
 from .models import Category, Course, Section, Lesson, PDFResource, PDFProduct
-from .permissions import IsInstructorOrAdmin
+from .permissions import IsInstructorOrAdmin, IsInstructorOrAdminOnly, IsAdminRoleOrReadOnly
 from .serializers import (
     CategorySerializer, CourseListSerializer, CourseDetailSerializer, CourseWriteSerializer,
     SectionWriteSerializer, LessonWriteSerializer, PDFResourceWriteSerializer,
@@ -17,7 +17,7 @@ from .serializers import (
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    permission_classes = [permissions.IsAdminUser | permissions.IsAuthenticatedOrReadOnly]
+    permission_classes = [IsAdminRoleOrReadOnly]
     lookup_field = "slug"
     pagination_class = None  # toujours renvoyée en liste complète (utilisée pour les filtres/menus)
 
@@ -77,7 +77,7 @@ class CourseViewSet(viewsets.ModelViewSet):
         """Cours créés par l'instructeur connecté."""
         qs = self.get_queryset().filter(instructor=request.user)
         page = self.paginate_queryset(qs)
-        serializer = CourseListSerializer(page or qs, many=True, context=self.get_serializer_context())
+        serializer = CourseListSerializer(page if page is not None else qs, many=True, context=self.get_serializer_context())
         return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
 
     @action(detail=False, methods=["get"])
@@ -88,24 +88,33 @@ class CourseViewSet(viewsets.ModelViewSet):
 
 
 class SectionViewSet(viewsets.ModelViewSet):
-    queryset = Section.objects.all()
     serializer_class = SectionWriteSerializer
-    permission_classes = [IsInstructorOrAdmin]
+    permission_classes = [IsInstructorOrAdminOnly]
     filterset_fields = ["course"]
+
+    def get_queryset(self):
+        qs = Section.objects.select_related("course__instructor")
+        return qs if self.request.user.role == "admin" else qs.filter(course__instructor=self.request.user)
 
 
 class LessonViewSet(viewsets.ModelViewSet):
-    queryset = Lesson.objects.all()
     serializer_class = LessonWriteSerializer
-    permission_classes = [IsInstructorOrAdmin]
+    permission_classes = [IsInstructorOrAdminOnly]
     filterset_fields = ["section"]
+
+    def get_queryset(self):
+        qs = Lesson.objects.select_related("section__course__instructor")
+        return qs if self.request.user.role == "admin" else qs.filter(section__course__instructor=self.request.user)
 
 
 class PDFResourceViewSet(viewsets.ModelViewSet):
-    queryset = PDFResource.objects.all()
     serializer_class = PDFResourceWriteSerializer
-    permission_classes = [IsInstructorOrAdmin]
+    permission_classes = [IsInstructorOrAdminOnly]
     filterset_fields = ["course"]
+
+    def get_queryset(self):
+        qs = PDFResource.objects.select_related("course__instructor")
+        return qs if self.request.user.role == "admin" else qs.filter(course__instructor=self.request.user)
 
 
 class PDFProductViewSet(viewsets.ModelViewSet):
@@ -122,8 +131,10 @@ class PDFProductViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.is_authenticated and user.role == "admin":
             return qs
-        if user.is_authenticated and user.role == "instructor" and self.action == "my_pdfs":
-            return qs.filter(instructor=user)
+        if user.is_authenticated and user.role == "instructor":
+            if self.action == "my_pdfs":
+                return qs.filter(instructor=user)
+            return qs.filter(Q(published=True) | Q(instructor=user))
         return qs.filter(published=True)
 
     def get_serializer_class(self):
@@ -142,5 +153,5 @@ class PDFProductViewSet(viewsets.ModelViewSet):
     def my_pdfs(self, request):
         qs = self.get_queryset().filter(instructor=request.user)
         page = self.paginate_queryset(qs)
-        serializer = PDFProductListSerializer(page or qs, many=True, context=self.get_serializer_context())
+        serializer = PDFProductDetailSerializer(page if page is not None else qs, many=True, context=self.get_serializer_context())
         return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)

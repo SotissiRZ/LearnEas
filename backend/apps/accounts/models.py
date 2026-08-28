@@ -30,3 +30,67 @@ class User(AbstractUser):
     @property
     def is_student(self):
         return self.role == self.Role.STUDENT
+
+
+class PlatformSettings(models.Model):
+    """Paramètres administrables de la plateforme.
+
+    Une seule ligne (pk=1) est utilisée. Les valeurs d'environnement restent des
+    valeurs de repli pour les installations existantes.
+    """
+    site_name = models.CharField(max_length=120, default="LearnEas")
+    support_email = models.EmailField(default="support@learneas.com")
+    registration_enabled = models.BooleanField(default=True)
+    instructor_applications_enabled = models.BooleanField(default=True)
+    platform_commission_percent = models.PositiveSmallIntegerField(default=15)
+    minimum_payout_amount = models.DecimalField(max_digits=10, decimal_places=2, default=100)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Paramètres de la plateforme"
+        verbose_name_plural = "Paramètres de la plateforme"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        self.platform_commission_percent = min(max(int(self.platform_commission_percent), 0), 100)
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls):
+        from django.conf import settings
+        defaults = {
+            "platform_commission_percent": getattr(settings, "PLATFORM_COMMISSION_PERCENT", 15),
+            "minimum_payout_amount": getattr(settings, "MINIMUM_PAYOUT_AMOUNT", 100),
+        }
+        obj, _ = cls.objects.get_or_create(pk=1, defaults=defaults)
+        return obj
+
+    def __str__(self):
+        return self.site_name
+
+class InstructorApplication(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "En attente"
+        APPROVED = "approved", "Approuvée"
+        REJECTED = "rejected", "Refusée"
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="instructor_application")
+    domain = models.CharField(max_length=150)
+    years_experience = models.PositiveIntegerField(default=0)
+    headline = models.CharField(max_length=255, blank=True)
+    message = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
+    review_note = models.TextField(blank=True)
+    reviewed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="reviewed_instructor_applications"
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user.email} — {self.get_status_display()}"
+

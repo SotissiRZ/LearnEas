@@ -35,6 +35,46 @@ vers le frontend Next.js.
 
 ---
 
+## 👤 Comptes de test / démonstration
+
+> Ces comptes sont destinés uniquement au développement et aux démonstrations. Ne pas utiliser ces
+> mots de passe en production.
+
+Les utilisateurs de test sont créés par la commande Django `seed_demo`.
+
+| Rôle | Nom | Username | Email | Mot de passe |
+|---|---|---|---|---|
+| Administrateur | Admin LearnEas | `admin` | `admin@learneas.com` | `admin1234` |
+| Instructeur | Sarah Benali | `sarah_dev` | `sarah@learneas.com` | `instructor1234` |
+| Instructeur | Koffi Adjei | `koffi_data` | `koffi@learneas.com` | `instructor1234` |
+| Instructeur | Amina Diop | `amina_design` | `amina@learneas.com` | `instructor1234` |
+| Étudiant | Fatou Ndiaye | `student_fatou` | `fatou@learneas.com` | `student1234` |
+| Étudiant | Jean Mbeki | `student_jean` | `jean@learneas.com` | `student1234` |
+| Étudiant | Aïcha Traoré | `student_aicha` | `aicha@learneas.com` | `student1234` |
+
+### Créer / recréer les données de démonstration
+
+Avec Docker :
+
+```bash
+docker compose exec backend python manage.py seed_demo
+```
+
+Sans Docker, depuis `backend/` :
+
+```bash
+python manage.py seed_demo
+```
+
+En développement avec `docker-compose.dev.yml`, `SEED_DEMO=true` est déjà activé et les comptes sont
+créés automatiquement au démarrage. Avec `docker-compose.yml`, la valeur par défaut est
+`SEED_DEMO=false` : utilisez la commande ci-dessus ou définissez `SEED_DEMO=true` dans `.env`.
+
+Connexion frontend : **http://localhost/login**  
+Admin Django : **http://localhost/admin**
+
+---
+
 ## ✅ Fonctionnalités implémentées (testées de bout en bout)
 
 ### Catalogue
@@ -59,13 +99,34 @@ vers le frontend Next.js.
 
 ### Comptes & rôles
 - 3 rôles : étudiant, instructeur, administrateur.
-- Un étudiant peut devenir instructeur directement depuis son dashboard.
+- Un étudiant peut déposer une **demande pour devenir instructeur** depuis son dashboard ; le rôle n’est accordé qu’après validation explicite par un administrateur.
 - Dashboards dédiés :
   - **Étudiant** : mes cours, ma progression, mes PDF, mon profil, mes certificats.
   - **Instructeur** : aperçu (stats), gestion des cours (créer/ajouter sections+vidéos/publier),
     gestion des PDF (créer + upload).
-  - **Admin** : vue d'ensemble des commandes/revenus, lien direct vers l'admin Django (gestion
-    complète utilisateurs/contenu).
+  - **Admin** : back-office complet avec sidebar dédiée : aperçu, utilisateurs, demandes instructeur, contenus, commandes,
+    versements instructeurs, séances live, catégories, FAQ/avis et paramètres de la plateforme.
+    L'admin peut créer/désactiver des comptes, gérer les rôles, approuver/refuser les demandes instructeur, modérer le catalogue et les avis. Tous les KPI
+    sont navigables vers leur détail, les listes sont filtrables/paginées et les rapports de présence
+    s'ouvrent dans une fenêtre dédiée.
+
+
+### Paramétrage administrateur
+
+Depuis **Tableau de bord → Administration → Paramètres**, un administrateur peut modifier sans
+redéploiement :
+
+- le nom de la plateforme et l'email d'assistance ;
+- l'ouverture/fermeture des nouvelles inscriptions ;
+- l'autorisation des demandes pour devenir instructeur ;
+- le pourcentage de commission de la plateforme sur les nouvelles ventes ;
+- le montant minimum autorisé pour une demande de versement instructeur.
+
+Les paramètres financiers enregistrés en base remplacent les valeurs d'environnement pour les
+nouvelles opérations. Les anciennes lignes de vente gardent les montants de commission déjà
+enregistrés afin de préserver l'historique comptable.
+
+Une demande instructeur reste au statut **En attente** tant qu’un administrateur ne l’a pas approuvée ; le simple dépôt ne change plus le rôle du compte.
 
 ### Autres
 - Avis & notes (étoiles) sur cours et PDF, recalcul automatique de la moyenne.
@@ -134,12 +195,10 @@ python manage.py seed_demo        # crée des données de démonstration + un ad
 python manage.py runserver        # http://localhost:8000
 ```
 
-Comptes créés par `seed_demo` :
-- Admin : `admin@learneas.com` / `admin1234`
-- Instructeurs : `sarah@learneas.com`, `koffi@learneas.com`, `amina@learneas.com` (mot de passe `instructor1234`)
-- Étudiants : `fatou@learneas.com`, `jean@learneas.com`, `aicha@learneas.com` (mot de passe `student1234`)
+Les identifiants complets des comptes de test sont documentés dans la section
+[**Comptes de test / démonstration**](#-comptes-de-test--démonstration) ci-dessus.
 
-Voir [`CHANGELOG.md`](./CHANGELOG.md) pour le détail complet des comptes et des données de démo.
+Voir [`CHANGELOG.md`](./CHANGELOG.md) pour le détail des données de démonstration.
 
 Admin Django : http://localhost:8000/admin
 Documentation API (Swagger) : http://localhost:8000/api/docs
@@ -159,10 +218,10 @@ npm run dev                       # http://localhost:3000
 
 | App | Modèles clés |
 |---|---|
-| `accounts` | `User` (rôle admin/instructor/student) |
+| `accounts` | `User` (rôle admin/instructor/student), `PlatformSettings` |
 | `catalog` | `Category`, `Course`, `Section`, `Lesson`, `PDFResource` (inclus dans un cours), `PDFProduct` (vendu seul) |
 | `enrollments` | `CourseEnrollment`, `LessonProgress`, `PDFPurchase`, `Wishlist` |
-| `payments` | `Order`, `OrderItem` |
+| `payments` | `Order`, `OrderItem`, `PayoutProfile`, `InstructorPayout` |
 | `reviews` | `Review`, `LessonComment` |
 | `faq` | `FAQ` |
 | `chat` | `ChatMessage` |

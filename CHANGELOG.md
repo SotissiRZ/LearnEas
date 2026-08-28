@@ -153,3 +153,33 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Envoi d'email réel en production (le lien de réinitialisation de mot de passe s'affiche dans les
   logs backend en développement ; configurer `EMAIL_HOST`/`EMAIL_HOST_USER` en prod).
 - Interface de gestion des utilisateurs pour l'admin (actuellement via `/admin` Django uniquement).
+
+## 2026-08-28 — Back-office administrateur v4
+
+- Ajout d'une sidebar d'administration persistante : Aperçu, Utilisateurs, Contenus, Commandes,
+  Versements, Séances live, Catégories, FAQ/Avis et Paramètres.
+- Tous les KPI de l'aperçu sont cliquables et conduisent vers la vue détaillée correspondante.
+- Correction de la navigation `?tab=...` : les anciens boutons Aperçu/Utilisateurs/Commandes
+  modifiaient l'URL sans changer réellement le contenu affiché.
+- Cartes « Versements instructeurs » et « Contrôle des séances » limitées à 310 px avec zone
+  interne scrollable pour conserver un dashboard compact.
+- Le rapport « Participants & durées » s'ouvre désormais dans une modale avec état de chargement,
+  gestion des erreurs, organisateurs, heures d'entrée/sortie et temps de présence agrégé.
+- Gestion utilisateurs côté back-office : création de comptes, recherche, filtre rôle/état, changement
+  de rôle et activation/désactivation, avec protection empêchant la suppression du dernier administrateur actif.
+- Gestion éditoriale : publication/dépublication/suppression des cours, PDF et formations, mise en avant
+  des cours/PDF réservée à l'administrateur, gestion des catégories et de la FAQ.
+- Modération des avis avec recalcul de la note moyenne après suppression.
+- Gestion des commandes : recherche/filtres, détail d'une facture, réconciliation du statut payé
+  et réparation des droits d'accès.
+- Gestion des versements : filtres, destination de paiement, validation ou échec avec référence/note.
+- Ajout de `PlatformSettings` : inscriptions, demandes instructeur, commission et retrait minimum
+  sont configurables depuis l'interface admin et appliqués côté backend.
+- Les comptes de test restent documentés dans le README comme règle de livraison du projet.
+### Administration v4 — compléments
+- Ajout d’un workflow réel de **demande instructeur** : dépôt étudiant, statut en attente, approbation/refus par un admin et motif de refus.
+- Nouveau menu **Demandes instructeur** dans la sidebar admin avec recherche, filtre, détail et actions.
+- Le dépôt d’une demande ne promeut plus automatiquement un étudiant au rôle instructeur.
+- Ajout de raccourcis de création de contenu depuis le back-office admin.
+- Les filtres issus des URL/KPI sont réinitialisés correctement lorsqu’on change de lien dans un même onglet admin.
+

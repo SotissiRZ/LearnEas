@@ -1,15 +1,15 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
-  Clock, PlayCircle, Users, Globe, BarChart3, CheckCircle2, FileText, Award,
+  Clock, PlayCircle, Users, Globe, BarChart3, CheckCircle2, FileText,
 } from "lucide-react";
 import { api, formatDuration, formatPrice } from "@/lib/api";
 import { Course } from "@/types";
 import RatingStars from "@/components/ui/RatingStars";
 import LevelBadge from "@/components/ui/LevelBadge";
 import CourseCurriculum from "@/components/course/CourseCurriculum";
-import { AddCourseToCartButton } from "@/components/course/AddToCartButtons";
 import ContactInstructorButton from "@/components/chat/ContactInstructorButton";
+import CoursePurchaseCard from "@/components/course/CoursePurchaseCard";
 
 async function getCourse(slug: string): Promise<Course | null> {
   try {
@@ -62,7 +62,7 @@ export default async function CourseDetailPage({ params }: { params: { slug: str
 
       {/* PURCHASE CARD (mobile uniquement, juste sous le hero, sans chevauchement) */}
       <div className="container-app pt-6 lg:hidden">
-        <PurchaseCard course={course} />
+        <CoursePurchaseCard initialCourse={course} />
       </div>
 
       {/* BODY */}
@@ -130,54 +130,8 @@ export default async function CourseDetailPage({ params }: { params: { slug: str
         {/* PURCHASE CARD (desktop, colonne latérale sticky — jamais sous la navbar) */}
         <div className="hidden lg:block">
           <div className="sticky top-24">
-            <PurchaseCard course={course} />
+            <CoursePurchaseCard initialCourse={course} />
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PurchaseCard({ course }: { course: Course }) {
-  return (
-    <div className="card overflow-hidden lg:-mt-40">
-      <div className="aspect-video w-full bg-gradient-to-br from-brand-100 to-brand-50">
-        {course.thumbnail ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={course.thumbnail} alt={course.title} className="h-full w-full object-cover" />
-        ) : (
-          <div className="grid h-full place-items-center text-brand-300"><PlayCircle size={48} /></div>
-        )}
-      </div>
-      <div className="p-5">
-        <div className="mb-4 flex items-baseline gap-2">
-          {course.discount_price ? (
-            <>
-              <span className="text-3xl font-extrabold">{formatPrice(course.discount_price)}</span>
-              <span className="text-base text-gray-400 line-through">{formatPrice(course.price)}</span>
-            </>
-          ) : (
-            <span className="text-3xl font-extrabold">{formatPrice(course.effective_price)}</span>
-          )}
-        </div>
-
-        {course.is_enrolled ? (
-          <Link href={`/learn/${course.slug}`} className="btn-primary w-full">
-            <PlayCircle size={18} /> Continuer le cours
-          </Link>
-        ) : (
-          <AddCourseToCartButton course={course} />
-        )}
-
-        <p className="mt-3 text-center text-xs text-gray-400">Accès complet à la playlist — garantie satisfait ou remboursé 14 jours</p>
-
-        <div className="mt-5 flex flex-col gap-2 border-t border-gray-100 pt-4 text-sm text-gray-600">
-          <span className="flex items-center gap-2"><PlayCircle size={16} /> {course.total_lessons} vidéos en accès illimité</span>
-          <span className="flex items-center gap-2"><Clock size={16} /> {formatDuration(course.total_duration_minutes)} de contenu</span>
-          {course.pdf_resources && course.pdf_resources.length > 0 && (
-            <span className="flex items-center gap-2"><FileText size={16} /> {course.pdf_resources.length} ressources PDF</span>
-          )}
-          <span className="flex items-center gap-2"><Award size={16} /> Certificat de fin de formation</span>
         </div>
       </div>
     </div>

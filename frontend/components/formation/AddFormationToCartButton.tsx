@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, usePathname } from "next/navigation";
-import { ShoppingCart, Check, LogIn } from "lucide-react";
+import { ShoppingCart, Check } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { useAuth } from "@/hooks/useAuth";
 import { InteractiveFormation } from "@/types";
@@ -13,20 +13,16 @@ export function AddFormationToCartButton({ formation }: { formation: Interactive
   const router = useRouter();
   const pathname = usePathname();
 
-  if (!user) {
-    return (
-      <button
-        onClick={() => hydrated && router.push(`/login?next=${encodeURIComponent(pathname)}`)}
-        className="btn-outline w-full"
-      >
-        <LogIn size={18} /> Se connecter pour s'inscrire
-      </button>
-    );
+  function handleClick() {
+    if (!hydrated) return;
+    if (inCart) { router.push("/cart"); return; }
+    if (!user) { router.push(`/login?next=${encodeURIComponent(pathname)}`); return; }
+    addFormation(formation);
   }
 
   return (
     <button
-      onClick={() => (inCart ? router.push("/cart") : addFormation(formation))}
+      onClick={handleClick}
       className={inCart ? "btn-outline w-full !border-brand-600 !text-brand-700" : "btn-primary w-full"}
     >
       {inCart ? <Check size={18} /> : <ShoppingCart size={18} />}

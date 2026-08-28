@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { PlusCircle, FileText, Download } from "lucide-react";
+import { PlusCircle, FileText, Download, Eye, EyeOff } from "lucide-react";
 import { api, formatPrice } from "@/lib/api";
 import { PDFProduct } from "@/types";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import DashboardNav from "@/components/dashboard/DashboardNav";
 import GuardScreen from "@/components/ui/GuardScreen";
+import PdfViewer from "@/components/ui/PdfViewer";
 
 export default function InstructorPdfsPage() {
   const { ready } = useAuthGuard({ roles: ["instructor", "admin"], redirectTo: "/dashboard/instructor" });
@@ -20,6 +21,11 @@ export default function InstructorPdfsPage() {
       .then((d: any) => setPdfs(d.results || d))
       .finally(() => setLoading(false));
   }, [ready]);
+
+  async function togglePublished(pdf: PDFProduct) {
+    await api.patch(`/catalog/pdfs/${pdf.slug}/`, { published: !pdf.published });
+    setPdfs((current) => current.map((item) => item.id === pdf.id ? { ...item, published: !item.published } : item));
+  }
 
   if (!ready) return <GuardScreen />;
 
@@ -48,9 +54,13 @@ export default function InstructorPdfsPage() {
                 <p className="font-semibold">{p.title}</p>
                 <p className="text-xs text-gray-500">{p.page_count} pages · {formatPrice(p.price)} · <Download size={12} className="inline" /> {p.downloads_count}</p>
               </div>
+              {p.file && <PdfViewer url={p.file} title={p.title} />}
               <span className={`badge ${p.published ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>
                 {p.published ? "Publié" : "Brouillon"}
               </span>
+              <button onClick={() => togglePublished(p)} className="btn-outline !py-1.5 !text-xs">
+                {p.published ? <EyeOff size={14} /> : <Eye size={14} />} {p.published ? "Dépublier" : "Publier"}
+              </button>
             </div>
           ))}
         </div>

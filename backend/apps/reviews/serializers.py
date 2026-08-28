@@ -5,15 +5,29 @@ from .models import Review, LessonComment
 
 class ReviewSerializer(serializers.ModelSerializer):
     user = UserPublicSerializer(read_only=True)
+    target_title = serializers.SerializerMethodField()
+    target_type = serializers.SerializerMethodField()
 
     class Meta:
         model = Review
-        fields = ["id", "user", "course", "pdf_product", "rating", "comment", "created_at"]
+        fields = ["id", "user", "course", "pdf_product", "target_title", "target_type", "rating", "comment", "created_at"]
         read_only_fields = ["user"]
+
+    def get_target_title(self, obj):
+        target = obj.course or obj.pdf_product
+        return target.title if target else ""
+
+    def get_target_type(self, obj):
+        return "course" if obj.course_id else "pdf" if obj.pdf_product_id else ""
 
     def create(self, validated_data):
         validated_data["user"] = self.context["request"].user
         review = super().create(validated_data)
+        self._refresh_target_rating(review)
+        return review
+
+    def update(self, instance, validated_data):
+        review = super().update(instance, validated_data)
         self._refresh_target_rating(review)
         return review
 

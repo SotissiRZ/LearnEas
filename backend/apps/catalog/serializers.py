@@ -1,7 +1,30 @@
 from rest_framework import serializers
 from apps.accounts.serializers import UserPublicSerializer
 from apps.common.fields import RelativeImageField, RelativeFileField
+from apps.common.media_metadata import extract_pdf_page_count, extract_video_duration_minutes
 from .models import Category, Course, Section, Lesson, PDFResource, PDFProduct
+
+
+def _is_admin(user) -> bool:
+    return bool(user and user.is_authenticated and user.role == "admin")
+
+
+def _can_manage_course(request, course: Course) -> bool:
+    if not request or not request.user.is_authenticated:
+        return False
+    return _is_admin(request.user) or course.instructor_id == request.user.id
+
+
+def _can_manage_pdf(request, pdf: PDFProduct) -> bool:
+    if not request or not request.user.is_authenticated:
+        return False
+    return _is_admin(request.user) or pdf.instructor_id == request.user.id
+
+
+def _validate_owner(request, owner_id: int, field_name: str):
+    user = request.user
+    if user.role != "admin" and user.id != owner_id:
+        raise serializers.ValidationError({field_name: "Vous ne pouvez modifier que votre propre contenu."})
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -27,9 +50,9 @@ class LessonSerializer(serializers.ModelSerializer):
         ]
 
     def get_locked(self, obj):
-        """La vidéo n'est renvoyée en clair que si preview ou utilisateur inscrit."""
+        """Débloque previews, achats valides et contenu appartenant à l'organisateur/admin."""
         request = self.context.get("request")
-        if obj.is_preview:
+        if obj.is_preview or _can_manage_course(request, obj.section.course):
             return False
         enrolled = self.context.get("enrolled_course_ids", set())
         return obj.section.course_id not in enrolled
@@ -54,13 +77,15 @@ class SectionSerializer(serializers.ModelSerializer):
 class PDFResourceSerializer(serializers.ModelSerializer):
     locked = serializers.SerializerMethodField()
     file = RelativeFileField(read_only=True)
+    cover_image = RelativeImageField(read_only=True)
 
     class Meta:
         model = PDFResource
-        fields = ["id", "title", "file", "page_count", "is_free_sample", "order", "locked"]
+        fields = ["id", "title", "cover_image", "file", "page_count", "is_free_sample", "order", "locked"]
 
     def get_locked(self, obj):
-        if obj.is_free_sample:
+        request = self.context.get("request")
+        if obj.is_free_sample or _can_manage_course(request, obj.course):
             return False
         enrolled = self.context.get("enrolled_course_ids", set())
         return obj.course_id not in enrolled
@@ -109,13 +134,16 @@ class CourseDetailSerializer(CourseListSerializer):
 
     def get_is_enrolled(self, obj):
         request = self.context.get("request")
+        if _can_manage_course(request, obj):
+            return True
         if not request or not request.user.is_authenticated:
             return False
         return obj.id in self.context.get("enrolled_course_ids", set())
 
     def to_representation(self, instance):
-        # propage le contexte (utilisateur/inscriptions) vers les sous-serializers
+        # Propage explicitement le contexte d'accès vers tous les sous-serializers.
         self.fields["sections"].child.fields["lessons"].child.context.update(self.context)
+        self.fields["pdf_resources"].child.context.update(self.context)
         return super().to_representation(instance)
 
 
@@ -128,9 +156,15 @@ class CourseWriteSerializer(serializers.ModelSerializer):
             "id", "category", "title", "subtitle", "description",
             "what_you_will_learn", "requirements", "target_audience",
             "level", "language", "price", "is_free", "discount_price",
-            "thumbnail", "promo_video_url", "published", "slug",
+            "thumbnail", "promo_video_url", "published", "featured", "slug",
         ]
         read_only_fields = ["id", "slug"]
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        if request and request.user.role != "admin" and "featured" in attrs:
+            raise serializers.ValidationError({"featured": "Seul un administrateur peut mettre un cours en avant."})
+        return attrs
 
     def create(self, validated_data):
         validated_data["instructor"] = self.context["request"].user
@@ -142,8 +176,16 @@ class SectionWriteSerializer(serializers.ModelSerializer):
         model = Section
         fields = ["id", "course", "title", "order"]
 
+    def validate_course(self, course):
+        _validate_owner(self.context["request"], course.instructor_id, "course")
+        return course
+
 
 class LessonWriteSerializer(serializers.ModelSerializer):
+    # Pour un upload, la valeur est écrasée par la durée calculée. Pour une URL vidéo héritée,
+    # le front la calcule automatiquement via les métadonnées HTML5 et l'envoie sans saisie utilisateur.
+    duration_minutes = serializers.IntegerField(required=False, min_value=1)
+
     class Meta:
         model = Lesson
         fields = [
@@ -151,11 +193,42 @@ class LessonWriteSerializer(serializers.ModelSerializer):
             "duration_minutes", "order", "is_preview", "description",
         ]
 
+    def validate_section(self, section):
+        _validate_owner(self.context["request"], section.course.instructor_id, "section")
+        return section
+
+    def validate(self, attrs):
+        video_file = attrs.get("video_file")
+        video_url = attrs.get("video_url")
+        if self.instance:
+            video_file = video_file or self.instance.video_file
+            video_url = video_url if "video_url" in attrs else self.instance.video_url
+        if not video_file and not video_url:
+            raise serializers.ValidationError({"video_file": "Ajoutez un fichier vidéo ou une URL vidéo."})
+        if attrs.get("video_file"):
+            attrs["duration_minutes"] = extract_video_duration_minutes(attrs["video_file"])
+        elif video_url and not attrs.get("duration_minutes") and not (self.instance and self.instance.duration_minutes):
+            raise serializers.ValidationError({
+                "video_url": "Impossible de déterminer la durée. Vérifiez que l'URL vidéo est accessible."
+            })
+        return attrs
+
 
 class PDFResourceWriteSerializer(serializers.ModelSerializer):
+    page_count = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = PDFResource
-        fields = ["id", "course", "title", "file", "page_count", "is_free_sample", "order"]
+        fields = ["id", "course", "title", "cover_image", "file", "page_count", "is_free_sample", "order"]
+
+    def validate_course(self, course):
+        _validate_owner(self.context["request"], course.instructor_id, "course")
+        return course
+
+    def validate(self, attrs):
+        if attrs.get("file"):
+            attrs["page_count"] = extract_pdf_page_count(attrs["file"])
+        return attrs
 
 
 class PDFProductListSerializer(serializers.ModelSerializer):
@@ -182,6 +255,8 @@ class PDFProductDetailSerializer(PDFProductListSerializer):
 
     def get_is_purchased(self, obj):
         request = self.context.get("request")
+        if _can_manage_pdf(request, obj):
+            return True
         if not request or not request.user.is_authenticated:
             return False
         return obj.id in self.context.get("purchased_pdf_ids", set())
@@ -194,14 +269,24 @@ class PDFProductDetailSerializer(PDFProductListSerializer):
 
 
 class PDFProductWriteSerializer(serializers.ModelSerializer):
+    page_count = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = PDFProduct
         fields = [
             "id", "category", "title", "description", "level", "language",
             "price", "is_free", "cover_image", "file", "preview_file",
-            "page_count", "published", "slug",
+            "page_count", "published", "featured", "slug",
         ]
-        read_only_fields = ["id", "slug"]
+        read_only_fields = ["id", "slug", "page_count"]
+
+    def validate(self, attrs):
+        if attrs.get("file"):
+            attrs["page_count"] = extract_pdf_page_count(attrs["file"])
+        request = self.context.get("request")
+        if request and request.user.role != "admin" and "featured" in attrs:
+            raise serializers.ValidationError({"featured": "Seul un administrateur peut mettre un PDF en avant."})
+        return attrs
 
     def create(self, validated_data):
         validated_data["instructor"] = self.context["request"].user

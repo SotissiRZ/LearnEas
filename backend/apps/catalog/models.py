@@ -138,6 +138,7 @@ class PDFResource(models.Model):
     """Un PDF rattaché à un cours (matériel additionnel inclus dans l'achat)."""
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="pdf_resources")
     title = models.CharField(max_length=200)
+    cover_image = models.ImageField(upload_to="courses/pdfs/covers/", blank=True, null=True)
     file = models.FileField(upload_to="courses/pdfs/")
     page_count = models.PositiveIntegerField(default=0)
     is_free_sample = models.BooleanField(default=False, help_text="Consultable sans achat (extrait gratuit)")

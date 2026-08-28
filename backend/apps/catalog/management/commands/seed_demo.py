@@ -198,7 +198,7 @@ class Command(BaseCommand):
                 defaults=dict(
                     scheduled_at=now + timedelta(days=7 * i, hours=18),
                     duration_minutes=90,
-                    meeting_link=f"https://meet.jit.si/LearnEas-React-Coaching-S{i}",
+                    meeting_link="",
                 ),
             )
 
@@ -220,7 +220,7 @@ class Command(BaseCommand):
                 defaults=dict(
                     scheduled_at=now + timedelta(days=10 + 7 * i, hours=17),
                     duration_minutes=120,
-                    meeting_link=f"https://meet.jit.si/LearnEas-DataScience-S{i}",
+                    meeting_link="",
                 ),
             )
 
@@ -242,7 +242,7 @@ class Command(BaseCommand):
                 defaults=dict(
                     scheduled_at=now + timedelta(days=5 + 7 * i, hours=19),
                     duration_minutes=60,
-                    meeting_link=f"https://meet.jit.si/LearnEas-DesignThinking-S{i}",
+                    meeting_link="",
                 ),
             )
 

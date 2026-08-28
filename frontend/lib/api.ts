@@ -10,13 +10,25 @@
  * En dehors de Docker (dev local classique), les deux valeurs sont identiques et ce mécanisme
  * est transparent.
  */
+/**
+ * En environnement Docker, le frontend a besoin de DEUX URLs différentes pour joindre l'API :
+ *  - Côté NAVIGATEUR (client) : on utilise une URL RELATIVE ("/api"), pour que la requête reste
+ *    TOUJOURS sur la même origine que la page — que le site soit ouvert via http://localhost ou
+ *    http://127.0.0.1 (ce sont deux origines DIFFÉRENTES du point de vue du navigateur/CORS, même
+ *    si elles pointent vers la même machine !). Une URL relative supprime totalement ce risque.
+ *  - Côté SERVEUR (rendu SSR des Server Components, qui s'exécute DANS le conteneur Next.js) :
+ *    "localhost" y désigne le conteneur frontend lui-même, pas nginx/backend ! Il faut donc une
+ *    URL interne au réseau Docker (http://backend:8000/api, le nom du service). C'est
+ *    INTERNAL_API_URL, une variable serveur-only (non préfixée NEXT_PUBLIC_), donc pas besoin de
+ *    rebuild l'image pour la changer : elle est lue à l'exécution.
+ * En dehors de Docker (dev local classique avec `npm run dev`), définissez NEXT_PUBLIC_API_URL
+ * dans .env.local (ex: http://localhost:8000/api) pour retrouver le comportement absolu habituel.
+ */
 const API_URL =
   typeof window === "undefined"
-    ? process.env.INTERNAL_API_URL ||
-      process.env.NEXT_PUBLIC_API_URL ||
-      "http://backend:8000/api"
+    ? process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://backend:8000/api"
     : process.env.NEXT_PUBLIC_API_URL || "/api";
-    
+
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("learneas_access");
@@ -115,11 +127,63 @@ export async function apiFetch<T>(
 export const api = {
   get: <T>(path: string) => apiFetch<T>(path),
   post: <T>(path: string, body?: unknown) =>
-    apiFetch<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+    apiFetch<T>(path, {
+      method: "POST",
+      body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
+    }),
   patch: <T>(path: string, body?: unknown) =>
-    apiFetch<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
+    apiFetch<T>(path, {
+      method: "PATCH",
+      body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
+    }),
   del: <T>(path: string) => apiFetch<T>(path, { method: "DELETE" }),
 };
+
+/**
+ * Upload d'un FormData (fichier vidéo/PDF/image) avec suivi de progression réel — `fetch()` ne
+ * permet pas d'observer la progression d'un envoi, on utilise donc XMLHttpRequest pour ce cas
+ * précis. `onProgress` reçoit un pourcentage (0-100).
+ */
+export function apiUploadWithProgress<T>(
+  path: string,
+  formData: FormData,
+  onProgress?: (percent: number) => void,
+  method: "POST" | "PATCH" = "POST"
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, `${API_URL}${path}`);
+
+    const token = getToken();
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      let data: unknown = null;
+      try {
+        data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        /* réponse non-JSON */
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(data as T);
+      } else {
+        reject(buildErrorMessage(xhr.status, data));
+      }
+    };
+
+    xhr.onerror = () => {
+      reject(new ApiError("Impossible de contacter le serveur. Vérifiez votre connexion ou réessayez plus tard."));
+    };
+
+    xhr.send(formData);
+  });
+}
 
 /**
  * Pour les Server Components : tente l'appel API et retourne `fallback` en cas d'échec,

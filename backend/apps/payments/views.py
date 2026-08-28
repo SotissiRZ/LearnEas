@@ -1,35 +1,102 @@
+from decimal import Decimal, ROUND_HALF_UP
+from django.conf import settings
 from django.db import transaction
+from django.db.models import Sum, Count
 from django.utils import timezone
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django_filters.rest_framework import DjangoFilterBackend
 
+from apps.accounts.models import User, PlatformSettings, InstructorApplication
 from apps.catalog.models import Course, PDFProduct
 from apps.enrollments.models import CourseEnrollment, PDFPurchase
-from apps.formations.models import InteractiveFormation, FormationEnrollment
-from .models import Order, OrderItem
-from .serializers import OrderSerializer, CheckoutSerializer
+from apps.formations.models import InteractiveFormation, FormationEnrollment, FormationSession, FormationAttendance
+from .models import Order, OrderItem, PayoutProfile, InstructorPayout
+from .serializers import (
+    OrderSerializer, CheckoutSerializer, PayoutProfileSerializer, InstructorPayoutSerializer,
+)
+
+MONEY = Decimal("0.01")
+
+
+class IsAdminRole(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and request.user.role == "admin")
+
+
+def _platform_finance_settings():
+    try:
+        config = PlatformSettings.load()
+        return Decimal(str(config.platform_commission_percent)), Decimal(str(config.minimum_payout_amount))
+    except Exception:
+        return (
+            Decimal(str(getattr(settings, "PLATFORM_COMMISSION_PERCENT", 15))),
+            Decimal(str(getattr(settings, "MINIMUM_PAYOUT_AMOUNT", 100))),
+        )
+
+
+def _split_revenue(price):
+    commission_percent, _ = _platform_finance_settings()
+    pct = commission_percent / Decimal("100")
+    price = Decimal(price)
+    fee = (price * pct).quantize(MONEY, rounding=ROUND_HALF_UP)
+    return fee, (price - fee).quantize(MONEY, rounding=ROUND_HALF_UP)
+
+
+def _finance_totals(instructor):
+    paid_items = OrderItem.objects.filter(instructor=instructor, order__status=Order.Status.PAID)
+    gross = paid_items.aggregate(v=Sum("unit_price"))["v"] or Decimal("0")
+    earnings = paid_items.aggregate(v=Sum("instructor_earning_amount"))["v"] or Decimal("0")
+    locked = InstructorPayout.objects.filter(
+        instructor=instructor,
+        status__in=[InstructorPayout.Status.PENDING, InstructorPayout.Status.PROCESSING, InstructorPayout.Status.PAID],
+    ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+    paid_out = InstructorPayout.objects.filter(
+        instructor=instructor, status=InstructorPayout.Status.PAID
+    ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+    return {
+        "gross_revenue": gross,
+        "total_earnings": earnings,
+        "available_balance": max(earnings - locked, Decimal("0")),
+        "paid_out": paid_out,
+        "sales_count": paid_items.count(),
+    }
 
 
 class OrderViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["status", "provider"]
+    search_fields = ["invoice_number", "user__email", "user__first_name", "user__last_name"]
+    ordering_fields = ["created_at", "paid_at", "total_amount"]
+    ordering = ["-created_at"]
 
     def get_queryset(self):
         user = self.request.user
+        qs = Order.objects.select_related("user").prefetch_related("items__instructor", "items__course", "items__pdf_product", "items__formation")
         if user.role == "admin":
-            return Order.objects.all()
-        return Order.objects.filter(user=user)
+            return qs
+        return qs.filter(user=user)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAdminRole])
+    def set_status(self, request, pk=None):
+        order = self.get_object()
+        new_status = request.data.get("status")
+        if new_status not in Order.Status.values:
+            return Response({"status": ["Statut invalide."]}, status=400)
+        if new_status == Order.Status.PAID:
+            CheckoutView()._fulfill(order)
+        else:
+            order.status = new_status
+            order.save(update_fields=["status"])
+        order.refresh_from_db()
+        return Response(self.get_serializer(order).data)
 
 
 class CheckoutView(APIView):
-    """
-    Crée une commande (panier -> cours complets + pdfs + formations interactives)
-    puis simule/route le paiement.
-    En prod: intégrer réellement Stripe PaymentIntent / PayPal Orders API / un agrégateur
-    Mobile Money (ex: CinetPay, Flutterwave, PawaPay) selon le pays de l'utilisateur.
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     @transaction.atomic
@@ -39,12 +106,27 @@ class CheckoutView(APIView):
         data = serializer.validated_data
         user = request.user
 
-        courses = Course.objects.filter(id__in=data["course_ids"], published=True)
-        pdfs = PDFProduct.objects.filter(id__in=data["pdf_ids"], published=True)
-        formations = InteractiveFormation.objects.filter(id__in=data["formation_ids"], published=True)
+        # Ne jamais refacturer un contenu déjà acquis. Les formations sont verrouillées
+        # pendant le checkout afin d'éviter que deux paiements prennent la dernière place.
+        owned_course_ids = set(CourseEnrollment.objects.filter(user=user).values_list("course_id", flat=True))
+        owned_pdf_ids = set(PDFPurchase.objects.filter(user=user).values_list("pdf_product_id", flat=True))
+        owned_formation_ids = set(FormationEnrollment.objects.filter(user=user).values_list("formation_id", flat=True))
 
-        if not courses and not pdfs and not formations:
-            return Response({"detail": "Panier vide."}, status=status.HTTP_400_BAD_REQUEST)
+        courses = Course.objects.filter(
+            id__in=[pk for pk in data["course_ids"] if pk not in owned_course_ids], published=True
+        )
+        pdfs = PDFProduct.objects.filter(
+            id__in=[pk for pk in data["pdf_ids"] if pk not in owned_pdf_ids], published=True
+        )
+        formations = InteractiveFormation.objects.select_for_update().filter(
+            id__in=[pk for pk in data["formation_ids"] if pk not in owned_formation_ids], published=True
+        )
+
+        if not courses.exists() and not pdfs.exists() and not formations.exists():
+            return Response(
+                {"detail": "Tous les éléments du panier sont déjà dans votre bibliothèque ou ne sont plus disponibles."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         full_formations = [f for f in formations if f.is_full]
         if full_formations:
@@ -62,23 +144,25 @@ class CheckoutView(APIView):
 
         order = Order.objects.create(user=user, provider=data["provider"], total_amount=total)
         for c in courses:
+            price = c.discount_price or c.price
+            fee, earning = _split_revenue(price)
             OrderItem.objects.create(
-                order=order, item_type=OrderItem.ItemType.COURSE, course=c,
-                unit_price=(c.discount_price or c.price),
+                order=order, item_type=OrderItem.ItemType.COURSE, course=c, instructor=c.instructor,
+                unit_price=price, platform_fee_amount=fee, instructor_earning_amount=earning,
             )
         for p in pdfs:
+            fee, earning = _split_revenue(p.price)
             OrderItem.objects.create(
-                order=order, item_type=OrderItem.ItemType.PDF, pdf_product=p, unit_price=p.price,
+                order=order, item_type=OrderItem.ItemType.PDF, pdf_product=p, instructor=p.instructor,
+                unit_price=p.price, platform_fee_amount=fee, instructor_earning_amount=earning,
             )
         for f in formations:
+            fee, earning = _split_revenue(f.price)
             OrderItem.objects.create(
-                order=order, item_type=OrderItem.ItemType.FORMATION, formation=f, unit_price=f.price,
+                order=order, item_type=OrderItem.ItemType.FORMATION, formation=f, instructor=f.instructor,
+                unit_price=f.price, platform_fee_amount=fee, instructor_earning_amount=earning,
             )
 
-        # NOTE: en environnement réel, on renverrait ici un client_secret Stripe,
-        # une redirect_url PayPal, ou une redirect_url de l'agrégateur Mobile Money,
-        # et la confirmation se ferait via webhook.
-        # Pour ce scaffold, si le total est 0 (contenu gratuit) on valide directement.
         if total == 0:
             self._fulfill(order)
 
@@ -92,36 +176,205 @@ class CheckoutView(APIView):
         )
 
     def _fulfill(self, order):
-        order.status = Order.Status.PAID
-        order.paid_at = timezone.now()
-        order.save()
-        for item in order.items.all():
+        # Idempotent : même si la commande est déjà marquée payée, on réconcilie toujours
+        # les droits d'accès. Cela répare notamment les anciennes commandes payées pour
+        # lesquelles une inscription aurait manqué à la suite d'une erreur transitoire.
+        if order.status != Order.Status.PAID:
+            order.status = Order.Status.PAID
+            order.paid_at = timezone.now()
+            order.save(update_fields=["status", "paid_at"])
+        elif not order.paid_at:
+            order.paid_at = timezone.now()
+            order.save(update_fields=["paid_at"])
+
+        for item in order.items.select_related("course", "pdf_product", "formation").all():
             if item.course:
                 CourseEnrollment.objects.get_or_create(user=order.user, course=item.course)
                 item.course.students_count = item.course.enrollments.count()
                 item.course.save(update_fields=["students_count"])
             if item.pdf_product:
-                PDFPurchase.objects.get_or_create(user=order.user, pdf_product=item.pdf_product)
-                item.pdf_product.downloads_count += 1
-                item.pdf_product.save(update_fields=["downloads_count"])
+                purchase, created = PDFPurchase.objects.get_or_create(user=order.user, pdf_product=item.pdf_product)
+                if created:
+                    item.pdf_product.downloads_count += 1
+                    item.pdf_product.save(update_fields=["downloads_count"])
             if item.formation:
                 FormationEnrollment.objects.get_or_create(user=order.user, formation=item.formation)
+        return order
 
 
 class ConfirmPaymentView(APIView):
-    """Endpoint appelé par le webhook Stripe/PayPal (ou en dev, manuellement)
-    pour finaliser une commande en attente."""
     permission_classes = [permissions.IsAuthenticated]
 
+    @transaction.atomic
     def post(self, request, order_id):
         try:
-            order = Order.objects.get(id=order_id, user=request.user)
+            order = Order.objects.select_for_update().get(id=order_id, user=request.user)
         except Order.DoesNotExist:
             return Response({"detail": "Commande introuvable."}, status=404)
-
-        if order.status == Order.Status.PAID:
-            return Response(OrderSerializer(order).data)
-
         checkout_view = CheckoutView()
         checkout_view._fulfill(order)
+        order.refresh_from_db()
         return Response(OrderSerializer(order).data)
+
+
+class PayoutProfileView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _check(self, request):
+        if request.user.role not in ("instructor", "admin"):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Compte instructeur requis.")
+
+    def get(self, request):
+        self._check(request)
+        profile, _ = PayoutProfile.objects.get_or_create(instructor=request.user)
+        return Response(PayoutProfileSerializer(profile).data)
+
+    def patch(self, request):
+        self._check(request)
+        profile, _ = PayoutProfile.objects.get_or_create(instructor=request.user)
+        serializer = PayoutProfileSerializer(profile, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class InstructorFinanceView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role not in ("instructor", "admin"):
+            return Response({"detail": "Compte instructeur requis."}, status=403)
+        totals = _finance_totals(request.user)
+        recent = OrderItem.objects.filter(
+            instructor=request.user, order__status=Order.Status.PAID
+        ).select_related("order", "course", "pdf_product", "formation").order_by("-order__paid_at")[:10]
+        profile = PayoutProfile.objects.filter(instructor=request.user).first()
+        return Response({
+            **{k: str(v) if isinstance(v, Decimal) else v for k, v in totals.items()},
+            "commission_percent": float(_platform_finance_settings()[0]),
+            "minimum_payout": str(_platform_finance_settings()[1]),
+            "payout_profile_configured": bool(profile and profile.account_reference),
+            "recent_sales": [
+                {
+                    "id": item.id,
+                    "title": item.course.title if item.course else item.pdf_product.title if item.pdf_product else item.formation.title if item.formation else "",
+                    "type": item.item_type,
+                    "gross": str(item.unit_price),
+                    "earning": str(item.instructor_earning_amount),
+                    "paid_at": item.order.paid_at,
+                }
+                for item in recent
+            ],
+        })
+
+
+class InstructorPayoutViewSet(viewsets.ModelViewSet):
+    serializer_class = InstructorPayoutSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ["get", "post", "head", "options"]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["status", "method", "instructor"]
+    search_fields = ["instructor__email", "instructor__first_name", "instructor__last_name", "reference"]
+    ordering_fields = ["requested_at", "processed_at", "amount"]
+    ordering = ["-requested_at"]
+
+    def get_queryset(self):
+        qs = InstructorPayout.objects.select_related("instructor")
+        return qs if self.request.user.role == "admin" else qs.filter(instructor=self.request.user)
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        if request.user.role not in ("instructor", "admin"):
+            return Response({"detail": "Compte instructeur requis."}, status=403)
+        # Sérialise les demandes concurrentes d'un même instructeur pour empêcher
+        # deux retraits simultanés de dépasser le solde disponible.
+        User.objects.select_for_update().get(pk=request.user.pk)
+        profile = PayoutProfile.objects.filter(instructor=request.user).first()
+        if not profile or not profile.account_reference:
+            return Response({"detail": "Configurez d'abord votre méthode de versement."}, status=400)
+        try:
+            amount = Decimal(str(request.data.get("amount", "0"))).quantize(MONEY)
+            if not amount.is_finite() or amount <= 0:
+                raise ValueError("invalid amount")
+        except Exception:
+            return Response({"amount": ["Montant invalide."]}, status=400)
+        minimum = _platform_finance_settings()[1]
+        available = _finance_totals(request.user)["available_balance"]
+        if amount < minimum:
+            return Response({"amount": [f"Le retrait minimum est de {minimum} MAD."]}, status=400)
+        if amount > available:
+            return Response({"amount": ["Le montant dépasse votre solde disponible."]}, status=400)
+        payout = InstructorPayout.objects.create(
+            instructor=request.user, amount=amount, method=profile.method,
+            account_reference_snapshot=profile.account_reference,
+        )
+        return Response(InstructorPayoutSerializer(payout).data, status=201)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAdminRole])
+    def mark_paid(self, request, pk=None):
+        payout = self.get_object()
+        payout.status = InstructorPayout.Status.PAID
+        payout.processed_at = timezone.now()
+        payout.reference = request.data.get("reference", "")
+        payout.note = request.data.get("note", "")
+        payout.save(update_fields=["status", "processed_at", "reference", "note"])
+        return Response(self.get_serializer(payout).data)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAdminRole])
+    def mark_failed(self, request, pk=None):
+        payout = self.get_object()
+        payout.status = InstructorPayout.Status.FAILED
+        payout.processed_at = timezone.now()
+        payout.note = request.data.get("note", "")
+        payout.save(update_fields=["status", "processed_at", "note"])
+        return Response(self.get_serializer(payout).data)
+
+
+class AdminOverviewView(APIView):
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+        paid_orders = Order.objects.filter(status=Order.Status.PAID)
+        total_revenue = paid_orders.aggregate(v=Sum("total_amount"))["v"] or Decimal("0")
+        platform_fees = OrderItem.objects.filter(order__status=Order.Status.PAID).aggregate(v=Sum("platform_fee_amount"))["v"] or Decimal("0")
+        instructor_earnings = OrderItem.objects.filter(order__status=Order.Status.PAID).aggregate(v=Sum("instructor_earning_amount"))["v"] or Decimal("0")
+        pending_payouts = InstructorPayout.objects.filter(status=InstructorPayout.Status.PENDING)
+        sessions = FormationSession.objects.select_related("formation", "formation__instructor").order_by("-scheduled_at")[:12]
+        platform_config = PlatformSettings.load()
+        return Response({
+            "users": User.objects.count(),
+            "active_users": User.objects.filter(is_active=True).count(),
+            "inactive_users": User.objects.filter(is_active=False).count(),
+            "students": User.objects.filter(role=User.Role.STUDENT).count(),
+            "instructors": User.objects.filter(role=User.Role.INSTRUCTOR).count(),
+            "pending_instructor_applications": InstructorApplication.objects.filter(status=InstructorApplication.Status.PENDING).count(),
+            "courses": Course.objects.count(),
+            "pdfs": PDFProduct.objects.count(),
+            "formations": InteractiveFormation.objects.count(),
+            "orders": Order.objects.count(),
+            "paid_orders": paid_orders.count(),
+            "total_revenue": str(total_revenue),
+            "platform_fees": str(platform_fees),
+            "instructor_earnings": str(instructor_earnings),
+            "pending_payout_count": pending_payouts.count(),
+            "pending_payout_amount": str(pending_payouts.aggregate(v=Sum("amount"))["v"] or Decimal("0")),
+            "platform_commission_percent": platform_config.platform_commission_percent,
+            "minimum_payout_amount": str(platform_config.minimum_payout_amount),
+            "recent_sessions": [
+                {
+                    "id": s.id,
+                    "formation": s.formation.title,
+                    "organizer": s.formation.instructor.get_full_name() or s.formation.instructor.username,
+                    "scheduled_at": s.scheduled_at,
+                    "started_at": s.started_at,
+                    "ended_at": s.ended_at,
+                    "actual_duration_minutes": s.actual_duration_minutes,
+                    "participants": FormationAttendance.objects.filter(
+                        session=s, role=FormationAttendance.Role.PARTICIPANT
+                    ).values("user_id").distinct().count(),
+                    "completed": s.completed,
+                }
+                for s in sessions
+            ],
+        })

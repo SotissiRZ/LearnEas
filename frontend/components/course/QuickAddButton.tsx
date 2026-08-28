@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, usePathname } from "next/navigation";
-import { ShoppingCart, Check, LogIn } from "lucide-react";
+import { ShoppingCart, Check } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { useAuth } from "@/hooks/useAuth";
 import { Course, PDFProduct, InteractiveFormation } from "@/types";
@@ -57,13 +57,11 @@ export default function QuickAddButton({ item }: { item: Item }) {
       className={
         inCart
           ? "btn-outline !py-1.5 !text-xs !border-brand-600 !text-brand-700"
-          : !user && hydrated
-          ? "btn-outline !py-1.5 !text-xs"
           : "btn-primary !py-1.5 !text-xs"
       }
     >
-      {inCart ? <Check size={14} /> : !user && hydrated ? <LogIn size={14} /> : <ShoppingCart size={14} />}
-      {inCart ? "Au panier" : !user && hydrated ? "Se connecter" : "Ajouter"}
+      {inCart ? <Check size={14} /> : <ShoppingCart size={14} />}
+      {inCart ? "Au panier" : "Ajouter"}
     </button>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Video, Calendar, ExternalLink, Users, Lock } from "lucide-react";
+import { Video, Calendar, Users, Lock } from "lucide-react";
 import { api } from "@/lib/api";
 import { FormationEnrollment, InteractiveFormation } from "@/types";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
@@ -74,13 +74,12 @@ export default function StudentFormationsPage() {
                         {new Date(s.scheduled_at).toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "short" })}
                       </span>
                       <span className="ml-auto">
-                        {s.meeting_link ? (
-                          <a href={s.meeting_link} target="_blank" rel="noreferrer"
-                            className="flex items-center gap-1 font-semibold text-brand-700">
-                            <Video size={14} /> Rejoindre <ExternalLink size={12} />
-                          </a>
+                        {s.can_join ? (
+                          <Link href={`/live/session/${s.id}`} className="flex items-center gap-1 font-semibold text-brand-700">
+                            <Video size={14} /> Rejoindre sur LearnEas
+                          </Link>
                         ) : (
-                          <span className="flex items-center gap-1 text-gray-400"><Lock size={14} /> Lien à venir</span>
+                          <span className="flex items-center gap-1 text-gray-400"><Lock size={14} /> Salle indisponible</span>
                         )}
                       </span>
                     </div>

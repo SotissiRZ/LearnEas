@@ -76,6 +76,7 @@ export interface Lesson {
 export interface PDFResource {
   id: number;
   title: string;
+  cover_image: string | null;
   file: string | null;
   page_count: number;
   is_free_sample: boolean;
@@ -140,9 +141,12 @@ export interface FormationSession {
   session_number: number;
   scheduled_at: string;
   duration_minutes: number;
-  meeting_link: string | null;
   completed: boolean;
   notes: string;
+  started_at: string | null;
+  ended_at: string | null;
+  actual_duration_minutes: number;
+  can_join: boolean;
 }
 
 export type FormationStatus = "draft" | "scheduled" | "in_progress" | "completed" | "cancelled";

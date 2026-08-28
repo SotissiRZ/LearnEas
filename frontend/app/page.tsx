@@ -34,7 +34,7 @@ export default async function HomePage() {
           fill
           priority
           sizes="100vw"
-          className="object-cover object-center"
+          className="object-contain object-center"
         />
         {/* Voile sombre pour garantir la lisibilité du texte quel que soit le contenu de l'image */}
         <div className="absolute inset-0 bg-gradient-to-r from-ink via-ink/90 to-ink/50" />

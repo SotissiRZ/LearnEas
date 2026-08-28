@@ -10,6 +10,8 @@ x-backend-env: &backend-env
   FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
   STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
   STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+  PLATFORM_COMMISSION_PERCENT: ${PLATFORM_COMMISSION_PERCENT:-15}
+  MINIMUM_PAYOUT_AMOUNT: ${MINIMUM_PAYOUT_AMOUNT:-100}
   EMAIL_HOST: ${EMAIL_HOST:-}
   EMAIL_PORT: ${EMAIL_PORT:-587}
   EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
@@ -93,10 +95,22 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
+        # URL relative par défaut : le navigateur appelle toujours l'API sur SA PROPRE origine
+        # (que le site soit ouvert via http://localhost ou http://127.0.0.1), nginx la route en
+        # interne vers le backend. Ne mettez une valeur absolue ici que pour un déploiement avec
+        # un domaine public dédié différent du domaine du frontend.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+        NEXT_PUBLIC_RTC_STUN_URL: ${NEXT_PUBLIC_RTC_STUN_URL:-stun:stun.l.google.com:19302}
+        NEXT_PUBLIC_RTC_TURN_URL: ${NEXT_PUBLIC_RTC_TURN_URL:-}
+        NEXT_PUBLIC_RTC_TURN_USERNAME: ${NEXT_PUBLIC_RTC_TURN_USERNAME:-}
+        NEXT_PUBLIC_RTC_TURN_CREDENTIAL: ${NEXT_PUBLIC_RTC_TURN_CREDENTIAL:-}
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+      NEXT_PUBLIC_RTC_STUN_URL: ${NEXT_PUBLIC_RTC_STUN_URL:-stun:stun.l.google.com:19302}
+      NEXT_PUBLIC_RTC_TURN_URL: ${NEXT_PUBLIC_RTC_TURN_URL:-}
+      NEXT_PUBLIC_RTC_TURN_USERNAME: ${NEXT_PUBLIC_RTC_TURN_USERNAME:-}
+      NEXT_PUBLIC_RTC_TURN_CREDENTIAL: ${NEXT_PUBLIC_RTC_TURN_CREDENTIAL:-}
       # URL interne au réseau Docker, utilisée UNIQUEMENT côté serveur (rendu SSR des pages
       # catalogue/détail) — "backend" est le nom du service ci-dessous, résolu par le DNS interne
       # de Docker. Ne pas mettre "localhost" ici : depuis CE conteneur, localhost = lui-même.

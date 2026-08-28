@@ -29,3 +29,31 @@ class IsInstructorOrAdmin(permissions.BasePermission):
             return True
         owner = _resolve_owner(obj)
         return request.user.role == "admin" or owner == request.user
+
+
+class IsInstructorOrAdminOnly(permissions.BasePermission):
+    """Endpoint de gestion : jamais public, même en GET.
+
+    Les fichiers protégés sont servis au public uniquement via les serializers imbriqués
+    qui appliquent les règles d'inscription/achat.
+    """
+
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role in ("instructor", "admin")
+
+    def has_object_permission(self, request, view, obj):
+        owner = _resolve_owner(obj)
+        return request.user.role == "admin" or owner == request.user
+
+
+class IsAdminRoleOrReadOnly(permissions.BasePermission):
+    """Lecture publique, écriture réservée au rôle admin LearnEas."""
+
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return bool(
+            request.user
+            and request.user.is_authenticated
+            and getattr(request.user, "role", None) == "admin"
+        )
