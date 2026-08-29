@@ -44,6 +44,22 @@ class InteractiveFormation(models.Model):
 
     thumbnail = models.ImageField(upload_to="formations/thumbnails/", blank=True, null=True)
 
+    # Configuration du certificat de formation live
+    certificate_enabled = models.BooleanField(default=True)
+    certificate_auto_issue = models.BooleanField(default=True)
+    certificate_attendance_percent = models.PositiveSmallIntegerField(default=80)
+    certificate_validity_months = models.PositiveIntegerField(null=True, blank=True)
+    certificate_title = models.CharField(max_length=180, default="Certificat de participation")
+    certificate_subtitle = models.CharField(max_length=220, blank=True)
+    certificate_description = models.TextField(blank=True)
+    certificate_signatory_name = models.CharField(max_length=180, blank=True)
+    certificate_signatory_title = models.CharField(max_length=180, blank=True)
+    certificate_accent_color = models.CharField(max_length=20, default="#1f6f5c")
+    certificate_number_prefix = models.CharField(max_length=30, default="LE-LIVE")
+    certificate_show_duration = models.BooleanField(default=True)
+    certificate_show_instructor = models.BooleanField(default=True)
+    certificate_show_completion_date = models.BooleanField(default=True)
+
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=FormationStatus.choices, default=FormationStatus.DRAFT)

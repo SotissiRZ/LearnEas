@@ -10,6 +10,7 @@ import { Course, Lesson, Section, CourseEnrollment } from "@/types";
 import { api, formatDuration } from "@/lib/api";
 import ProgressBar from "@/components/ui/ProgressBar";
 import PdfViewer from "@/components/ui/PdfViewer";
+import VideoPlayer from "@/components/ui/VideoPlayer";
 import { useAuth } from "@/hooks/useAuth";
 
 export default function LearnClient({ course }: { course: Course }) {
@@ -18,7 +19,7 @@ export default function LearnClient({ course }: { course: Course }) {
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [completedIds, setCompletedIds] = useState<Set<number>>(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [tab, setTab] = useState<"resources" | "discussion">("resources");
+  const [tab, setTab] = useState<"resources" | "discussion" | "transcript">("resources");
 
   const allLessons = (course.sections || []).flatMap((s) => s.lessons);
 
@@ -123,19 +124,14 @@ export default function LearnClient({ course }: { course: Course }) {
 
         <div className="aspect-video w-full bg-black">
           {activeLesson?.video_url || activeLesson?.video_file ? (
-            <video
+            <VideoPlayer
               key={activeLesson.id}
-              src={activeLesson.video_url || activeLesson.video_file || undefined}
-              controls
-              controlsList="nodownload"
-              playsInline
-              preload="metadata"
-              poster={course.thumbnail || undefined}
-              className="h-full w-full"
+              src={(activeLesson.video_url || activeLesson.video_file) as string}
+              poster={course.thumbnail}
+              title={activeLesson.title}
+              subtitlesUrl={activeLesson.subtitles_file}
               onEnded={() => activeLesson && markComplete(activeLesson)}
-            >
-              Votre navigateur ne prend pas en charge la lecture vidéo intégrée.
-            </video>
+            />
           ) : (
             <div className="grid h-full place-items-center text-white/50">
               <PlayCircle size={56} />
@@ -167,6 +163,12 @@ export default function LearnClient({ course }: { course: Course }) {
             >
               <MessageSquare size={16} /> Discussion
             </button>
+            <button
+              onClick={() => setTab("transcript")}
+              className={`flex items-center gap-1 border-b-2 pb-3 ${tab === "transcript" ? "border-brand-600 text-brand-700" : "border-transparent text-gray-400"}`}
+            >
+              <FileText size={16} /> Transcription
+            </button>
           </div>
 
           <div className="py-6">
@@ -182,8 +184,12 @@ export default function LearnClient({ course }: { course: Course }) {
                   </div>
                 ))}
               </div>
+            ) : tab === "discussion" ? (
+              <p className="text-sm text-gray-500">Posez vos questions à l'instructeur depuis l'espace Avis & questions.</p>
             ) : (
-              <p className="text-sm text-gray-500">Posez vos questions à l'instructeur — module de discussion à venir.</p>
+              <div className="card p-5 text-sm leading-7 text-gray-700">
+                {activeLesson?.transcript ? <div className="whitespace-pre-wrap">{activeLesson.transcript}</div> : <p className="text-gray-500">Aucune transcription n'est disponible pour cette leçon.</p>}
+              </div>
             )}
           </div>
         </div>

@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Download, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import DashboardNav from "@/components/dashboard/DashboardNav";
 import GuardScreen from "@/components/ui/GuardScreen";
+import PdfViewer from "@/components/ui/PdfViewer";
 
 interface PDFPurchase {
   id: number;
@@ -49,11 +50,7 @@ export default function StudentPdfsPage() {
                 <p className="line-clamp-2 font-semibold">{p.pdf_product.title}</p>
                 <p className="text-xs text-gray-400">{p.pdf_product.page_count} pages</p>
               </div>
-              {p.pdf_product.file && (
-                <a href={p.pdf_product.file} target="_blank" rel="noreferrer" className="rounded-lg p-2 text-brand-700 hover:bg-brand-50">
-                  <Download size={18} />
-                </a>
-              )}
+              {p.pdf_product.file && <PdfViewer url={p.pdf_product.file} title={p.pdf_product.title} />}
             </div>
           ))}
         </div>

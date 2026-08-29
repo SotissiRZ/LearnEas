@@ -51,6 +51,20 @@ export interface Course {
   sections?: Section[];
   pdf_resources?: PDFResource[];
   is_enrolled?: boolean;
+  certificate_enabled?: boolean;
+  certificate_auto_issue?: boolean;
+  certificate_threshold_percent?: number;
+  certificate_validity_months?: number | null;
+  certificate_title?: string;
+  certificate_subtitle?: string;
+  certificate_description?: string;
+  certificate_signatory_name?: string;
+  certificate_signatory_title?: string;
+  certificate_accent_color?: string;
+  certificate_number_prefix?: string;
+  certificate_show_duration?: boolean;
+  certificate_show_instructor?: boolean;
+  certificate_show_completion_date?: boolean;
 }
 
 export interface Section {
@@ -70,6 +84,8 @@ export interface Lesson {
   order: number;
   is_preview: boolean;
   description: string;
+  subtitles_file?: string | null;
+  transcript?: string;
   locked: boolean;
 }
 
@@ -176,6 +192,20 @@ export interface InteractiveFormation {
   description?: string;
   sessions?: FormationSession[];
   is_enrolled?: boolean;
+  certificate_enabled?: boolean;
+  certificate_auto_issue?: boolean;
+  certificate_attendance_percent?: number;
+  certificate_validity_months?: number | null;
+  certificate_title?: string;
+  certificate_subtitle?: string;
+  certificate_description?: string;
+  certificate_signatory_name?: string;
+  certificate_signatory_title?: string;
+  certificate_accent_color?: string;
+  certificate_number_prefix?: string;
+  certificate_show_duration?: boolean;
+  certificate_show_instructor?: boolean;
+  certificate_show_completion_date?: boolean;
 }
 
 export interface FormationEnrollment {
@@ -183,4 +213,34 @@ export interface FormationEnrollment {
   formation: InteractiveFormation;
   enrolled_at: string;
   certificate_issued: boolean;
+}
+
+export interface Certificate {
+  id: number;
+  certificate_number: string;
+  verification_code: string;
+  verification_url: string;
+  status: "active" | "revoked" | "expired";
+  effective_status: "active" | "revoked" | "expired";
+  issued_at: string;
+  expires_at: string | null;
+  revoked_at: string | null;
+  revocation_reason: string;
+  achievement_percent: string;
+  student_name: string;
+  content_type: "course" | "formation";
+  content_title: string;
+  instructor_name: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  signatory_name: string;
+  signatory_title: string;
+  accent_color: string;
+  duration_minutes: number;
+  completed_at: string | null;
+  display_options: Record<string, boolean>;
+  metadata: Record<string, unknown>;
+  course_enrollment: number | null;
+  formation_enrollment: number | null;
 }

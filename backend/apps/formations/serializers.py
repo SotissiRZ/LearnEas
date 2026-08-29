@@ -100,7 +100,13 @@ class InteractiveFormationDetailSerializer(InteractiveFormationListSerializer):
     is_enrolled = serializers.SerializerMethodField()
 
     class Meta(InteractiveFormationListSerializer.Meta):
-        fields = InteractiveFormationListSerializer.Meta.fields + ["description", "sessions", "is_enrolled"]
+        fields = InteractiveFormationListSerializer.Meta.fields + [
+            "description", "sessions", "is_enrolled", "certificate_enabled", "certificate_auto_issue",
+            "certificate_attendance_percent", "certificate_validity_months", "certificate_title",
+            "certificate_subtitle", "certificate_description", "certificate_signatory_name",
+            "certificate_signatory_title", "certificate_accent_color", "certificate_number_prefix",
+            "certificate_show_duration", "certificate_show_instructor", "certificate_show_completion_date",
+        ]
 
     def get_is_enrolled(self, obj):
         request = self.context.get("request")
@@ -122,12 +128,27 @@ class InteractiveFormationWriteSerializer(serializers.ModelSerializer):
             "id", "category", "co_instructor", "title", "description", "level", "language",
             "price", "num_sessions", "session_duration_minutes", "max_students",
             "thumbnail", "start_date", "end_date", "status", "published", "slug",
+            "certificate_enabled", "certificate_auto_issue", "certificate_attendance_percent",
+            "certificate_validity_months", "certificate_title", "certificate_subtitle",
+            "certificate_description", "certificate_signatory_name", "certificate_signatory_title",
+            "certificate_accent_color", "certificate_number_prefix", "certificate_show_duration",
+            "certificate_show_instructor", "certificate_show_completion_date",
         ]
         read_only_fields = ["id", "slug"]
 
+    def validate_certificate_attendance_percent(self, value):
+        if value < 0 or value > 100:
+            raise serializers.ValidationError("Le seuil de présence doit être compris entre 0 et 100 %.")
+        return value
+
     def create(self, validated_data):
-        validated_data["instructor"] = self.context["request"].user
-        return super().create(validated_data)
+        from apps.enrollments.certificates import apply_platform_certificate_defaults
+        formation = InteractiveFormation(instructor=self.context["request"].user)
+        apply_platform_certificate_defaults(formation, "formation")
+        for key, value in validated_data.items():
+            setattr(formation, key, value)
+        formation.save()
+        return formation
 
 
 class FormationEnrollmentSerializer(serializers.ModelSerializer):

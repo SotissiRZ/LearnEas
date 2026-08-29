@@ -331,6 +331,11 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
         if not session.formation.sessions.filter(completed=False).exists():
             session.formation.status = FormationStatus.COMPLETED
             session.formation.save(update_fields=["status"])
+            if session.formation.certificate_enabled and session.formation.certificate_auto_issue:
+                from apps.enrollments.certificates import formation_eligibility, issue_formation_certificate
+                for enrollment in session.formation.enrollments.select_related("user").all():
+                    if formation_eligibility(enrollment)["eligible"]:
+                        issue_formation_certificate(enrollment, issued_by=session.formation.instructor)
         return Response(FormationSessionSerializer(session, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["get"])

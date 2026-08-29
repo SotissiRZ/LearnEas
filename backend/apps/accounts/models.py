@@ -44,6 +44,31 @@ class PlatformSettings(models.Model):
     instructor_applications_enabled = models.BooleanField(default=True)
     platform_commission_percent = models.PositiveSmallIntegerField(default=15)
     minimum_payout_amount = models.DecimalField(max_digits=10, decimal_places=2, default=100)
+
+    # Identité juridique / conformité
+    legal_company_name = models.CharField(max_length=180, blank=True, default="LearnEas")
+    legal_address = models.TextField(blank=True)
+    legal_country = models.CharField(max_length=100, blank=True, default="Maroc")
+    legal_registration_number = models.CharField(max_length=120, blank=True)
+    legal_tax_number = models.CharField(max_length=120, blank=True)
+    privacy_email = models.EmailField(blank=True, default="privacy@learneas.com")
+    terms_updated_at = models.DateField(null=True, blank=True)
+    privacy_updated_at = models.DateField(null=True, blank=True)
+    refund_policy_days = models.PositiveSmallIntegerField(default=14)
+
+    # Paramètres globaux des certificats. Les contenus peuvent les surcharger.
+    certificate_verification_enabled = models.BooleanField(default=True)
+    certificate_default_enabled = models.BooleanField(default=True)
+    certificate_default_auto_issue = models.BooleanField(default=True)
+    certificate_default_threshold_percent = models.PositiveSmallIntegerField(default=100)
+    certificate_default_attendance_percent = models.PositiveSmallIntegerField(default=80)
+    certificate_default_validity_months = models.PositiveIntegerField(null=True, blank=True)
+    certificate_default_title = models.CharField(max_length=180, default="Certificat de réussite")
+    certificate_default_subtitle = models.CharField(max_length=220, blank=True)
+    certificate_default_signatory_name = models.CharField(max_length=180, blank=True)
+    certificate_default_signatory_title = models.CharField(max_length=180, blank=True)
+    certificate_default_accent_color = models.CharField(max_length=20, default="#1f6f5c")
+    certificate_default_number_prefix = models.CharField(max_length=30, default="LE-CERT")
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

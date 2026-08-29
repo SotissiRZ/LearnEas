@@ -41,12 +41,13 @@ class CategorySerializer(serializers.ModelSerializer):
 class LessonSerializer(serializers.ModelSerializer):
     locked = serializers.SerializerMethodField()
     video_file = RelativeFileField(read_only=True)
+    subtitles_file = RelativeFileField(read_only=True)
 
     class Meta:
         model = Lesson
         fields = [
             "id", "title", "video_url", "video_file", "duration_minutes",
-            "order", "is_preview", "description", "locked",
+            "order", "is_preview", "description", "subtitles_file", "transcript", "locked",
         ]
 
     def get_locked(self, obj):
@@ -62,6 +63,8 @@ class LessonSerializer(serializers.ModelSerializer):
         if data["locked"]:
             data["video_url"] = None
             data["video_file"] = None
+            data["subtitles_file"] = None
+            data["transcript"] = ""
         return data
 
 
@@ -129,7 +132,13 @@ class CourseDetailSerializer(CourseListSerializer):
         fields = CourseListSerializer.Meta.fields + [
             "description", "what_you_will_learn", "requirements",
             "target_audience", "promo_video_url", "sections", "pdf_resources",
-            "is_enrolled",
+            "is_enrolled", "certificate_enabled", "certificate_auto_issue",
+            "certificate_threshold_percent", "certificate_validity_months",
+            "certificate_title", "certificate_subtitle", "certificate_description",
+            "certificate_signatory_name", "certificate_signatory_title",
+            "certificate_accent_color", "certificate_number_prefix",
+            "certificate_show_duration", "certificate_show_instructor",
+            "certificate_show_completion_date",
         ]
 
     def get_is_enrolled(self, obj):
@@ -157,6 +166,11 @@ class CourseWriteSerializer(serializers.ModelSerializer):
             "what_you_will_learn", "requirements", "target_audience",
             "level", "language", "price", "is_free", "discount_price",
             "thumbnail", "promo_video_url", "published", "featured", "slug",
+            "certificate_enabled", "certificate_auto_issue", "certificate_threshold_percent",
+            "certificate_validity_months", "certificate_title", "certificate_subtitle",
+            "certificate_description", "certificate_signatory_name", "certificate_signatory_title",
+            "certificate_accent_color", "certificate_number_prefix", "certificate_show_duration",
+            "certificate_show_instructor", "certificate_show_completion_date",
         ]
         read_only_fields = ["id", "slug"]
 
@@ -166,9 +180,19 @@ class CourseWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"featured": "Seul un administrateur peut mettre un cours en avant."})
         return attrs
 
+    def validate_certificate_threshold_percent(self, value):
+        if value < 0 or value > 100:
+            raise serializers.ValidationError("Le seuil doit être compris entre 0 et 100 %.")
+        return value
+
     def create(self, validated_data):
-        validated_data["instructor"] = self.context["request"].user
-        return super().create(validated_data)
+        from apps.enrollments.certificates import apply_platform_certificate_defaults
+        course = Course(instructor=self.context["request"].user)
+        apply_platform_certificate_defaults(course, "course")
+        for key, value in validated_data.items():
+            setattr(course, key, value)
+        course.save()
+        return course
 
 
 class SectionWriteSerializer(serializers.ModelSerializer):
@@ -191,6 +215,7 @@ class LessonWriteSerializer(serializers.ModelSerializer):
         fields = [
             "id", "section", "title", "video_url", "video_file",
             "duration_minutes", "order", "is_preview", "description",
+            "subtitles_file", "transcript",
         ]
 
     def validate_section(self, section):
@@ -198,6 +223,9 @@ class LessonWriteSerializer(serializers.ModelSerializer):
         return section
 
     def validate(self, attrs):
+        subtitles_file = attrs.get("subtitles_file")
+        if subtitles_file and not subtitles_file.name.lower().endswith(".vtt"):
+            raise serializers.ValidationError({"subtitles_file": "Le fichier de sous-titres doit être au format WebVTT (.vtt)."})
         video_file = attrs.get("video_file")
         video_url = attrs.get("video_url")
         if self.instance:

@@ -474,6 +474,16 @@ class PublicPlatformSettingsView(APIView):
             "support_email": config.support_email,
             "registration_enabled": config.registration_enabled,
             "instructor_applications_enabled": config.instructor_applications_enabled,
+            "legal_company_name": config.legal_company_name,
+            "legal_address": config.legal_address,
+            "legal_country": config.legal_country,
+            "legal_registration_number": config.legal_registration_number,
+            "legal_tax_number": config.legal_tax_number,
+            "privacy_email": config.privacy_email,
+            "terms_updated_at": config.terms_updated_at,
+            "privacy_updated_at": config.privacy_updated_at,
+            "refund_policy_days": config.refund_policy_days,
+            "certificate_verification_enabled": config.certificate_verification_enabled,
         })
 
 

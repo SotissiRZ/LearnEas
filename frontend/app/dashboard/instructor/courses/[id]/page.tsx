@@ -8,6 +8,7 @@ import { useAuthGuard } from "@/hooks/useAuthGuard";
 import GuardScreen from "@/components/ui/GuardScreen";
 import UploadProgressBar from "@/components/ui/UploadProgressBar";
 import PdfViewer from "@/components/ui/PdfViewer";
+import VideoPlayer from "@/components/ui/VideoPlayer";
 
 export default function ManageCoursePage({ params }: { params: { id: string } }) {
   const { ready } = useAuthGuard({ roles: ["instructor", "admin"], redirectTo: "/dashboard/instructor" });
@@ -15,6 +16,7 @@ export default function ManageCoursePage({ params }: { params: { id: string } })
   const [loading, setLoading] = useState(true);
   const [newSectionTitle, setNewSectionTitle] = useState("");
   const [publishing, setPublishing] = useState(false);
+  const [videoPreview, setVideoPreview] = useState<{src:string; title:string; subtitles?:string|null} | null>(null);
 
   const load = useCallback(async () => {
     const list = await api.get<{ results: Course[] } | Course[]>("/catalog/courses/my_courses/");
@@ -48,24 +50,27 @@ export default function ManageCoursePage({ params }: { params: { id: string } })
     load();
   }
 
-  async function addLessonByUrl(sectionId: number, title: string, duration: number, videoUrl: string, isPreview: boolean) {
-    await api.post("/catalog/lessons/", {
-      section: sectionId, title, duration_minutes: duration, video_url: videoUrl,
-      order: 1, is_preview: isPreview,
-    });
+  async function addLessonByUrl(sectionId: number, title: string, duration: number, videoUrl: string, isPreview: boolean, subtitles: File | null, transcript: string) {
+    if (subtitles) {
+      const fd = new FormData();
+      fd.append("section", String(sectionId)); fd.append("title", title); fd.append("duration_minutes", String(duration));
+      fd.append("video_url", videoUrl); fd.append("order", "1"); fd.append("is_preview", String(isPreview));
+      fd.append("subtitles_file", subtitles); fd.append("transcript", transcript);
+      await apiUploadWithProgress("/catalog/lessons/", fd);
+    } else {
+      await api.post("/catalog/lessons/", { section: sectionId, title, duration_minutes: duration, video_url: videoUrl, order: 1, is_preview: isPreview, transcript });
+    }
     load();
   }
 
   async function addLessonByFile(
-    sectionId: number, title: string, file: File, isPreview: boolean,
+    sectionId: number, title: string, file: File, isPreview: boolean, subtitles: File | null, transcript: string,
     onProgress: (percent: number) => void
   ) {
     const fd = new FormData();
-    fd.append("section", String(sectionId));
-    fd.append("title", title);
-    fd.append("order", "1");
-    fd.append("is_preview", String(isPreview));
-    fd.append("video_file", file);
+    fd.append("section", String(sectionId)); fd.append("title", title); fd.append("order", "1");
+    fd.append("is_preview", String(isPreview)); fd.append("video_file", file); fd.append("transcript", transcript);
+    if (subtitles) fd.append("subtitles_file", subtitles);
     await apiUploadWithProgress("/catalog/lessons/", fd, onProgress);
     load();
   }
@@ -143,8 +148,8 @@ export default function ManageCoursePage({ params }: { params: { id: string } })
                     {lesson.is_preview && <span className="badge bg-brand-50 text-brand-700">Aperçu gratuit</span>}
                     <span className="text-xs text-gray-400">{lesson.duration_minutes} min</span>
                     {(lesson.video_file || lesson.video_url) && (
-                      <a href={lesson.video_file || lesson.video_url || "#"} target="_blank" rel="noreferrer"
-                        className="font-semibold text-brand-700">Lire</a>
+                      <button type="button" onClick={() => setVideoPreview({ src: (lesson.video_file || lesson.video_url) as string, title: lesson.title, subtitles: lesson.subtitles_file })}
+                        className="font-semibold text-brand-700">Lire</button>
                     )}
                     <button onClick={() => deleteLesson(lesson.id)} className="text-gray-400 hover:text-red-600">
                       <Trash2 size={14} />
@@ -153,8 +158,8 @@ export default function ManageCoursePage({ params }: { params: { id: string } })
                 ))}
               </div>
               <AddLessonForm
-                onAddUrl={(title, duration, url, preview) => addLessonByUrl(section.id, title, duration, url, preview)}
-                onAddFile={(title, file, preview, onProgress) => addLessonByFile(section.id, title, file, preview, onProgress)}
+                onAddUrl={(title, duration, url, preview, subtitles, transcript) => addLessonByUrl(section.id, title, duration, url, preview, subtitles, transcript)}
+                onAddFile={(title, file, preview, subtitles, transcript, onProgress) => addLessonByFile(section.id, title, file, preview, subtitles, transcript, onProgress)}
               />
             </div>
           ))}
@@ -190,6 +195,7 @@ export default function ManageCoursePage({ params }: { params: { id: string } })
           </div>
         </div>
       </div>
+      {videoPreview && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setVideoPreview(null)}><div className="w-full max-w-5xl overflow-hidden rounded-2xl bg-black" onClick={(e) => e.stopPropagation()}><div className="flex items-center justify-between bg-white px-4 py-3"><strong className="text-sm">{videoPreview.title}</strong><button type="button" onClick={() => setVideoPreview(null)} className="text-sm text-gray-500">Fermer</button></div><div className="aspect-video"><VideoPlayer src={videoPreview.src} title={videoPreview.title} subtitlesUrl={videoPreview.subtitles}/></div></div></div>}
     </div>
   );
 }
@@ -223,14 +229,16 @@ async function extractVideoDurationFromUrl(url: string): Promise<number> {
 function AddLessonForm({
   onAddUrl, onAddFile,
 }: {
-  onAddUrl: (title: string, duration: number, url: string, preview: boolean) => Promise<void>;
-  onAddFile: (title: string, file: File, preview: boolean, onProgress: (p: number) => void) => Promise<void>;
+  onAddUrl: (title: string, duration: number, url: string, preview: boolean, subtitles: File | null, transcript: string) => Promise<void>;
+  onAddFile: (title: string, file: File, preview: boolean, subtitles: File | null, transcript: string, onProgress: (p: number) => void) => Promise<void>;
 }) {
   const [mode, setMode] = useState<"file" | "url">("file");
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState(false);
+  const [subtitles, setSubtitles] = useState<File | null>(null);
+  const [transcript, setTranscript] = useState("");
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
@@ -246,12 +254,12 @@ function AddLessonForm({
     setProgress(0);
     try {
       if (mode === "file" && file) {
-        await onAddFile(title, file, preview, setProgress);
+        await onAddFile(title, file, preview, subtitles, transcript, setProgress);
       } else if (mode === "url") {
         const minutes = await extractVideoDurationFromUrl(url);
-        await onAddUrl(title, minutes, url, preview);
+        await onAddUrl(title, minutes, url, preview, subtitles, transcript);
       }
-      setTitle(""); setUrl(""); setFile(null); setPreview(false); setProgress(0);
+      setTitle(""); setUrl(""); setFile(null); setPreview(false); setSubtitles(null); setTranscript(""); setProgress(0);
       setFileInputKey((k) => k + 1); // réinitialise visuellement le champ fichier natif
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Erreur lors de l'ajout de la vidéo.");
@@ -294,6 +302,14 @@ function AddLessonForm({
         </div>
       )}
 
+      <div>
+        <label className="mb-0.5 block text-xs font-medium text-gray-500">Sous-titres WebVTT (.vtt, optionnel)</label>
+        <input key={`sub-${fileInputKey}`} type="file" accept=".vtt,text/vtt" onChange={(e) => setSubtitles(e.target.files?.[0] || null)} className="w-full rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label className="mb-0.5 block text-xs font-medium text-gray-500">Transcription (optionnelle)</label>
+        <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} className="min-h-24 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" placeholder="Texte de la leçon pour l'accessibilité et la révision..." />
+      </div>
       <label className="flex items-center gap-2 text-xs text-gray-600">
         <input type="checkbox" checked={preview} onChange={(e) => setPreview(e.target.checked)} />
         Aperçu gratuit (consultable sans achat)

@@ -7,6 +7,8 @@ from django.utils import timezone
 from apps.catalog.models import Category, Course, Section, Lesson, PDFResource, PDFProduct
 from apps.formations.models import InteractiveFormation, FormationSession
 from apps.reviews.models import Review
+from apps.enrollments.models import CourseEnrollment
+from apps.enrollments.certificates import issue_course_certificate
 from apps.faq.models import FAQ
 
 User = get_user_model()
@@ -264,6 +266,14 @@ class Command(BaseCommand):
                 course.rating_avg = round(avg, 2)
                 course.rating_count = count
                 course.save(update_fields=["rating_avg", "rating_count"])
+
+        self.stdout.write("Création d'un certificat de démonstration...")
+        fatou_enrollment, _ = CourseEnrollment.objects.get_or_create(user=students[0], course=c1)
+        fatou_enrollment.progress_percent = 100
+        fatou_enrollment.completed = True
+        fatou_enrollment.completed_at = fatou_enrollment.completed_at or timezone.now()
+        fatou_enrollment.save(update_fields=["progress_percent", "completed", "completed_at"])
+        issue_course_certificate(fatou_enrollment, issued_by=sarah, force=True)
 
         self.stdout.write("Création de la FAQ...")
         faq_items = [

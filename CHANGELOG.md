@@ -222,3 +222,30 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
   `InstructorNavItem` avec `exact?: boolean`, et la valeur est normalisée à `false` lors du rendu.
 - Aucun changement fonctionnel ou visuel de la sidebar : ce correctif vise uniquement la compilation
   de production et conserve la navigation introduite en v5.
+
+---
+
+# v7 — Légal, lecteurs enrichis et certificats
+
+## ⚖️ Footer et conformité
+
+- Ajout d'une section **Légal** dans le footer : Conditions d'utilisation, Confidentialité, Mentions légales, Cookies, Paiements & remboursements et Vérification de certificat.
+- Les informations juridiques de la plateforme sont administrables depuis le back-office : raison sociale, adresse, pays, immatriculation, identifiant fiscal, email confidentialité et délai de remboursement.
+- Les pages légales utilisent les paramètres publics de la plateforme afin d'éviter des informations divergentes entre le footer et l'administration.
+
+## 🎬 Lecteurs intégrés
+
+- Nouveau lecteur vidéo commun aux écrans apprenant et instructeur : contrôles natifs, lecture/pause, saut ±10 s, volume/muet, vitesse 0,5×–2×, boucle, redémarrage, plein écran, Picture-in-Picture, sous-titres WebVTT, raccourcis navigateur, nouvel onglet et téléchargement.
+- Les leçons peuvent désormais contenir un fichier **WebVTT** et une **transcription** ; l'apprenant dispose d'un onglet Transcription dans le lecteur du cours.
+- Nouveau lecteur PDF unifié avec barre native du navigateur, navigation par pages, recherche, zoom, miniatures lorsque le navigateur les supporte, plein écran, impression, nouvel onglet et téléchargement.
+
+## 🏆 Certificats
+
+- Nouvel onglet apprenant **Mes certificats** avec recherche, filtres, statut, consultation, impression/enregistrement PDF, partage et vérification publique.
+- Certificat de cours configurable : activation, délivrance automatique, seuil de progression, validité, titre, sous-titre, description, signataire, couleur, préfixe et informations visibles.
+- Certificat de formation interactive configurable selon le **taux de présence réel** enregistré dans les séances LearnEas.
+- Espace instructeur **Certificats** : configuration par contenu, candidats éligibles, délivrance individuelle, registre, révocation et réémission.
+- Espace admin **Certificats** : paramètres globaux, surcharge par contenu, registre global, délivrance forcée exceptionnelle, révocation/réémission et activation de la vérification publique.
+- Chaque certificat conserve un snapshot des informations au moment de l'émission et dispose d'un numéro ainsi que d'un code de vérification uniques.
+- La vérification publique ne révèle pas l'adresse email de l'apprenant.
+- `seed_demo` génère un certificat de démonstration pour **Fatou Ndiaye** afin de tester immédiatement le parcours apprenant.

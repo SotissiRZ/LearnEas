@@ -127,13 +127,33 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
         fields = [
             "site_name", "support_email", "registration_enabled",
             "instructor_applications_enabled", "platform_commission_percent",
-            "minimum_payout_amount", "updated_at",
+            "minimum_payout_amount",
+            "legal_company_name", "legal_address", "legal_country",
+            "legal_registration_number", "legal_tax_number", "privacy_email",
+            "terms_updated_at", "privacy_updated_at", "refund_policy_days",
+            "certificate_verification_enabled", "certificate_default_enabled",
+            "certificate_default_auto_issue", "certificate_default_threshold_percent",
+            "certificate_default_attendance_percent", "certificate_default_validity_months",
+            "certificate_default_title", "certificate_default_subtitle",
+            "certificate_default_signatory_name", "certificate_default_signatory_title",
+            "certificate_default_accent_color", "certificate_default_number_prefix",
+            "updated_at",
         ]
         read_only_fields = ["updated_at"]
 
     def validate_platform_commission_percent(self, value):
         if value < 0 or value > 100:
             raise serializers.ValidationError("La commission doit être comprise entre 0 et 100 %.")
+        return value
+
+    def validate_certificate_default_threshold_percent(self, value):
+        if value < 0 or value > 100:
+            raise serializers.ValidationError("Le seuil doit être compris entre 0 et 100 %.")
+        return value
+
+    def validate_certificate_default_attendance_percent(self, value):
+        if value < 0 or value > 100:
+            raise serializers.ValidationError("Le seuil de présence doit être compris entre 0 et 100 %.")
         return value
 
     def validate_minimum_payout_amount(self, value):

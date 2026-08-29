@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Search,
   Settings,
+  ShieldCheck,
   ShoppingBag,
   Star,
   Tags,
@@ -23,6 +24,7 @@ import {
   UserCheck,
   Video,
   WalletCards,
+  Award,
   XCircle,
 } from "lucide-react";
 import { api, ApiError, formatPrice } from "@/lib/api";
@@ -30,6 +32,7 @@ import { useAuthGuard } from "@/hooks/useAuthGuard";
 import GuardScreen from "@/components/ui/GuardScreen";
 import AdminSidebar, { AdminTab } from "@/components/admin/AdminSidebar";
 import AdminModal from "@/components/admin/AdminModal";
+import CertificateContentConfigurator from "@/components/certificates/CertificateContentConfigurator";
 
 type Paginated<T> = { count: number; next: string | null; previous: string | null; results: T[] };
 
@@ -202,10 +205,38 @@ type PlatformSettings = {
   instructor_applications_enabled: boolean;
   platform_commission_percent: number;
   minimum_payout_amount: string;
+  legal_company_name: string;
+  legal_address: string;
+  legal_country: string;
+  legal_registration_number: string;
+  legal_tax_number: string;
+  privacy_email: string;
+  terms_updated_at: string | null;
+  privacy_updated_at: string | null;
+  refund_policy_days: number;
+  certificate_verification_enabled: boolean;
+  certificate_default_enabled: boolean;
+  certificate_default_auto_issue: boolean;
+  certificate_default_threshold_percent: number;
+  certificate_default_attendance_percent: number;
+  certificate_default_validity_months: number | null;
+  certificate_default_title: string;
+  certificate_default_subtitle: string;
+  certificate_default_signatory_name: string;
+  certificate_default_signatory_title: string;
+  certificate_default_accent_color: string;
+  certificate_default_number_prefix: string;
   updated_at: string;
 };
 
-const ADMIN_TABS: AdminTab[] = ["overview", "users", "applications", "content", "orders", "payouts", "sessions", "categories", "moderation", "settings"];
+type CertificateRecord = {
+  id: number; certificate_number: string; verification_code: string; verification_url: string;
+  status: string; effective_status: string; issued_at: string; expires_at: string | null;
+  revoked_at: string | null; revocation_reason: string; achievement_percent: string;
+  student_name: string; content_type: string; content_title: string; instructor_name: string;
+};
+
+const ADMIN_TABS: AdminTab[] = ["overview", "users", "applications", "content", "orders", "payouts", "sessions", "certificates", "categories", "moderation", "settings"];
 
 function unwrap<T>(data: Paginated<T> | T[]): T[] {
   return Array.isArray(data) ? data : data.results;
@@ -243,6 +274,7 @@ function AdminDashboardContent() {
           {tab === "orders" && <OrdersTab key={searchParams.toString()} />}
           {tab === "payouts" && <PayoutsTab key={searchParams.toString()} />}
           {tab === "sessions" && <SessionsTab key={searchParams.toString()} />}
+          {tab === "certificates" && <CertificatesTab key={searchParams.toString()} />}
           {tab === "categories" && <CategoriesTab key={searchParams.toString()} />}
           {tab === "moderation" && <ModerationTab key={searchParams.toString()} />}
           {tab === "settings" && <SettingsTab key={searchParams.toString()} />}
@@ -756,6 +788,41 @@ function SessionsTab() {
   );
 }
 
+
+function CertificatesTab() {
+  const [rows, setRows] = useState<CertificateRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [error, setError] = useState("");
+
+  const load = useCallback(() => {
+    setLoading(true); setError("");
+    api.get<Paginated<CertificateRecord> | CertificateRecord[]>(`/enrollments/certificates/${search ? `?search=${encodeURIComponent(search)}` : ""}`)
+      .then((data) => setRows(unwrap(data))).catch((e) => setError(toError(e))).finally(() => setLoading(false));
+  }, [search]);
+  useEffect(() => { const timer = window.setTimeout(load, 220); return () => window.clearTimeout(timer); }, [load]);
+
+  async function revoke(row: CertificateRecord) {
+    const reason = window.prompt("Motif de révocation :", "") || "";
+    if (!window.confirm(`Révoquer le certificat ${row.certificate_number} ?`)) return;
+    try { await api.post(`/enrollments/certificates/${row.id}/revoke/`, { reason }); load(); }
+    catch (e) { setError(toError(e)); }
+  }
+  async function reissue(row: CertificateRecord) {
+    if (!window.confirm("Réémettre ce certificat avec un nouveau numéro et un nouveau code de vérification ?")) return;
+    try { await api.post(`/enrollments/certificates/${row.id}/reissue/`, {}); load(); }
+    catch (e) { setError(toError(e)); }
+  }
+
+  return <>
+    <PageHeader title="Certificats" description="Registre global, vérification, révocation et réémission des certificats LearnEas." actions={<Link href="/certificates/verify" className="btn-outline !py-2"><ExternalLink size={15}/> Vérification publique</Link>} />
+    {error && <Alert text={error} tone="error" />}
+    <div className="mb-4"><SearchInput value={search} onChange={setSearch} placeholder="Apprenant, contenu ou numéro..." /></div>
+    <div className="card overflow-x-auto"><table className="w-full min-w-[980px] text-sm"><thead className="table-head"><tr><th>Apprenant</th><th>Contenu</th><th>Instructeur</th><th>N°</th><th>Résultat</th><th>Statut</th><th>Date</th><th>Actions</th></tr></thead><tbody className="divide-y divide-gray-100">{rows.map((row) => <tr key={row.id}><td className="px-4 py-3 font-semibold">{row.student_name}</td><td className="px-4 py-3"><p className="font-medium">{row.content_title}</p><p className="text-xs text-gray-400">{row.content_type}</p></td><td className="px-4 py-3">{row.instructor_name || "—"}</td><td className="px-4 py-3 text-xs">{row.certificate_number}</td><td className="px-4 py-3">{Number(row.achievement_percent).toFixed(1)} %</td><td className="px-4 py-3"><StatusBadge status={row.effective_status} /></td><td className="px-4 py-3 text-gray-500">{new Date(row.issued_at).toLocaleDateString("fr-FR")}</td><td className="px-4 py-3"><div className="flex flex-wrap gap-2"><Link href={`/certificates/${row.id}`} className="text-xs font-semibold text-brand-700">Voir</Link><a href={row.verification_url} target="_blank" rel="noreferrer" className="text-xs font-semibold text-brand-700">Vérifier</a>{row.effective_status === "active" ? <button onClick={() => revoke(row)} className="text-xs font-semibold text-red-600">Révoquer</button> : <button onClick={() => reissue(row)} className="text-xs font-semibold text-brand-700">Réémettre</button>}</div></td></tr>)}</tbody></table>{loading && <LoadingBlock compact />}{!loading && rows.length === 0 && <Empty text="Aucun certificat trouvé." />}</div>
+    <div className="mt-5"><CertificateContentConfigurator adminMode /></div>
+  </>;
+}
+
 function CategoriesTab() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState("");
@@ -902,6 +969,8 @@ function SettingsTab() {
       <form onSubmit={save} className="space-y-5">
         <section className="card p-5"><h2 className="flex items-center gap-2 font-bold"><Settings size={17} /> Identité et assistance</h2><div className="mt-4 grid gap-4 md:grid-cols-2"><label className="label-admin">Nom de la plateforme<input className="input-admin w-full" value={form.site_name} onChange={(e) => setForm({ ...form, site_name: e.target.value })} /></label><label className="label-admin">Email d'assistance<input type="email" className="input-admin w-full" value={form.support_email} onChange={(e) => setForm({ ...form, support_email: e.target.value })} /></label></div></section>
         <section className="card p-5"><h2 className="flex items-center gap-2 font-bold"><Users size={17} /> Accès et inscription</h2><div className="mt-4 grid gap-4 md:grid-cols-2"><SettingToggle title="Autoriser les nouvelles inscriptions" description="Si désactivé, l'API refuse la création de nouveaux comptes." checked={form.registration_enabled} onChange={(v) => setForm({ ...form, registration_enabled: v })} /><SettingToggle title="Autoriser les demandes instructeur" description="Contrôle la conversion d'un étudiant en instructeur depuis son espace." checked={form.instructor_applications_enabled} onChange={(v) => setForm({ ...form, instructor_applications_enabled: v })} /></div></section>
+        <section className="card p-5"><h2 className="flex items-center gap-2 font-bold"><ShieldCheck size={17} /> Informations légales</h2><p className="mt-1 text-xs text-gray-500">Ces informations alimentent automatiquement les pages du footer Légal.</p><div className="mt-4 grid gap-4 md:grid-cols-2"><label className="label-admin">Raison sociale<input className="input-admin w-full" value={form.legal_company_name} onChange={(e) => setForm({ ...form, legal_company_name: e.target.value })} /></label><label className="label-admin">Pays<input className="input-admin w-full" value={form.legal_country} onChange={(e) => setForm({ ...form, legal_country: e.target.value })} /></label><label className="label-admin md:col-span-2">Adresse<textarea className="input-admin min-h-20 w-full" value={form.legal_address} onChange={(e) => setForm({ ...form, legal_address: e.target.value })} /></label><label className="label-admin">Immatriculation<input className="input-admin w-full" value={form.legal_registration_number} onChange={(e) => setForm({ ...form, legal_registration_number: e.target.value })} /></label><label className="label-admin">Identifiant fiscal<input className="input-admin w-full" value={form.legal_tax_number} onChange={(e) => setForm({ ...form, legal_tax_number: e.target.value })} /></label><label className="label-admin">Email confidentialité<input type="email" className="input-admin w-full" value={form.privacy_email} onChange={(e) => setForm({ ...form, privacy_email: e.target.value })} /></label><label className="label-admin">Délai remboursement par défaut (jours)<input type="number" min="0" className="input-admin w-full" value={form.refund_policy_days} onChange={(e) => setForm({ ...form, refund_policy_days: Number(e.target.value) })} /></label><label className="label-admin">Mise à jour des conditions<input type="date" className="input-admin w-full" value={form.terms_updated_at || ""} onChange={(e) => setForm({ ...form, terms_updated_at: e.target.value || null })} /></label><label className="label-admin">Mise à jour confidentialité<input type="date" className="input-admin w-full" value={form.privacy_updated_at || ""} onChange={(e) => setForm({ ...form, privacy_updated_at: e.target.value || null })} /></label></div></section>
+        <section className="card p-5"><h2 className="flex items-center gap-2 font-bold"><Award size={17} /> Certificats — valeurs par défaut</h2><p className="mt-1 text-xs text-gray-500">Ces valeurs sont copiées sur les nouveaux contenus ; l'instructeur ou l'admin peut ensuite les surcharger.</p><div className="mt-4 grid gap-4 md:grid-cols-2"><SettingToggle title="Vérification publique" description="Autorise la page publique de vérification par code." checked={form.certificate_verification_enabled} onChange={(v) => setForm({ ...form, certificate_verification_enabled: v })} /><SettingToggle title="Certificats activés par défaut" description="Active la certification sur les nouveaux contenus." checked={form.certificate_default_enabled} onChange={(v) => setForm({ ...form, certificate_default_enabled: v })} /><SettingToggle title="Délivrance automatique" description="Émet automatiquement dès que le seuil est atteint." checked={form.certificate_default_auto_issue} onChange={(v) => setForm({ ...form, certificate_default_auto_issue: v })} /><label className="label-admin">Seuil cours (%)<input type="number" min="0" max="100" className="input-admin w-full" value={form.certificate_default_threshold_percent} onChange={(e) => setForm({ ...form, certificate_default_threshold_percent: Number(e.target.value) })} /></label><label className="label-admin">Présence live minimale (%)<input type="number" min="0" max="100" className="input-admin w-full" value={form.certificate_default_attendance_percent} onChange={(e) => setForm({ ...form, certificate_default_attendance_percent: Number(e.target.value) })} /></label><label className="label-admin">Validité (mois, vide = illimitée)<input type="number" min="0" className="input-admin w-full" value={form.certificate_default_validity_months ?? ""} onChange={(e) => setForm({ ...form, certificate_default_validity_months: e.target.value === "" ? null : Number(e.target.value) })} /></label><label className="label-admin">Titre par défaut<input className="input-admin w-full" value={form.certificate_default_title} onChange={(e) => setForm({ ...form, certificate_default_title: e.target.value })} /></label><label className="label-admin">Sous-titre<input className="input-admin w-full" value={form.certificate_default_subtitle} onChange={(e) => setForm({ ...form, certificate_default_subtitle: e.target.value })} /></label><label className="label-admin">Signataire<input className="input-admin w-full" value={form.certificate_default_signatory_name} onChange={(e) => setForm({ ...form, certificate_default_signatory_name: e.target.value })} /></label><label className="label-admin">Fonction du signataire<input className="input-admin w-full" value={form.certificate_default_signatory_title} onChange={(e) => setForm({ ...form, certificate_default_signatory_title: e.target.value })} /></label><label className="label-admin">Préfixe des numéros<input className="input-admin w-full" value={form.certificate_default_number_prefix} onChange={(e) => setForm({ ...form, certificate_default_number_prefix: e.target.value })} /></label><label className="label-admin">Couleur<input type="color" className="input-admin h-11 w-full" value={form.certificate_default_accent_color} onChange={(e) => setForm({ ...form, certificate_default_accent_color: e.target.value })} /></label></div></section>
         <section className="card p-5"><h2 className="flex items-center gap-2 font-bold"><WalletCards size={17} /> Finance</h2><p className="mt-1 text-xs text-gray-500">Les nouvelles ventes utilisent immédiatement ces paramètres. Les anciennes ventes conservent leur ventilation enregistrée.</p><div className="mt-4 grid gap-4 md:grid-cols-2"><label className="label-admin">Commission plateforme (%)<input type="number" min="0" max="100" className="input-admin w-full" value={form.platform_commission_percent} onChange={(e) => setForm({ ...form, platform_commission_percent: Number(e.target.value) })} /></label><label className="label-admin">Retrait instructeur minimum (MAD)<input type="number" min="0" step="0.01" className="input-admin w-full" value={form.minimum_payout_amount} onChange={(e) => setForm({ ...form, minimum_payout_amount: e.target.value })} /></label></div></section>
         <div className="flex items-center justify-between"><p className="text-xs text-gray-400">Dernière modification : {settings?.updated_at ? new Date(settings.updated_at).toLocaleString("fr-FR") : "—"}</p><button disabled={saving} className="btn-primary" type="submit">{saving ? <><Loader2 className="animate-spin" size={15} /> Enregistrement...</> : "Enregistrer les paramètres"}</button></div>
       </form>

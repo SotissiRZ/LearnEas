@@ -58,6 +58,22 @@ class Course(models.Model):
     thumbnail = models.ImageField(upload_to="courses/thumbnails/", blank=True, null=True)
     promo_video_url = models.URLField(blank=True)
 
+    # Configuration du certificat de cours
+    certificate_enabled = models.BooleanField(default=True)
+    certificate_auto_issue = models.BooleanField(default=True)
+    certificate_threshold_percent = models.PositiveSmallIntegerField(default=100)
+    certificate_validity_months = models.PositiveIntegerField(null=True, blank=True)
+    certificate_title = models.CharField(max_length=180, default="Certificat de réussite")
+    certificate_subtitle = models.CharField(max_length=220, blank=True)
+    certificate_description = models.TextField(blank=True)
+    certificate_signatory_name = models.CharField(max_length=180, blank=True)
+    certificate_signatory_title = models.CharField(max_length=180, blank=True)
+    certificate_accent_color = models.CharField(max_length=20, default="#1f6f5c")
+    certificate_number_prefix = models.CharField(max_length=30, default="LE-CERT")
+    certificate_show_duration = models.BooleanField(default=True)
+    certificate_show_instructor = models.BooleanField(default=True)
+    certificate_show_completion_date = models.BooleanField(default=True)
+
     published = models.BooleanField(default=False)
     featured = models.BooleanField(default=False)
 
@@ -126,6 +142,8 @@ class Lesson(models.Model):
     order = models.PositiveIntegerField(default=0)
     is_preview = models.BooleanField(default=False, help_text="Vidéo gratuite consultable sans achat")
     description = models.TextField(blank=True)
+    subtitles_file = models.FileField(upload_to="courses/subtitles/", blank=True, null=True, help_text="Sous-titres WebVTT (.vtt)")
+    transcript = models.TextField(blank=True, help_text="Transcription texte de la leçon")
 
     class Meta:
         ordering = ["order", "id"]

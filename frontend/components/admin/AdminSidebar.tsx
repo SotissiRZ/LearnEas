@@ -13,6 +13,7 @@ import {
   Settings,
   ShieldCheck,
   MessageSquareText,
+  Award,
 } from "lucide-react";
 
 const ITEMS = [
@@ -23,6 +24,7 @@ const ITEMS = [
   { tab: "orders", label: "Commandes", icon: ShoppingBag },
   { tab: "payouts", label: "Versements", icon: WalletCards },
   { tab: "sessions", label: "Séances live", icon: Video },
+  { tab: "certificates", label: "Certificats", icon: Award },
   { tab: "categories", label: "Catégories", icon: Tags },
   { tab: "moderation", label: "FAQ & avis", icon: MessageSquareText },
   { tab: "settings", label: "Paramètres", icon: Settings },

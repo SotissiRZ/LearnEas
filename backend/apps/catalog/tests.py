@@ -47,6 +47,10 @@ class CatalogAccessRegressionTests(APITestCase):
             video_url="https://cdn.example.com/video.mp4",
             duration_minutes=10,
             order=1,
+            subtitles_file=SimpleUploadedFile(
+                "intro.vtt", b"WEBVTT\n\n00:00.000 --> 00:02.000\nBonjour", content_type="text/vtt"
+            ),
+            transcript="Transcription complete reservee aux inscrits.",
         )
         self.pdf = PDFResource.objects.create(
             course=self.course,
@@ -72,6 +76,18 @@ class CatalogAccessRegressionTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(response.data["is_enrolled"])
         self.assertFalse(response.data["sections"][0]["lessons"][0]["locked"])
+
+
+    def test_locked_lesson_does_not_leak_subtitles_or_transcript(self):
+        self.client.force_authenticate(self.student)
+        response = self.client.get(f"/api/catalog/courses/{self.course.slug}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        lesson = response.data["sections"][0]["lessons"][0]
+        self.assertTrue(lesson["locked"])
+        self.assertIsNone(lesson["video_url"])
+        self.assertIsNone(lesson["video_file"])
+        self.assertIsNone(lesson["subtitles_file"])
+        self.assertEqual(lesson["transcript"], "")
 
     def test_student_cannot_bypass_locks_through_management_endpoints(self):
         self.client.force_authenticate(self.student)

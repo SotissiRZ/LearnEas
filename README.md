@@ -75,7 +75,20 @@ Admin Django : **http://localhost/admin**
 
 ---
 
-## ✅ Fonctionnalités implémentées (testées de bout en bout)
+## ✅ Fonctionnalités implémentées
+
+### Légal, lecteurs et certificats (v7)
+
+- Footer enrichi avec une section **Légal** : conditions d'utilisation, confidentialité, mentions légales, cookies, paiements/remboursements et vérification publique des certificats.
+- Les informations juridiques (raison sociale, adresse, pays, immatriculation, identifiant fiscal, email confidentialité et délai de remboursement) sont configurables dans **Admin → Paramètres**.
+- Lecteur vidéo unifié : contrôles natifs complets, ±10 s, recommencer, volume/mute, vitesse 0,5× à 2×, boucle, sous-titres WebVTT, Picture-in-Picture, plein écran, nouvel onglet, téléchargement et raccourcis clavier (K/Espace, J/L, flèches, M, F).
+- Lecteur PDF unifié : barre native du navigateur (pages, recherche, zoom, miniatures selon navigateur), plein écran/modal, impression, nouvel onglet et téléchargement.
+- Les leçons acceptent désormais un fichier de sous-titres `.vtt` et une transcription.
+- **Apprenant → Mes certificats** : registre personnel, filtres, affichage, impression/PDF, partage et vérification publique.
+- **Instructeur → Certificats** : règles par cours/formation, seuil de progression ou de présence réelle, délivrance automatique/manuelle ou groupée, validité, apparence, signataire, préfixe, registre, révocation et réémission.
+- **Admin → Certificats** : registre global, vérification/révocation/réémission, délivrance groupée ou forcée et paramètres globaux + surcharge par contenu.
+- La présence aux formations live est calculée à partir du temps réellement enregistré dans les séances, et non d'une simple case « présent ».
+- `seed_demo` délivre un certificat d'exemple à **Fatou Ndiaye** sur le cours Django pour tester immédiatement l'onglet « Mes certificats ».
 
 ### Catalogue
 - Cours = **playlist complète** : sections → leçons vidéo, durée totale et nombre de vidéos calculés
@@ -95,7 +108,7 @@ Admin Django : **http://localhost/admin**
 - Espace d'apprentissage dédié (`/learn/[slug]`) : lecteur vidéo, sidebar curriculum, suivi de
   progression leçon par leçon, onglet ressources PDF, onglet discussion (base posée).
 - Barre de progression par cours, calcul automatique du `%` de complétion.
-- **Certificat de fin de formation** émis automatiquement à 100 %, page imprimable dédiée.
+- **Certificat configurable** : délivrance automatique à partir du seuil défini sur le cours, ou du taux de présence réel pour une formation live ; page imprimable/enregistrable en PDF et vérification publique par code.
 
 ### Comptes & rôles
 - 3 rôles : étudiant, instructeur, administrateur.
@@ -222,9 +235,10 @@ npm run dev                       # http://localhost:3000
 
 | App | Modèles clés |
 |---|---|
-| `accounts` | `User` (rôle admin/instructor/student), `PlatformSettings` |
+| `accounts` | `User` (rôle admin/instructor/student), `PlatformSettings`, `InstructorApplication` |
 | `catalog` | `Category`, `Course`, `Section`, `Lesson`, `PDFResource` (inclus dans un cours), `PDFProduct` (vendu seul) |
-| `enrollments` | `CourseEnrollment`, `LessonProgress`, `PDFPurchase`, `Wishlist` |
+| `formations` | `InteractiveFormation`, `FormationSession`, `FormationEnrollment`, `FormationAttendance`, `FormationSignal` |
+| `enrollments` | `CourseEnrollment`, `LessonProgress`, `PDFPurchase`, `Wishlist`, `Certificate` |
 | `payments` | `Order`, `OrderItem`, `PayoutProfile`, `InstructorPayout` |
 | `reviews` | `Review`, `LessonComment` |
 | `faq` | `FAQ` |
@@ -261,6 +275,8 @@ simplifiés pour rester un point de départ clair. À finaliser avant lancement 
 ---
 
 ## 🧪 Ce qui a été réellement testé (pas seulement écrit)
+
+Pour la **v7**, dans l’environnement de livraison : compilation/AST Python, syntaxe des migrations, parsing TypeScript/TSX, résolution des imports locaux et validation YAML Docker Compose ont été exécutés. Le build Next.js/Django complet doit être relancé dans Docker sur la machine cible, car les dépendances Django/npm ne sont pas installées dans cet environnement de génération.
 
 - Build de production Next.js : **23 routes, 0 erreur TypeScript**.
 - `python manage.py check` / `makemigrations` / `migrate` : **0 erreur**.

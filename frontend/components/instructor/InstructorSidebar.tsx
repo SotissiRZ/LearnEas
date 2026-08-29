@@ -14,6 +14,7 @@ import {
   MessagesSquare,
   UserRoundCog,
   GraduationCap,
+  Award,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -33,6 +34,7 @@ const ITEMS: readonly InstructorNavItem[] = [
   { href: "/dashboard/instructor/students", label: "Étudiants", icon: Users },
   { href: "/dashboard/instructor/analytics", label: "Statistiques", icon: BarChart3 },
   { href: "/dashboard/instructor/reviews", label: "Avis & questions", icon: Star },
+  { href: "/dashboard/instructor/certificates", label: "Certificats", icon: Award },
   { href: "/dashboard/instructor/finance", label: "Revenus & versements", icon: WalletCards },
   { href: "/dashboard/instructor/messages", label: "Messages", icon: MessagesSquare },
   { href: "/dashboard/instructor/profile", label: "Profil & paramètres", icon: UserRoundCog },
