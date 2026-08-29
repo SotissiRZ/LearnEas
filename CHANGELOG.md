@@ -1,3 +1,10 @@
+## v8 — Correctif CSRF inscription / API JWT
+
+- L’API REST utilise désormais uniquement `JWTAuthentication`.
+- Correction du `CSRF Failed: CSRF token missing` pouvant survenir à l’inscription ou à la connexion lorsqu’un cookie de session Django Admin était déjà présent dans le navigateur.
+- La protection CSRF du Django Admin reste inchangée et active.
+- Ajout d’un test de régression avec une session admin existante et les contrôles CSRF activés.
+
 # Changelog — Itération sécurité, formation interactive & Afrique
 
 ## 🍪 Bug CSRF / connexion admin impossible (correctif critique)

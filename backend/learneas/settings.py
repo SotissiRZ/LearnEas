@@ -120,9 +120,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # DRF / JWT / CORS / API docs
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {
+    # L’API LearnEas est authentifiée exclusivement par JWT.
+    # Ne pas activer SessionAuthentication ici : une session Django (par exemple après
+    # connexion à /admin/) ferait appliquer un contrôle CSRF aux endpoints publics
+    # /api/auth/login/ et /api/auth/register/, alors que le frontend Next.js utilise JWT.
+    # L’admin Django conserve sa propre authentification par session et sa protection CSRF.
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticatedOrReadOnly",

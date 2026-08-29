@@ -299,3 +299,8 @@ Pour la **v7**, dans l’environnement de livraison : compilation/AST Python, sy
 - Système d'abonnement "Premium" (accès illimité à un catalogue) en complément de l'achat à l'unité.
 
 Bon lancement avec **LearnEas** 🚀
+
+### Authentification API et CSRF
+
+L’API LearnEas (`/api/...`) utilise JWT (`Authorization: Bearer ...`) et **pas** les sessions Django. Cette séparation évite qu’un cookie de session créé par `/admin/` impose à tort un jeton CSRF aux endpoints publics comme `/api/auth/login/` ou `/api/auth/register/`. Le Django Admin continue, lui, à utiliser les sessions et la protection CSRF standard de Django.
+

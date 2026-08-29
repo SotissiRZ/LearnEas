@@ -1,5 +1,5 @@
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APIClient
 
 from .models import User
 
@@ -26,6 +26,32 @@ class RegistrationRegressionTests(APITestCase):
         user = User.objects.get(email="student@example.com")
         self.assertEqual(user.role, User.Role.STUDENT)
         self.assertTrue(user.is_active)
+
+    def test_registration_ignores_django_admin_session_and_does_not_require_csrf(self):
+        # Régression : lorsqu’un navigateur avait déjà un cookie de session Django
+        # (ex. après connexion à /admin/), SessionAuthentication pouvait imposer un
+        # token CSRF au POST public d’inscription. L’API est JWT-only, donc la session
+        # Django doit être ignorée par les endpoints REST.
+        admin = User.objects.create_user(
+            username="csrf_admin",
+            email="csrf-admin@example.com",
+            password="passpass123",
+            role=User.Role.ADMIN,
+            is_staff=True,
+        )
+        client = APIClient(enforce_csrf_checks=True)
+        client.force_login(admin)
+        response = client.post(
+            "/api/auth/register/",
+            {
+                "username": "csrf_student",
+                "email": "csrf-student@example.com",
+                "password": "passpass123",
+                "password2": "passpass123",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
 
     def test_registration_rejects_case_insensitive_duplicates_cleanly(self):
         User.objects.create_user(username="existing", email="person@example.com", password="passpass123")
