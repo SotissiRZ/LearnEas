@@ -6,24 +6,25 @@ import ApiErrorBanner from "@/components/ui/ApiErrorBanner";
 import { SlidersHorizontal } from "lucide-react";
 
 interface Props {
-  searchParams: {
+  searchParams: Promise<{
     category?: string;
     level?: string;
     is_free?: string;
     search?: string;
     ordering?: string;
     page?: string;
-  };
+  }>;
 }
 
 export default async function CoursesPage({ searchParams }: Props) {
+  const query = await searchParams;
   const params = new URLSearchParams();
-  if (searchParams.category) params.set("category__slug", searchParams.category);
-  if (searchParams.level) params.set("level", searchParams.level);
-  if (searchParams.is_free) params.set("is_free", searchParams.is_free);
-  if (searchParams.search) params.set("search", searchParams.search);
-  params.set("ordering", searchParams.ordering || "-created_at");
-  if (searchParams.page) params.set("page", searchParams.page);
+  if (query.category) params.set("category__slug", query.category);
+  if (query.level) params.set("level", query.level);
+  if (query.is_free) params.set("is_free", query.is_free);
+  if (query.search) params.set("search", query.search);
+  params.set("ordering", query.ordering || "-created_at");
+  if (query.page) params.set("page", query.page);
 
   const [coursesResult, categoriesResult] = await Promise.all([
     safeGet<Paginated<Course>>(`/catalog/courses/?${params.toString()}`, {
@@ -42,7 +43,7 @@ export default async function CoursesPage({ searchParams }: Props) {
       <div className="mb-6">
         <h1 className="text-3xl font-extrabold">Tous les cours</h1>
         <p className="mt-1 text-gray-500">
-          {data.count} cours complet{data.count > 1 ? "s" : ""} — accès à la playlist entière dès l'achat.
+          {data.count} cours complet{data.count > 1 ? "s" : ""} · accès à la playlist entière dès l'achat.
         </p>
       </div>
 
@@ -52,7 +53,7 @@ export default async function CoursesPage({ searchParams }: Props) {
             <div className="mb-4 flex items-center gap-2 text-sm font-semibold">
               <SlidersHorizontal size={16} /> Filtres
             </div>
-            <CourseFilters categories={categories} current={searchParams} />
+            <CourseFilters categories={categories} current={query} />
           </div>
         </aside>
 

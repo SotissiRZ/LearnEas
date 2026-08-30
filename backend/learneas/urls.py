@@ -1,3 +1,6 @@
+from django.http import JsonResponse
+from django.db import connection
+from django.core.cache import cache
 from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
@@ -5,9 +8,21 @@ from django.conf.urls.static import static
 from rest_framework_simplejwt.views import TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
+def health(request):
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        cache.set("healthcheck", "ok", 5)
+        if cache.get("healthcheck") != "ok": raise RuntimeError("cache")
+        return JsonResponse({"status": "ok"})
+    except Exception:
+        return JsonResponse({"status": "error"}, status=503)
+
 urlpatterns = [
+    path("api/health/", health),
     path("admin/", admin.site.urls),
 
+    path("api/", include("apps.common.urls")),
     path("api/auth/", include("apps.accounts.urls")),
     path("api/auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
 
@@ -19,9 +34,11 @@ urlpatterns = [
     path("api/chat/", include("apps.chat.urls")),
     path("api/", include("apps.formations.urls")),
 
-    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
-    path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
 ]
 
 if settings.DEBUG:
+    urlpatterns += [
+        path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+        path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+    ]
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

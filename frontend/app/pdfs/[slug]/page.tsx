@@ -15,8 +15,9 @@ async function getPdf(slug: string): Promise<PDFProduct | null> {
   }
 }
 
-export default async function PdfDetailPage({ params }: { params: { slug: string } }) {
-  const pdf = await getPdf(params.slug);
+export default async function PdfDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const pdf = await getPdf(slug);
   if (!pdf) notFound();
 
 

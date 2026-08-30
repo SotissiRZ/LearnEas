@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from apps.common.fields import RelativeImageField
 from .models import PlatformSettings, InstructorApplication
@@ -45,7 +46,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["username", "email", "first_name", "last_name", "country", "password", "password2"]
+        fields = ["email", "first_name", "last_name", "country", "password", "password2"]
 
     def validate_email(self, value):
         email = value.strip().lower()
@@ -53,23 +54,29 @@ class RegisterSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Un compte existe déjà avec cet email.")
         return email
 
-    def validate_username(self, value):
-        username = value.strip()
-        if len(username) < 3:
-            raise serializers.ValidationError("Doit contenir au moins 3 caractères.")
-        if User.objects.filter(username__iexact=username).exists():
-            raise serializers.ValidationError("Ce nom d'utilisateur est déjà utilisé.")
-        return username
-
     def validate(self, attrs):
         if attrs["password"] != attrs["password2"]:
             raise serializers.ValidationError({"password2": "Les mots de passe ne correspondent pas."})
+        candidate = User(email=attrs.get("email", ""), first_name=attrs.get("first_name", ""), last_name=attrs.get("last_name", ""))
+        try:
+            validate_password(attrs["password"], user=candidate)
+        except Exception as exc:
+            raise serializers.ValidationError({"password": list(getattr(exc, "messages", [str(exc)]))})
         return attrs
 
     def create(self, validated_data):
+        from django.utils.text import slugify
         validated_data.pop("password2")
         password = validated_data.pop("password")
-        user = User(**validated_data, role=User.Role.STUDENT, is_active=True)
+        email = validated_data["email"]
+        base = slugify(email.split("@", 1)[0]) or "user"
+        username = base[:140]
+        n = 1
+        while User.objects.filter(username__iexact=username).exists():
+            n += 1
+            suffix = f"-{n}"
+            username = f"{base[:150-len(suffix)]}{suffix}"
+        user = User(username=username, **validated_data, role=User.Role.STUDENT, is_active=True)
         user.set_password(password)
         user.save()
         return user

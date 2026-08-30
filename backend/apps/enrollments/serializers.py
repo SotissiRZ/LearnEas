@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from apps.catalog.serializers import CourseListSerializer, PDFProductListSerializer
-from apps.common.fields import RelativeFileField
+from apps.common.fields import RelativeFileField, ProtectedFileField
 from .models import CourseEnrollment, LessonProgress, PDFPurchase, Wishlist
 
 
@@ -24,7 +24,7 @@ class LessonProgressSerializer(serializers.ModelSerializer):
 class PurchasedPDFProductSerializer(PDFProductListSerializer):
     # Cet endpoint est déjà filtré par l'achat de l'utilisateur authentifié : le fichier
     # complet peut donc être renvoyé ici sans dépendre du serializer public du catalogue.
-    file = RelativeFileField(read_only=True)
+    file = ProtectedFileField(read_only=True)
 
     class Meta(PDFProductListSerializer.Meta):
         fields = PDFProductListSerializer.Meta.fields + ["file"]

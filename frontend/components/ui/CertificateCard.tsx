@@ -18,7 +18,7 @@ export default function CertificateCard({ certificate, publicMode = false }: { c
   async function shareCertificate() {
     if (!verificationUrl) return;
     try {
-      if (navigator.share) await navigator.share({ title: certificate.title || "Certificat LearnEas", text: `${certificate.student_name} — ${certificate.content_title}`, url: verificationUrl });
+      if (navigator.share) await navigator.share({ title: certificate.title || "Certificat LearnEas", text: `${certificate.student_name} · ${certificate.content_title}`, url: verificationUrl });
       else await copyVerificationLink();
     } catch { /* partage annulé */ }
   }
@@ -41,7 +41,7 @@ export default function CertificateCard({ certificate, publicMode = false }: { c
         <h2 className="mt-2 text-xl font-bold" style={{ color: certificate.accent_color || "#1f6f5c" }}>{certificate.content_title}</h2>
         {certificate.description && <p className="mx-auto mt-4 max-w-2xl text-sm leading-6 text-gray-500">{certificate.description}</p>}
         <div className="mx-auto mt-7 grid max-w-2xl gap-3 text-sm sm:grid-cols-3">
-          {certificate.display_options?.show_instructor !== false && <Info label="Instructeur" value={certificate.instructor_name || "—"} />}
+          {certificate.display_options?.show_instructor !== false && <Info label="Instructeur" value={certificate.instructor_name || "-"} />}
           {certificate.display_options?.show_duration !== false && <Info label="Durée" value={`${Math.round((certificate.duration_minutes || 0) / 60 * 10) / 10} h`} />}
           <Info label="Résultat" value={`${Number(certificate.achievement_percent || 0).toFixed(0)} %`} />
         </div>

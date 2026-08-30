@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.db.models import Avg, Count
 from apps.accounts.serializers import UserPublicSerializer
 from .models import Review, LessonComment
 
@@ -36,10 +37,9 @@ class ReviewSerializer(serializers.ModelSerializer):
         if not target:
             return
         qs = Review.objects.filter(course=review.course) if review.course else Review.objects.filter(pdf_product=review.pdf_product)
-        count = qs.count()
-        avg = sum(r.rating for r in qs) / count if count else 0
-        target.rating_avg = round(avg, 2)
-        target.rating_count = count
+        stats = qs.aggregate(avg=Avg("rating"), count=Count("id"))
+        target.rating_avg = round(stats["avg"] or 0, 2)
+        target.rating_count = stats["count"] or 0
         target.save(update_fields=["rating_avg", "rating_count"])
 
 

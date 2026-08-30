@@ -17,7 +17,7 @@ interface Options {
  * ou vers `redirectTo` si son rôle ne correspond pas à `roles`.
  *
  * `ready` ne devient `true` que lorsque l'utilisateur est confirmé authentifié
- * (et autorisé) — tant que ce n'est pas le cas, la page ne doit RIEN afficher
+ * (et autorisé) · tant que ce n'est pas le cas, la page ne doit RIEN afficher
  * de sensible (c'est ce qui causait l'accès au dashboard sans connexion).
  */
 export function useAuthGuard(options: Options = {}) {

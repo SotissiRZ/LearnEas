@@ -80,7 +80,7 @@ export default function NewCoursePage() {
             <input type="file" accept="image/*" onChange={(e) => setCover(e.target.files?.[0] || null)} className="w-full rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm" />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="mb-1 block text-sm font-medium">Catégorie</label><select value={form.category} onChange={(e) => set("category", e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"><option value="">—</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+            <div><label className="mb-1 block text-sm font-medium">Catégorie</label><select value={form.category} onChange={(e) => set("category", e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"><option value="">-</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
             <div><label className="mb-1 block text-sm font-medium">Niveau</label><select value={form.level} onChange={(e) => set("level", e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"><option value="beginner">Débutant</option><option value="intermediate">Intermédiaire</option><option value="expert">Expert</option></select></div>
           </div>
           <div className="grid grid-cols-2 gap-4">

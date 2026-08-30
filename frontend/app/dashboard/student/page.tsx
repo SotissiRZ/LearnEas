@@ -52,7 +52,7 @@ export default function StudentDashboard() {
                 <div className="aspect-video bg-gradient-to-br from-brand-100 to-brand-50">
                   {e.course.thumbnail && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={e.course.thumbnail} alt={e.course.title} className="h-full w-full object-cover" />
+                    <img loading="lazy" decoding="async" src={e.course.thumbnail} alt={e.course.title} className="h-full w-full object-cover" />
                   )}
                 </div>
                 <div className="p-4 pb-0">

@@ -1,7 +1,8 @@
 from decimal import Decimal, ROUND_HALF_UP
+from datetime import timedelta
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Sum, Count
+from django.db.models import Sum, Count, Q
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
 from rest_framework import viewsets, permissions, status, filters
@@ -14,7 +15,10 @@ from apps.accounts.models import User, PlatformSettings, InstructorApplication
 from apps.catalog.models import Course, PDFProduct
 from apps.enrollments.models import CourseEnrollment, PDFPurchase
 from apps.formations.models import InteractiveFormation, FormationEnrollment, FormationSession, FormationAttendance
-from .models import Order, OrderItem, PayoutProfile, InstructorPayout
+from .models import Order, OrderItem, PayoutProfile, InstructorPayout, FormationSeatReservation
+import stripe
+from apps.common.throttles import CheckoutRateThrottle
+
 from .serializers import (
     OrderSerializer, CheckoutSerializer, PayoutProfileSerializer, InstructorPayoutSerializer,
 )
@@ -89,6 +93,11 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
         if new_status not in Order.Status.values:
             return Response({"status": ["Statut invalide."]}, status=400)
         if new_status == Order.Status.PAID:
+            if order.status != Order.Status.PAID and order.total_amount > 0 and not settings.DEBUG:
+                return Response(
+                    {"detail": "Une commande payante ne peut être marquée payée sans confirmation du prestataire."},
+                    status=403,
+                )
             CheckoutView()._fulfill(order)
         else:
             order.status = new_status
@@ -99,6 +108,7 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
 
 class CheckoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [CheckoutRateThrottle]
 
     @transaction.atomic
     def post(self, request):
@@ -129,33 +139,39 @@ class CheckoutView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        full_formations = [f for f in formations if f.is_full]
-        if full_formations:
-            noms = ", ".join(f.title for f in full_formations)
+        now = timezone.now()
+        unavailable = []
+        for formation in formations:
+            active_reservations = FormationSeatReservation.objects.filter(
+                formation=formation, order__status=Order.Status.PENDING, expires_at__gt=now
+            ).count()
+            if formation.enrollments.count() + active_reservations >= formation.max_students:
+                unavailable.append(formation.title)
+        if unavailable:
             return Response(
-                {"detail": f"Formation(s) complète(s), plus de places disponibles : {noms}"},
-                status=status.HTTP_400_BAD_REQUEST,
+                {"detail": "Formation(s) complète(s) ou temporairement réservée(s) : " + ", ".join(unavailable)},
+                status=status.HTTP_409_CONFLICT,
             )
 
-        total = (
-            sum((c.discount_price or c.price) for c in courses)
-            + sum(p.price for p in pdfs)
-            + sum(f.price for f in formations)
-        )
+        course_prices = [Decimal("0") if c.is_free else (c.discount_price if c.discount_price is not None else c.price) for c in courses]
+        pdf_prices = [Decimal("0") if p.is_free else p.price for p in pdfs]
+        formation_prices = [f.price for f in formations]
+        total = sum(course_prices, Decimal("0")) + sum(pdf_prices, Decimal("0")) + sum(formation_prices, Decimal("0"))
 
         order = Order.objects.create(user=user, provider=data["provider"], total_amount=total)
         for c in courses:
-            price = c.discount_price or c.price
+            price = Decimal("0") if c.is_free else (c.discount_price if c.discount_price is not None else c.price)
             fee, earning = _split_revenue(price)
             OrderItem.objects.create(
                 order=order, item_type=OrderItem.ItemType.COURSE, course=c, instructor=c.instructor,
                 unit_price=price, platform_fee_amount=fee, instructor_earning_amount=earning,
             )
         for p in pdfs:
-            fee, earning = _split_revenue(p.price)
+            price = Decimal("0") if p.is_free else p.price
+            fee, earning = _split_revenue(price)
             OrderItem.objects.create(
                 order=order, item_type=OrderItem.ItemType.PDF, pdf_product=p, instructor=p.instructor,
-                unit_price=p.price, platform_fee_amount=fee, instructor_earning_amount=earning,
+                unit_price=price, platform_fee_amount=fee, instructor_earning_amount=earning,
             )
         for f in formations:
             fee, earning = _split_revenue(f.price)
@@ -164,17 +180,50 @@ class CheckoutView(APIView):
                 unit_price=f.price, platform_fee_amount=fee, instructor_earning_amount=earning,
             )
 
+        # Une commande payante réserve les places suffisamment longtemps pour couvrir
+        # la fenêtre Stripe (30 min) et un léger délai de livraison du webhook.
+        if total > 0:
+            reservation_expiry = timezone.now() + timedelta(minutes=40)
+            for f in formations:
+                FormationSeatReservation.objects.create(
+                    order=order, formation=f, user=user, expires_at=reservation_expiry
+                )
+
         if total == 0:
             self._fulfill(order)
 
-        return Response(
-            {
-                "order": OrderSerializer(order).data,
-                "requires_payment": total > 0,
-                "stripe_checkout_stub": total > 0,
-            },
-            status=status.HTTP_201_CREATED,
-        )
+        checkout_url = None
+        if total > 0:
+            if data["provider"] != Order.Provider.STRIPE:
+                return Response({"detail": "Ce moyen de paiement n'est pas encore activé."}, status=status.HTTP_400_BAD_REQUEST)
+            if not settings.STRIPE_SECRET_KEY:
+                return Response({"detail": "Stripe n'est pas configuré sur cette installation."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            session = stripe.checkout.Session.create(
+                mode="payment",
+                line_items=[{
+                    "price_data": {
+                        "currency": getattr(settings, "PAYMENT_CURRENCY", "mad").lower(),
+                        "product_data": {"name": f"Commande LearnEas {order.invoice_number}"},
+                        "unit_amount": int((order.total_amount * 100).quantize(Decimal("1"))),
+                    },
+                    "quantity": 1,
+                }],
+                success_url=f"{settings.FRONTEND_URL}/dashboard/student?purchased=1&order={order.id}",
+                cancel_url=f"{settings.FRONTEND_URL}/checkout?cancelled=1",
+                client_reference_id=str(order.id),
+                metadata={"order_id": str(order.id), "user_id": str(user.id)},
+                expires_at=int((timezone.now() + timedelta(minutes=30)).timestamp()),
+            )
+            order.provider_reference = session.id
+            order.save(update_fields=["provider_reference"])
+            checkout_url = session.url
+
+        return Response({
+            "order": OrderSerializer(order).data,
+            "requires_payment": total > 0,
+            "checkout_url": checkout_url,
+        }, status=status.HTTP_201_CREATED)
 
     def _fulfill(self, order):
         # Idempotent : même si la commande est déjà marquée payée, on réconcilie toujours
@@ -199,7 +248,18 @@ class CheckoutView(APIView):
                     item.pdf_product.downloads_count += 1
                     item.pdf_product.save(update_fields=["downloads_count"])
             if item.formation:
-                FormationEnrollment.objects.get_or_create(user=order.user, formation=item.formation)
+                formation = InteractiveFormation.objects.select_for_update().get(pk=item.formation_id)
+                if not FormationEnrollment.objects.filter(user=order.user, formation=formation).exists():
+                    now = timezone.now()
+                    reservation = FormationSeatReservation.objects.filter(order=order, formation=formation).first()
+                    reservation_valid = bool(reservation and reservation.expires_at > now)
+                    active_other_reservations = FormationSeatReservation.objects.filter(
+                        formation=formation, order__status=Order.Status.PENDING, expires_at__gt=now
+                    ).exclude(order=order).count()
+                    if formation.enrollments.count() + active_other_reservations >= formation.max_students and not reservation_valid:
+                        raise ValueError(f"Plus de place disponible pour la formation {formation.title}.")
+                    FormationEnrollment.objects.create(user=order.user, formation=formation)
+        FormationSeatReservation.objects.filter(order=order).delete()
         return order
 
 
@@ -212,8 +272,9 @@ class ConfirmPaymentView(APIView):
             order = Order.objects.select_for_update().get(id=order_id, user=request.user)
         except Order.DoesNotExist:
             return Response({"detail": "Commande introuvable."}, status=404)
-        checkout_view = CheckoutView()
-        checkout_view._fulfill(order)
+        if order.total_amount > 0 and not settings.DEBUG:
+            return Response({"detail": "Une commande payante est confirmée uniquement par le webhook du prestataire."}, status=403)
+        CheckoutView()._fulfill(order)
         order.refresh_from_db()
         return Response(OrderSerializer(order).data)
 
@@ -355,9 +416,14 @@ class InstructorPayoutViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], permission_classes=[IsAdminRole])
     def mark_paid(self, request, pk=None):
         payout = self.get_object()
+        reference = (request.data.get("reference") or "").strip()
+        if not reference:
+            return Response({"reference": ["La référence de transaction est obligatoire."]}, status=400)
+        if payout.status not in (InstructorPayout.Status.PENDING, InstructorPayout.Status.PROCESSING):
+            return Response({"detail": "Transition de statut invalide."}, status=409)
         payout.status = InstructorPayout.Status.PAID
         payout.processed_at = timezone.now()
-        payout.reference = request.data.get("reference", "")
+        payout.reference = reference
         payout.note = request.data.get("note", "")
         payout.save(update_fields=["status", "processed_at", "reference", "note"])
         return Response(self.get_serializer(payout).data)
@@ -419,3 +485,26 @@ class AdminOverviewView(APIView):
                 for s in sessions
             ],
         })
+
+
+class StripeWebhookView(APIView):
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        secret = getattr(settings, "STRIPE_WEBHOOK_SECRET", "")
+        if not secret:
+            return Response({"detail": "Webhook Stripe non configuré."}, status=503)
+        try:
+            event = stripe.Webhook.construct_event(request.body, request.META.get("HTTP_STRIPE_SIGNATURE", ""), secret)
+        except Exception:
+            return Response({"detail": "Signature webhook invalide."}, status=400)
+        if event.get("type") == "checkout.session.completed":
+            obj = event["data"]["object"]
+            order_id = (obj.get("metadata") or {}).get("order_id") or obj.get("client_reference_id")
+            if order_id:
+                with transaction.atomic():
+                    order = Order.objects.select_for_update().filter(pk=order_id, provider=Order.Provider.STRIPE).first()
+                    if order and str(order.provider_reference) == str(obj.get("id")):
+                        CheckoutView()._fulfill(order)
+        return Response({"received": True})

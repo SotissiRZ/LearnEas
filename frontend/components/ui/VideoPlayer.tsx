@@ -70,7 +70,7 @@ export default function VideoPlayer({ src, poster, title = "Vidéo", subtitlesUr
   }
 
   return (
-    <div ref={wrapperRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label={`Lecteur vidéo — ${title}`} className="flex h-full w-full flex-col bg-black outline-none focus:ring-2 focus:ring-brand-500">
+    <div ref={wrapperRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label={`Lecteur vidéo · ${title}`} className="flex h-full w-full flex-col bg-black outline-none focus:ring-2 focus:ring-brand-500">
       <div className="min-h-0 flex-1">
         <video
           ref={videoRef}

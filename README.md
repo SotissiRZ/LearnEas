@@ -19,13 +19,13 @@ dashboards dédiés par rôle).
 
 ```
 learneas/
-├── docker-compose.yml       Orchestration production (db, redis, backend, celery, frontend, nginx)
+├── docker-compose.yml       Orchestration Docker locale complète (db, redis, backend, celery, frontend, nginx)
 ├── docker-compose.dev.yml   Orchestration développement (hot-reload)
 ├── .env.docker.example      Variables d'environnement Docker
 ├── Makefile                 Raccourcis (make up, make logs, make migrate...)
 ├── docker/nginx/            Configuration du reverse proxy
 ├── backend/     Django 5 + Django REST Framework (API JSON, JWT, admin) — Dockerfile inclus
-└── frontend/    Next.js 14 (App Router) + TypeScript + Tailwind CSS — Dockerfile inclus
+└── frontend/    Next.js 15.5 (App Router) + TypeScript + Tailwind CSS — Dockerfile inclus
 ```
 
 Les deux projets communiquent exclusivement via l'API REST (`/api/...`). Le frontend n'accède jamais
@@ -98,7 +98,7 @@ Admin Django : **http://localhost/admin**
 - Recherche, filtres (catégorie, niveau, gratuit), tri (récent, prix, note, popularité).
 
 ### Achat & accès
-- Panier (persisté en local), checkout (Stripe/PayPal — squelette d'intégration, à brancher en prod).
+- Panier (persisté en local), checkout Stripe hébergé et confirmation par webhook signé. Les moyens non intégrés (PayPal/Mobile Money) restent explicitement indisponibles au lieu d’être simulés.
 - Une commande peut contenir plusieurs cours et PDF en même temps.
 - **Le contenu vidéo/PDF est verrouillé côté API tant que l'achat n'est pas confirmé** (pas juste côté
   affichage) — vérifié par tests réels (voir plus bas).
@@ -109,6 +109,15 @@ Admin Django : **http://localhost/admin**
   progression leçon par leçon, onglet ressources PDF, onglet discussion (base posée).
 - Barre de progression par cours, calcul automatique du `%` de complétion.
 - **Certificat configurable** : délivrance automatique à partir du seuil défini sur le cours, ou du taux de présence réel pour une formation live ; page imprimable/enregistrable en PDF et vérification publique par code.
+
+### Salle live / visioconférence
+- Salle WebRTC interne avec caméra et microphone, présence réelle et suivi du temps de connexion.
+- Partage d'écran natif navigateur, chat de séance, levée de main et panneau des participants.
+- Choix du microphone et de la caméra pendant la séance, ainsi que mode plein écran.
+- Pour l'organisateur : commandes de modération (couper micro/caméra, retirer un participant).
+- Partage de fichiers de séance avec téléchargement authentifié et limite de 20 Mo par fichier.
+- Enregistrement local côté organisateur de la grille vidéo et du mix audio disponibles au moment de l'enregistrement ; le fichier WebM est téléchargé sur le poste de l'organisateur et n'est pas stocké automatiquement sur le serveur.
+- Pour une production fiable derrière des NAT/réseaux mobiles, un **TURN** reste nécessaire. Pour des classes nombreuses, prévoir une architecture **SFU** plutôt qu'un maillage WebRTC pair-à-pair.
 
 ### Comptes & rôles
 - 3 rôles : étudiant, instructeur, administrateur.
@@ -159,7 +168,7 @@ Une demande instructeur reste au statut **En attente** tant qu’un administrate
 Prérequis : [Docker](https://docs.docker.com/get-docker/) et Docker Compose v2.
 
 ```bash
-cp .env.docker.example .env      # à adapter (SECRET_KEY, mots de passe...)
+cp .env.docker.example .env      # profil local : DEBUG=True
 docker compose up -d --build
 ```
 
@@ -239,54 +248,65 @@ npm run dev                       # http://localhost:3000
 | `catalog` | `Category`, `Course`, `Section`, `Lesson`, `PDFResource` (inclus dans un cours), `PDFProduct` (vendu seul) |
 | `formations` | `InteractiveFormation`, `FormationSession`, `FormationEnrollment`, `FormationAttendance`, `FormationSignal` |
 | `enrollments` | `CourseEnrollment`, `LessonProgress`, `PDFPurchase`, `Wishlist`, `Certificate` |
-| `payments` | `Order`, `OrderItem`, `PayoutProfile`, `InstructorPayout` |
+| `payments` | `Order`, `OrderItem`, `FormationSeatReservation`, `PayoutProfile`, `InstructorPayout` |
 | `reviews` | `Review`, `LessonComment` |
 | `faq` | `FAQ` |
 | `chat` | `ChatMessage` |
 
 ---
 
-## 🔒 Sécurité & production — à faire avant mise en ligne
+## 🔒 Sécurité & production
 
-Ce livrable est une base **fonctionnelle et testée**, mais quelques points sont volontairement
-simplifiés pour rester un point de départ clair. À finaliser avant lancement public :
+> **Important :** le Docker local démarre avec `DEBUG=True` et la clé de développement
+> `dev-secret-key-change-me`. Ne réutilisez jamais cette clé en production. Sur Railway, définissez
+> explicitement `DEBUG=False` et une `SECRET_KEY` forte (au moins 32 caractères). Le backend
+> refusera volontairement de démarrer si une clé de développement est utilisée avec `DEBUG=False`.
 
-1. **Paiement réel** : `apps/payments/views.py::CheckoutView` contient un webhook simplifié qui
-   confirme immédiatement la commande. En production, intégrer réellement Stripe PaymentIntents
-   (ou PayPal Orders API) et déplacer la confirmation vers un vrai webhook signé.
-2. **Upload vidéo** : actuellement `video_url` (lien externe/CDN) ou `video_file` (upload direct sur
-   le serveur). Pour la production, brancher un stockage objet (S3, Backblaze, Bunny Stream) via
-   `django-storages`, déjà présent dans `requirements.txt`.
-3. **Recherche avancée** : le cahier des charges d'origine mentionnait Algolia. La recherche actuelle
-   utilise le `SearchFilter` de DRF (suffisant pour démarrer). Brancher Algolia/Meilisearch plus tard
-   si le catalogue grossit.
-4. **Emails transactionnels** : confirmation de commande, réinitialisation de mot de passe — à
-   brancher (Django email backend + templates).
-5. **`SECRET_KEY`, `DEBUG=False`, `ALLOWED_HOSTS`, base PostgreSQL** : déjà gérés par
-   `docker-compose.yml` via le fichier `.env` (voir `.env.docker.example`). Pensez à changer
-   `SECRET_KEY` et les mots de passe Postgres avant toute mise en ligne, et à passer le service
-   `nginx` derrière un certificat HTTPS (ex: via un reverse proxy Traefik/Caddy ou Let's Encrypt +
-   Certbot en amont de la stack).
-6. **Stockage média en production** : l’upload direct des vidéos, PDF et images de couverture est
-   disponible. Pour une mise en production à charge importante, remplacer le stockage disque local par
-   un stockage objet/CDN (S3, Backblaze, Bunny, etc.) et configurer un serveur TURN pour les séances
-   WebRTC lorsque les participants sont derrière des NAT/pare-feu stricts.
+
+La v9 applique les garde-fous suivants : JWT pour l’API, rotation/blacklist des refresh tokens,
+throttling Redis partagé entre workers, mots de passe validés par Django, médias pédagogiques privés
+servis via URL signée + `X-Accel-Redirect`, Stripe Checkout + webhook signé, réservation temporaire
+atomique des places live, contrôles de rôles côté API, CSP/en-têtes nginx, secrets faibles et
+`ALLOWED_HOSTS=*` refusés lorsque `DEBUG=False`, documentation API uniquement en développement,
+backend/Celery exécutés sous utilisateur non privilégié après bootstrap.
+
+Avant exposition Internet, configurez obligatoirement :
+
+1. `SECRET_KEY` aléatoire long, `DEBUG=False`, `ALLOWED_HOSTS` et HTTPS réel (`USE_HTTPS=True`).
+2. `STRIPE_SECRET_KEY` **et** `STRIPE_WEBHOOK_SECRET`; configurez chez Stripe l’URL
+   `https://votre-domaine/api/payments/stripe/webhook/`.
+3. Un SMTP réel pour les emails transactionnels.
+4. Un serveur TURN pour fiabiliser les classes WebRTC sur réseaux mobiles/NAT restrictifs.
+5. Un stockage objet/CDN et idéalement HLS adaptatif pour les vidéos importantes ; le disque local
+   reste adapté au développement et aux petites installations.
+6. Un vrai prestataire Mobile Money avant d’afficher Orange Money/MTN/Wave comme moyens actifs.
+
+Les limitations et priorités restantes sont détaillées dans [`AUDIT.md`](./AUDIT.md).
 
 ---
 
-## 🧪 Ce qui a été réellement testé (pas seulement écrit)
+## 🧪 Validation et stratégie de tests
 
-Pour la **v7**, dans l’environnement de livraison : compilation/AST Python, syntaxe des migrations, parsing TypeScript/TSX, résolution des imports locaux et validation YAML Docker Compose ont été exécutés. Le build Next.js/Django complet doit être relancé dans Docker sur la machine cible, car les dépendances Django/npm ne sont pas installées dans cet environnement de génération.
+Le dépôt contient des tests Django/DRF de régression couvrant notamment authentification, permissions,
+achats/droits d’accès, médias privés, live, certificats, avis, messagerie et finances instructeur.
+La CI (`.github/workflows/ci.yml`) exécute dans un environnement connecté :
 
-- Build de production Next.js : **23 routes, 0 erreur TypeScript**.
-- `python manage.py check` / `makemigrations` / `migrate` : **0 erreur**.
-- Tunnel complet : inscription → login JWT → ajout panier → checkout → confirmation paiement →
-  déverrouillage réel de la playlist (vérifié via l'API, pas supposé).
-- Achat d'un PDF seul → déverrouillage du fichier.
-- Progression leçon par leçon jusqu'à 100 % → `completed = true` → **certificat auto-émis**.
-- Système d'avis (review) créé et moyenne recalculée.
-- Deux bugs réels détectés et corrigés pendant le développement (pagination de `/categories/` non
-  attendue par le frontend ; JSX dupliqué dans le dashboard étudiant).
+```text
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py migrate --noinput
+python manage.py test
+npm ci
+npm run audit:mobile
+npm run build
+docker compose config -q
+```
+
+Dans l’environnement de génération de cette archive v9, les contrôles effectivement exécutés sont :
+parsing AST de tous les fichiers Python, syntaxe shell de l’entrypoint, parsing TypeScript/TSX,
+résolution des imports locaux, audit mobile statique, validation YAML des Compose/CI et cohérence
+statique des dépendances de migrations. Le véritable build Next.js et la suite Django nécessitent les
+dépendances npm/pip et sont donc laissés à la CI/Docker de la machine cible.
 
 ---
 

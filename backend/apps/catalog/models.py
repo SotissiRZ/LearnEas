@@ -89,6 +89,10 @@ class Course(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["published", "category"], name="catalog_cou_publish_85f2cc_idx"),
+            models.Index(fields=["instructor", "published"], name="catalog_cou_instruc_115d51_idx"),
+        ]
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -201,6 +205,10 @@ class PDFProduct(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["published", "category"], name="catalog_pdf_publish_8274ce_idx"),
+            models.Index(fields=["instructor", "published"], name="catalog_pdf_instruc_fbc105_idx"),
+        ]
 
     def save(self, *args, **kwargs):
         if not self.slug:

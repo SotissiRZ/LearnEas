@@ -1,4 +1,5 @@
 "use client";
+import { useParams } from "next/navigation";
 
 import { useEffect, useState, useCallback } from "react";
 import { PlusCircle, Trash2, PlayCircle, FileText, Eye, EyeOff, Loader2, Upload, Link as LinkIcon, AlertCircle } from "lucide-react";
@@ -10,7 +11,7 @@ import UploadProgressBar from "@/components/ui/UploadProgressBar";
 import PdfViewer from "@/components/ui/PdfViewer";
 import VideoPlayer from "@/components/ui/VideoPlayer";
 
-export default function ManageCoursePage({ params }: { params: { id: string } }) {
+export default function ManageCoursePage() { const params = useParams<{ id: string }>();
   const { ready } = useAuthGuard({ roles: ["instructor", "admin"], redirectTo: "/dashboard/instructor" });
   const [course, setCourse] = useState<Course | null>(null);
   const [loading, setLoading] = useState(true);
@@ -183,7 +184,7 @@ export default function ManageCoursePage({ params }: { params: { id: string } })
                 <div key={pdf.id} className="flex items-center gap-2 rounded-lg border border-gray-100 px-3 py-2 text-sm">
                   {pdf.cover_image ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={pdf.cover_image} alt="" className="h-9 w-7 rounded object-cover" />
+                    <img loading="lazy" decoding="async" src={pdf.cover_image} alt="" className="h-9 w-7 rounded object-cover" />
                   ) : <FileText size={14} className="text-amber-600" />}
                   <span className="flex-1 line-clamp-1">{pdf.title} · {pdf.page_count} p.</span>
                   {pdf.is_free_sample && <span className="badge bg-brand-50 text-brand-700">Extrait</span>}

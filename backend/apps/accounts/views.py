@@ -21,6 +21,7 @@ from .serializers import (
     PlatformSettingsSerializer, InstructorApplicationSerializer, InstructorApplicationAdminSerializer,
 )
 from .models import PlatformSettings, InstructorApplication
+from apps.common.throttles import AuthRateThrottle, PasswordResetRateThrottle
 
 User = get_user_model()
 
@@ -41,10 +42,12 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 class LoginView(TokenObtainPairView):
     serializer_class = EmailTokenObtainPairSerializer
+    throttle_classes = [AuthRateThrottle]
 
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
+    throttle_classes = [AuthRateThrottle]
     serializer_class = RegisterSerializer
     permission_classes = [permissions.AllowAny]
 
@@ -302,6 +305,7 @@ class InstructorApplyView(APIView):
 
 
 class PasswordResetRequestView(APIView):
+    throttle_classes = [PasswordResetRateThrottle]
     """Étape 1 : l'utilisateur saisit son email, on lui envoie un lien de réinitialisation.
     Pour ne jamais révéler si un email existe en base (sécurité), on répond toujours 200."""
     permission_classes = [permissions.AllowAny]
@@ -347,6 +351,7 @@ class PasswordResetRequestView(APIView):
 
 
 class PasswordResetConfirmView(APIView):
+    throttle_classes = [PasswordResetRateThrottle]
     """Étape 2 : l'utilisateur choisit son nouveau mot de passe via le lien reçu."""
     permission_classes = [permissions.AllowAny]
 

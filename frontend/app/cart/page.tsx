@@ -41,7 +41,7 @@ export default function CartPage() {
               <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-100">
                 {item.thumbnail ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={item.thumbnail} alt={item.title} className="h-full w-full object-cover" />
+                  <img loading="lazy" decoding="async" src={item.thumbnail} alt={item.title} className="h-full w-full object-cover" />
                 ) : item.type === "course" ? (
                   <PlayCircle className="text-gray-300" />
                 ) : item.type === "formation" ? (

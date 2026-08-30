@@ -1,6 +1,6 @@
 import { WifiOff } from "lucide-react";
 
-/** Affiché sur les pages catalogue quand l'API est injoignable — à ne pas confondre
+/** Affiché sur les pages catalogue quand l'API est injoignable · à ne pas confondre
  * avec "aucun résultat" (cas normal, pas une erreur). */
 export default function ApiErrorBanner({ message }: { message?: string }) {
   return (

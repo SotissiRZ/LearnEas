@@ -70,6 +70,10 @@ class InteractiveFormation(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["published", "status"], name="formations_publish_2be0cf_idx"),
+            models.Index(fields=["instructor", "published"], name="formations_instruc_9bcd81_idx"),
+        ]
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -161,6 +165,7 @@ class FormationAttendance(models.Model):
     last_seen_at = models.DateTimeField(auto_now_add=True)
     left_at = models.DateTimeField(null=True, blank=True)
     duration_seconds = models.PositiveIntegerField(default=0)
+    hand_raised = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["joined_at"]
@@ -175,12 +180,15 @@ class FormationAttendance(models.Model):
 
 
 class FormationSignal(models.Model):
-    """Messages éphémères de signalisation WebRTC (offer/answer/ICE) entre participants."""
+    """Messages éphémères de signalisation WebRTC et chat léger entre participants."""
 
     class Kind(models.TextChoices):
         OFFER = "offer", "Offer"
         ANSWER = "answer", "Answer"
         ICE = "ice", "ICE candidate"
+        CHAT = "chat", "Chat"
+        CONTROL = "control", "Moderation control"
+        CODE = "code", "Shared code editor"
 
     session = models.ForeignKey(FormationSession, on_delete=models.CASCADE, related_name="signals")
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sent_formation_signals")
@@ -192,3 +200,27 @@ class FormationSignal(models.Model):
     class Meta:
         ordering = ["id"]
         indexes = [models.Index(fields=["session", "recipient", "id"])]
+
+def formation_room_file_upload_to(instance, filename):
+    safe_name = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    return f"formations/room-files/{instance.session_id}/{uuid.uuid4().hex}-{safe_name}"
+
+
+class FormationRoomFile(models.Model):
+    """Fichier partagé dans une salle live, accessible uniquement aux membres autorisés."""
+
+    session = models.ForeignKey(FormationSession, on_delete=models.CASCADE, related_name="room_files")
+    uploader = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="formation_room_files")
+    file = models.FileField(upload_to=formation_room_file_upload_to)
+    original_name = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=120, blank=True)
+    size = models.PositiveBigIntegerField(default=0)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-uploaded_at"]
+        indexes = [models.Index(fields=["session", "-uploaded_at"])]
+
+    def __str__(self):
+        return f"{self.session} — {self.original_name}"
+

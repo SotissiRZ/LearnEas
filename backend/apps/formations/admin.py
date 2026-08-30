@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import InteractiveFormation, FormationSession, FormationEnrollment, FormationAttendance, FormationSignal
+from .models import InteractiveFormation, FormationSession, FormationEnrollment, FormationAttendance, FormationSignal, FormationRoomFile
 
 
 class FormationSessionInline(admin.TabularInline):
@@ -40,3 +40,11 @@ class FormationAttendanceAdmin(admin.ModelAdmin):
 class FormationSignalAdmin(admin.ModelAdmin):
     list_display = ("session", "sender", "recipient", "kind", "created_at")
     readonly_fields = ("session", "sender", "recipient", "kind", "payload", "created_at")
+
+
+@admin.register(FormationRoomFile)
+class FormationRoomFileAdmin(admin.ModelAdmin):
+    list_display = ("session", "original_name", "uploader", "size", "uploaded_at")
+    list_filter = ("session__formation", "content_type")
+    search_fields = ("original_name", "uploader__email", "uploader__username")
+    readonly_fields = ("session", "uploader", "file", "original_name", "content_type", "size", "uploaded_at")

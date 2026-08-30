@@ -5,7 +5,7 @@ import Footer from "@/components/layout/Footer";
 import AppHydrator from "@/components/layout/AppHydrator";
 
 export const metadata: Metadata = {
-  title: "LearnEas — La formation en ligne pensée pour l'Afrique",
+  title: "LearnEas · La formation en ligne pensée pour l'Afrique",
   description:
     "LearnEas est la plateforme africaine de formation en ligne : cours complets (playlists vidéo), " +
     "formations interactives en direct et ressources PDF, avec paiement par Mobile Money, carte ou PayPal.",

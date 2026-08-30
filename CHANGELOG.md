@@ -1,3 +1,112 @@
+# v17 — Salle live fixe & éditeur de code intégré
+
+- La salle live occupe désormais **100 % du viewport** en couche fixe : le header et le footer du site ne peuvent plus apparaître pendant la réunion.
+- La barre supérieure, les KPI de séance et la barre de contrôles restent fixes ; seuls les panneaux internes (participants, chat, fichiers, scène) peuvent défiler si nécessaire.
+- Ajout d’un **éditeur de code intégré et partagé** avec :
+  - JavaScript, HTML, CSS, Python, Java, C, C++ et texte ;
+  - numéros de ligne et gestion de la touche Tab ;
+  - nom de fichier, copie et téléchargement ;
+  - exécution JavaScript dans une iframe sandboxée ;
+  - aperçu HTML sandboxé ;
+  - synchronisation en direct du code avec les participants présents.
+- Ajout du signal live `code` côté backend et migration `0006_shared_code_signal`.
+
+---
+
+# v16 — Salle live allégée visuellement
+
+- Réduction de l’effet de zoom sur la salle de visioconférence.
+- Éléments globalement allégés : titres, cartes KPI, panneaux latéraux, boutons d’action et barre flottante.
+- Scène vidéo plus compacte avec tuiles et zones vides moins hautes.
+- Largeur maximale de page augmentée pour mieux exploiter les grands écrans.
+- Panneau de périphériques et messagerie resserrés pour améliorer la densité d’information.
+
+---
+
+# v15 — Cartes instructeurs allégées & suppression des tirets longs
+
+- Réduction de la taille des cartes de la page **Nos instructeurs** : hauteur minimale abaissée, avatar plus petit, textes réduits et bouton plus compact.
+- Description instructeur limitée à 2 lignes pour éviter les cartes trop hautes.
+- Suppression des tirets longs **`—`** dans l’interface frontend, remplacés par des séparateurs plus légers ou retirés selon le contexte.
+- Cohérence visuelle améliorée sur les cartes, les listes, les pages catalogue et plusieurs libellés UI.
+
+---
+
+# v14 — Correctif build TypeScript de la salle live
+
+- Correction du build Next.js bloqué sur `room is possibly null` dans la boucle de présence de la visioconférence.
+- La référence de salle est désormais capturée dans une constante non nullable après le garde `if (!attendanceId || !room) return`, ce qui conserve la sûreté de type dans la fonction asynchrone interne.
+- Aucun assouplissement TypeScript (`!`, `any`, désactivation de `strict`) n'a été ajouté : le correctif conserve les contrôles de type.
+
+---
+
+# v13 — Visioconférence collaborative avancée
+
+- Ajout de la **levée de main** persistée dans la présence de séance et visible en temps réel.
+- Ajout du **choix du microphone et de la caméra** sans quitter la salle.
+- Ajout du **mode plein écran** sur la scène vidéo.
+- Ajout d'une **modération organisateur** : couper le micro, couper la caméra ou retirer un participant.
+- Ajout du **partage de fichiers** dans la salle live avec limite de 20 Mo, blocage des extensions exécutables et téléchargement authentifié.
+- Ajout d'un **enregistrement local organisateur** de la grille vidéo et du mix audio disponibles dans le navigateur, exporté en WebM à l'arrêt.
+- Le panneau latéral live comporte désormais trois onglets : **Participants, Chat, Fichiers**.
+- Migration `0005_live_room_collaboration` : état de main levée, signal de modération et fichiers de séance.
+- Ajout de tests de régression backend pour la main levée, les permissions de modération et le partage/téléchargement de fichiers.
+
+---
+
+# v12 — Refonte des cartes instructeurs & enrichissement de la visioconférence
+
+- Refonte de la page **Nos instructeurs** : cartes plus structurées, meilleure hiérarchie visuelle, bouton **Contacter** déplacé en **bas à droite** avec un fond vert de marque.
+- Le composant `ContactInstructorButton` accepte désormais un libellé et des classes personnalisées, ce qui permet d’uniformiser son rendu selon le contexte.
+- La salle **visioconférence** a été enrichie :
+  - partage d’écran via `getDisplayMedia`,
+  - panneau latéral **Participants / Chat**,
+  - messagerie de séance en temps réel,
+  - indicateurs de durée, présence et outils disponibles,
+  - barre de contrôles plus complète (micro, caméra, partage d’écran, chat, quitter).
+- Backend live sessions : le modèle de signalisation accepte maintenant aussi les messages de type `chat` en plus des signaux WebRTC.
+
+---
+
+# v11 — Agrandissement des KPI du dashboard administrateur
+
+- Les 8 KPI du tableau de bord administrateur sont désormais affichés sur **4 colonnes maximum** sur grand écran, soit 2 lignes lorsque les 8 cartes sont visibles.
+- Cartes KPI agrandies : hauteur minimale, padding et icônes augmentés pour une meilleure lisibilité.
+- Suppression du `truncate` sur les valeurs financières et numériques afin qu'elles ne soient plus affichées sous forme `9...`, `1...`, etc.
+- Les valeurs et libellés peuvent revenir proprement à la ligne sans déborder de la carte.
+- Responsive conservé : 1 colonne mobile, 2 petites tablettes, 3 écrans intermédiaires, 4 grands écrans.
+
+---
+
+# v10 — Correctif démarrage Docker local / SECRET_KEY
+
+- Correction du crash `RuntimeError: SECRET_KEY invalide pour la production` lors d’un lancement local avec `docker compose up`.
+- `docker-compose.yml` utilise désormais `DEBUG=True` et `dev-secret-key-change-me` **uniquement comme valeurs par défaut locales**.
+- `.env.docker.example` et `backend/.env.example` sont alignés sur le mode développement local.
+- Les garde-fous de production Django restent inchangés : avec `DEBUG=False`, une clé faible/de développement et `ALLOWED_HOSTS=*` sont toujours refusés.
+- La production Railway reste explicitement configurée via variables d’environnement, sans secret de production dans le dépôt.
+
+---
+
+# v9 — Audit sécurité, performance et mobile-first
+
+- Migration frontend vers **Next.js 15.5.21** et adaptation des pages serveur aux `params/searchParams` asynchrones.
+- Django **5.2.17 LTS**, DRF 3.18.0 et SimpleJWT 5.5.1.
+- Checkout Stripe réel avec webhook signé ; confirmation manuelle d’une commande payante bloquée en production.
+- Réservations temporaires atomiques des places de formations live pour éviter la survente pendant un checkout externe.
+- Médias pédagogiques privés derrière URLs signées et `X-Accel-Redirect` nginx ; couvertures restent publiques.
+- Throttling DRF centralisé dans Redis, JWT raccourci/rotatif avec blacklist et garde-fous de configuration production.
+- Backend/Celery exécutés sans privilèges root après le bootstrap de volumes.
+- Index PostgreSQL ajoutés aux chemins de requête catalogue, formations et commandes.
+- Inscription simplifiée : l’email est l’identifiant utilisateur ; le username technique est généré automatiquement.
+- Durcissement permissions sur messagerie, avis/questions, wishlist, séances live et transitions financières.
+- Responsive mobile-first renforcé (320–412 px), tiroir curriculum mobile, cibles tactiles, formulaires mono-colonne et lecteurs adaptés.
+- Messages marketing de paiement alignés sur les moyens réellement activés.
+- CI automatisée : checks/migrations/tests Django, `npm build`, audit mobile et validation Compose.
+- Ajout de `AUDIT.md` avec risques résiduels et checklist de production.
+
+---
+
 ## v8 — Correctif CSRF inscription / API JWT
 
 - L’API REST utilise désormais uniquement `JWTAuthentication`.

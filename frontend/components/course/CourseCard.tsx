@@ -15,7 +15,7 @@ export default function CourseCard({ course }: { course: Course }) {
       <div className="relative aspect-video w-full overflow-hidden bg-gradient-to-br from-brand-100 to-brand-50">
         {course.thumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={course.thumbnail} alt={course.title} className="h-full w-full object-cover" />
+          <img loading="lazy" decoding="async" src={course.thumbnail} alt={course.title} className="h-full w-full object-cover" />
         ) : (
           <div className="grid h-full place-items-center text-brand-300">
             <PlayCircle size={48} />

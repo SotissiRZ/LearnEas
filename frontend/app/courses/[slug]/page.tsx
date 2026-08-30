@@ -19,8 +19,9 @@ async function getCourse(slug: string): Promise<Course | null> {
   }
 }
 
-export default async function CourseDetailPage({ params }: { params: { slug: string } }) {
-  const course = await getCourse(params.slug);
+export default async function CourseDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const course = await getCourse(slug);
   if (!course) notFound();
 
   return (
@@ -45,7 +46,7 @@ export default async function CourseDetailPage({ params }: { params: { slug: str
 
             <p className="mt-3 text-sm text-gray-300">
               Créé par <span className="font-semibold text-white">{course.instructor.full_name}</span>
-              {course.instructor.headline ? ` — ${course.instructor.headline}` : ""}
+              {course.instructor.headline ? ` · ${course.instructor.headline}` : ""}
             </p>
 
             <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-300">
@@ -127,7 +128,7 @@ export default async function CourseDetailPage({ params }: { params: { slug: str
           </section>
         </div>
 
-        {/* PURCHASE CARD (desktop, colonne latérale sticky — jamais sous la navbar) */}
+        {/* PURCHASE CARD (desktop, colonne latérale sticky · jamais sous la navbar) */}
         <div className="hidden lg:block">
           <div className="sticky top-24">
             <CoursePurchaseCard initialCourse={course} />

@@ -165,7 +165,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = FormationAttendance
-        fields = ["id", "user_id", "full_name", "role", "joined_at", "last_seen_at", "left_at", "duration_seconds"]
+        fields = ["id", "user_id", "full_name", "role", "joined_at", "last_seen_at", "left_at", "duration_seconds", "hand_raised"]
 
     def get_full_name(self, obj):
         return obj.user.get_full_name() or obj.user.username

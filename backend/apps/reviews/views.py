@@ -5,6 +5,22 @@ from django.db.models import Avg, Count, Q
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Review, LessonComment
 from .serializers import ReviewSerializer, LessonCommentSerializer
+from apps.enrollments.models import CourseEnrollment, PDFPurchase
+
+
+def _has_course_access(user, course):
+    if not user or not user.is_authenticated:
+        return False
+    if user.role == "admin" or course.instructor_id == user.id or course.is_free:
+        return True
+    return CourseEnrollment.objects.filter(user=user, course=course).exists()
+
+def _has_pdf_access(user, pdf):
+    if not user or not user.is_authenticated:
+        return False
+    if user.role == "admin" or pdf.instructor_id == user.id or pdf.is_free:
+        return True
+    return PDFPurchase.objects.filter(user=user, pdf_product=pdf).exists()
 
 
 class IsOwnerOrAdmin(permissions.BasePermission):
@@ -23,6 +39,17 @@ class ReviewViewSet(viewsets.ModelViewSet):
     search_fields = ["comment", "user__email", "user__first_name", "user__last_name", "course__title", "pdf_product__title"]
     ordering_fields = ["created_at", "rating"]
     ordering = ["-created_at"]
+
+    def perform_create(self, serializer):
+        course = serializer.validated_data.get("course")
+        pdf = serializer.validated_data.get("pdf_product")
+        if course and not _has_course_access(self.request.user, course):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Vous devez avoir accès à ce cours pour publier un avis.")
+        if pdf and not _has_pdf_access(self.request.user, pdf):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Vous devez avoir accès à ce PDF pour publier un avis.")
+        serializer.save(user=self.request.user)
 
     @action(detail=False, methods=["get"], permission_classes=[permissions.IsAuthenticated], url_path="mine")
     def mine(self, request):
@@ -52,12 +79,26 @@ class ReviewViewSet(viewsets.ModelViewSet):
 class LessonCommentViewSet(viewsets.ModelViewSet):
     queryset = LessonComment.objects.filter(parent__isnull=True).select_related("user", "lesson")
     serializer_class = LessonCommentSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsOwnerOrAdmin]
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrAdmin]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["lesson"]
     search_fields = ["content", "user__email", "user__first_name", "user__last_name", "lesson__title"]
     ordering_fields = ["created_at"]
     ordering = ["created_at"]
+
+    def get_queryset(self):
+        qs = LessonComment.objects.filter(parent__isnull=True).select_related("user", "lesson", "lesson__section__course")
+        user = self.request.user
+        if user.role == "admin":
+            return qs
+        return qs.filter(Q(lesson__section__course__instructor=user) | Q(lesson__section__course__enrollments__user=user) | Q(lesson__section__course__is_free=True)).distinct()
+
+    def perform_create(self, serializer):
+        lesson = serializer.validated_data["lesson"]
+        if not _has_course_access(self.request.user, lesson.section.course):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Vous devez être inscrit à ce cours pour participer à la discussion.")
+        serializer.save(user=self.request.user)
 
     @action(detail=False, methods=["get"], permission_classes=[permissions.IsAuthenticated], url_path="mine")
     def mine(self, request):

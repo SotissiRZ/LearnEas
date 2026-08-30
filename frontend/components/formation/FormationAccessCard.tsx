@@ -13,7 +13,7 @@ export default function FormationAccessCard({ initialFormation }: { initialForma
       <div className="flex aspect-video w-full items-center justify-center bg-gradient-to-br from-violet-100 to-brand-50">
         {formation.thumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={formation.thumbnail} alt={formation.title} className="h-full w-full object-cover" />
+          <img loading="lazy" decoding="async" src={formation.thumbnail} alt={formation.title} className="h-full w-full object-cover" />
         ) : (
           <Video size={48} className="text-violet-300" />
         )}
@@ -23,7 +23,7 @@ export default function FormationAccessCard({ initialFormation }: { initialForma
         <div className="mt-4">
           {formation.is_enrolled ? (
             <div className="flex items-center gap-2 rounded-lg bg-brand-50 p-3 text-sm font-semibold text-brand-700">
-              <CheckCircle2 size={18} /> Vous êtes inscrit — rejoignez les séances ci-contre.
+              <CheckCircle2 size={18} /> Vous êtes inscrit · rejoignez les séances ci-contre.
             </div>
           ) : formation.is_full ? (
             <button disabled className="btn-outline w-full cursor-not-allowed opacity-60">Complet</button>

@@ -11,8 +11,7 @@ export default function CheckoutPage() {
   const { items, total, clear } = useCart();
   const { user } = useAuth();
   const router = useRouter();
-  const [provider, setProvider] = useState<"stripe" | "paypal" | "mobile_money">("mobile_money");
-  const [mobileOperator, setMobileOperator] = useState("orange_money");
+  const [provider, setProvider] = useState<"stripe" | "paypal" | "mobile_money">("stripe");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -24,17 +23,16 @@ export default function CheckoutPage() {
       const pdf_ids = items.filter((i) => i.type === "pdf").map((i) => i.id);
       const formation_ids = items.filter((i) => i.type === "formation").map((i) => i.id);
 
-      const res = await api.post<{ order: { id: number }; requires_payment: boolean }>(
+      const res = await api.post<{ order: { id: number }; requires_payment: boolean; checkout_url?: string | null }>(
         "/payments/checkout/",
         { course_ids, pdf_ids, formation_ids, provider }
       );
 
       if (res.requires_payment) {
-        // En production : redirection vers Stripe Checkout / PayPal / l'agrégateur Mobile
-        // Money (CinetPay, Flutterwave, PawaPay...). Ici on confirme directement pour la démo.
-        await api.post(`/payments/orders/${res.order.id}/confirm/`);
+        if (!res.checkout_url) throw new Error("Le prestataire de paiement n'est pas configuré.");
+        window.location.assign(res.checkout_url);
+        return;
       }
-
       clear();
       router.push("/dashboard/student?purchased=1");
     } catch (e) {
@@ -61,7 +59,7 @@ export default function CheckoutPage() {
           <h2 className="mb-3 font-semibold">Mode de paiement</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <button
-              onClick={() => setProvider("mobile_money")}
+              disabled title="Bientôt disponible"
               className={`rounded-xl border p-4 text-left ${provider === "mobile_money" ? "border-brand-600 bg-brand-50" : "border-gray-200"}`}
             >
               <Smartphone className="mb-2 text-brand-600" />
@@ -77,47 +75,14 @@ export default function CheckoutPage() {
               <p className="text-xs text-gray-500">Visa, Mastercard, Maestro</p>
             </button>
             <button
-              onClick={() => setProvider("paypal")}
+              disabled title="Bientôt disponible"
               className={`rounded-xl border p-4 text-left ${provider === "paypal" ? "border-brand-600 bg-brand-50" : "border-gray-200"}`}
             >
               <p className="mb-2 text-xl font-black text-blue-700">PayPal</p>
               <p className="text-xs text-gray-500">Payer avec votre compte PayPal</p>
             </button>
           </div>
-
-          {provider === "mobile_money" && (
-            <div className="mt-5 flex flex-col gap-3">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {[
-                  { id: "orange_money", label: "Orange Money" },
-                  { id: "mtn_momo", label: "MTN MoMo" },
-                  { id: "wave", label: "Wave" },
-                  { id: "mpesa", label: "M-Pesa" },
-                ].map((op) => (
-                  <button
-                    key={op.id}
-                    type="button"
-                    onClick={() => setMobileOperator(op.id)}
-                    className={`rounded-lg border px-3 py-2 text-xs font-semibold ${mobileOperator === op.id ? "border-brand-600 bg-brand-50 text-brand-700" : "border-gray-200 text-gray-600"}`}
-                  >
-                    {op.label}
-                  </button>
-                ))}
-              </div>
-              <input placeholder="Numéro de téléphone (ex: 07 00 00 00 00)" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-              <p className="text-xs text-gray-400">
-                Vous recevrez une demande de confirmation par USSD/notification sur votre téléphone.
-              </p>
-            </div>
-          )}
-
-          {provider === "stripe" && (
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <input placeholder="Numéro de carte" className="col-span-2 rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-              <input placeholder="MM / AA" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-              <input placeholder="CVC" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-            </div>
-          )}
+          <p className="mt-5 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">Les coordonnées de carte sont saisies sur la page sécurisée Stripe. LearnEas ne stocke pas votre numéro de carte.</p>
 
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 

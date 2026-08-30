@@ -19,7 +19,7 @@ export default function RegisterPage() {
   const router = useRouter();
   const register = useAuth((s) => s.register);
   const [form, setForm] = useState({
-    username: "", email: "", first_name: "", last_name: "", country: "",
+    email: "", first_name: "", last_name: "", country: "",
     password: "", password2: "",
   });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
@@ -33,9 +33,6 @@ export default function RegisterPage() {
 
   function validateClientSide(): boolean {
     const errors: Record<string, string[]> = {};
-    if (form.username.trim().length < 3) {
-      errors.username = ["Doit contenir au moins 3 caractères."];
-    }
     if (!/^\S+@\S+\.\S+$/.test(form.email)) {
       errors.email = ["Adresse email invalide."];
     }
@@ -79,8 +76,8 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="container-app flex min-h-[70vh] items-center justify-center py-16">
-      <div className="card w-full max-w-lg p-8">
+    <div className="container-app flex min-h-[70vh] items-center justify-center py-8 sm:py-16">
+      <div className="card w-full max-w-lg p-4 sm:p-8">
         <div className="mb-6 flex flex-col items-center gap-2">
           <div className="grid h-12 w-12 place-items-center rounded-2xl bg-brand-600 text-white">
             <GraduationCap size={24} />
@@ -97,20 +94,15 @@ export default function RegisterPage() {
 
         <form onSubmit={handleSubmit} noValidate className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <input placeholder="Prénom" value={form.first_name} onChange={(e) => set("first_name", e.target.value)}
+            <input autoComplete="given-name" placeholder="Prénom" value={form.first_name} onChange={(e) => set("first_name", e.target.value)}
               className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
           </div>
           <div>
-            <input placeholder="Nom" value={form.last_name} onChange={(e) => set("last_name", e.target.value)}
+            <input autoComplete="family-name" placeholder="Nom" value={form.last_name} onChange={(e) => set("last_name", e.target.value)}
               className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
           </div>
           <div className="sm:col-span-2">
-            <input required placeholder="Nom d'utilisateur" value={form.username} onChange={(e) => set("username", e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
-            {fieldError("username")}
-          </div>
-          <div className="sm:col-span-2">
-            <input required type="email" placeholder="Email" value={form.email} onChange={(e) => set("email", e.target.value)}
+            <input required type="email" inputMode="email" autoComplete="email" placeholder="Email" value={form.email} onChange={(e) => set("email", e.target.value)}
               className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
             {fieldError("email")}
           </div>

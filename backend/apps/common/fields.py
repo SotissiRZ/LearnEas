@@ -35,3 +35,17 @@ class RelativeFileField(serializers.FileField):
             return value.url
         except (AttributeError, ValueError):
             return None
+
+
+class ProtectedFileField(serializers.FileField):
+    """URL courte signée ; nginx ne sert jamais directement les répertoires privés."""
+    def to_representation(self, value):
+        if not value:
+            return None
+        try:
+            from django.core import signing
+            from urllib.parse import quote
+            token = signing.dumps({"name": value.name}, salt="learneas.private-media", compress=True)
+            return f"/api/media/private/?token={quote(token)}"
+        except Exception:
+            return None

@@ -47,7 +47,7 @@ export default function ForgotPasswordPage() {
             {devUrl && (
               <div className="mt-2 w-full rounded-lg bg-white p-3 text-left">
                 <p className="mb-1 text-xs font-semibold text-gray-500">
-                  Mode développement — pas de serveur email configuré, voici le lien direct :
+                  Mode développement · pas de serveur email configuré, voici le lien direct :
                 </p>
                 <Link href={devUrl.replace(/^https?:\/\/[^/]+/, "")} className="break-all text-xs text-brand-700 underline">
                   {devUrl}

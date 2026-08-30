@@ -6,10 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "audit:mobile": "node scripts/audit-mobile.mjs"
   },
   "dependencies": {
-    "next": "14.2.35",
+    "next": "15.5.21",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "lucide-react": "0.400.0",

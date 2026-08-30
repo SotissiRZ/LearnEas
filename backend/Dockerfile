@@ -15,15 +15,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         zlib1g-dev \
         curl \
         ffmpeg \
+        gosu \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY . .
-RUN chmod +x /app/docker/entrypoint.sh
-
-RUN mkdir -p /app/staticfiles /app/media
+RUN chmod +x /app/docker/entrypoint.sh \
+    && groupadd --gid 10001 learneas \
+    && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin learneas \
+    && mkdir -p /app/staticfiles /app/media \
+    && chown -R learneas:learneas /app
 
 EXPOSE 8000
 

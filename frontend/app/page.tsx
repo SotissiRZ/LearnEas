@@ -48,9 +48,9 @@ export default async function HomePage() {
             <span className="text-brand-400"> pas juste une vidéo.</span>
           </h1>
           <p className="max-w-2xl text-lg text-gray-300">
-            Cours complets, formations interactives en direct et PDF détaillés — accessibles partout
-            en Afrique, avec paiement par <strong>Mobile Money</strong> (Orange Money, MTN, Wave, M-Pesa),
-            carte bancaire ou PayPal.
+            Cours complets, formations interactives en direct et PDF détaillés · accessibles partout
+            en Afrique. Le paiement par carte est traité de manière sécurisée via Stripe ;
+            d’autres moyens locaux pourront être activés lorsqu’ils seront réellement intégrés.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Link href="/courses" className="btn-primary !px-6 !py-3 text-base">
@@ -64,7 +64,7 @@ export default async function HomePage() {
             </Link>
           </div>
 
-          <div className="mt-6 grid w-full max-w-3xl grid-cols-3 gap-4 text-left">
+          <div className="mt-6 grid w-full max-w-3xl grid-cols-1 gap-3 text-left sm:grid-cols-3 sm:gap-4">
             <div className="rounded-xl2 bg-white/5 p-4">
               <InfinityIcon className="mb-2 text-brand-400" size={22} />
               <p className="text-sm text-gray-300">Accès à vie au cours acheté</p>
@@ -75,7 +75,7 @@ export default async function HomePage() {
             </div>
             <div className="rounded-xl2 bg-white/5 p-4">
               <ShieldCheck className="mb-2 text-brand-400" size={22} />
-              <p className="text-sm text-gray-300">Mobile Money, carte ou PayPal — paiement sécurisé</p>
+              <p className="text-sm text-gray-300">Paiement carte sécurisé via Stripe</p>
             </div>
           </div>
         </div>

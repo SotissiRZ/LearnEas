@@ -16,7 +16,7 @@ export default function PdfAccessCard({ initialPdf }: { initialPdf: PDFProduct }
       <div className="flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br from-amber-50 to-orange-50">
         {pdf.cover_image ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={pdf.cover_image} alt={pdf.title} className="h-full w-full object-cover" />
+          <img loading="lazy" decoding="async" src={pdf.cover_image} alt={pdf.title} className="h-full w-full object-cover" />
         ) : (
           <FileText size={56} className="text-amber-300" />
         )}
@@ -31,7 +31,7 @@ export default function PdfAccessCard({ initialPdf }: { initialPdf: PDFProduct }
           )}
         </div>
         {!unlocked && pdf.preview_file && (
-          <div className="mt-2"><PdfViewer url={pdf.preview_file} title={`${pdf.title} — extrait gratuit`} /></div>
+          <div className="mt-2"><PdfViewer url={pdf.preview_file} title={`${pdf.title} · extrait gratuit`} /></div>
         )}
         <div className="mt-5 flex flex-col gap-2 border-t border-gray-100 pt-4 text-sm text-gray-600">
           <span className="flex items-center gap-2"><CheckCircle2 size={16} /> Téléchargement illimité après achat</span>

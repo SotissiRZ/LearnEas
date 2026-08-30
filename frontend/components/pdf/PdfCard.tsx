@@ -15,7 +15,7 @@ export default function PdfCard({ pdf }: { pdf: PDFProduct }) {
       <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden bg-gradient-to-br from-amber-50 to-orange-50">
         {pdf.cover_image ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={pdf.cover_image} alt={pdf.title} className="h-full w-full object-cover" />
+          <img loading="lazy" decoding="async" src={pdf.cover_image} alt={pdf.title} className="h-full w-full object-cover" />
         ) : (
           <FileText size={48} className="text-amber-300" />
         )}

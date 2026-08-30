@@ -26,7 +26,7 @@ export function AddFormationToCartButton({ formation }: { formation: Interactive
       className={inCart ? "btn-outline w-full !border-brand-600 !text-brand-700" : "btn-primary w-full"}
     >
       {inCart ? <Check size={18} /> : <ShoppingCart size={18} />}
-      {inCart ? "Dans le panier — voir" : "S'inscrire à la formation"}
+      {inCart ? "Dans le panier · voir" : "S'inscrire à la formation"}
     </button>
   );
 }

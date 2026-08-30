@@ -15,8 +15,9 @@ async function getFormation(slug: string): Promise<InteractiveFormation | null> 
   }
 }
 
-export default async function FormationDetailPage({ params }: { params: { slug: string } }) {
-  const formation = await getFormation(params.slug);
+export default async function FormationDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const formation = await getFormation(slug);
   if (!formation) notFound();
 
   return (
@@ -27,7 +28,7 @@ export default async function FormationDetailPage({ params }: { params: { slug: 
           <h1 className="mt-2 text-3xl font-extrabold">{formation.title}</h1>
           <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
             <LevelBadge level={formation.level} />
-            <span className="flex items-center gap-1 text-gray-500"><Users size={16} /> {formation.students_count} inscrit(s) — {formation.seats_left} places restantes</span>
+            <span className="flex items-center gap-1 text-gray-500"><Users size={16} /> {formation.students_count} inscrit(s) · {formation.seats_left} places restantes</span>
           </div>
           <p className="mt-2 text-sm text-gray-500">
             Animée par <span className="font-semibold">{formation.instructor.full_name}</span>

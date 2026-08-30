@@ -13,7 +13,7 @@
 /**
  * En environnement Docker, le frontend a besoin de DEUX URLs différentes pour joindre l'API :
  *  - Côté NAVIGATEUR (client) : on utilise une URL RELATIVE ("/api"), pour que la requête reste
- *    TOUJOURS sur la même origine que la page — que le site soit ouvert via http://localhost ou
+ *    TOUJOURS sur la même origine que la page · que le site soit ouvert via http://localhost ou
  *    http://127.0.0.1 (ce sont deux origines DIFFÉRENTES du point de vue du navigateur/CORS, même
  *    si elles pointent vers la même machine !). Une URL relative supprime totalement ce risque.
  *  - Côté SERVEUR (rendu SSR des Server Components, qui s'exécute DANS le conteneur Next.js) :
@@ -32,6 +32,28 @@ const API_URL =
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("learneas_access");
+}
+
+function sanitizeUiText(value: string): string {
+  return value
+    .replace(/\s*—\s*/g, " · ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function normalizeUiData<T>(value: T): T {
+  if (typeof value === "string") {
+    return sanitizeUiText(value) as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeUiData(item)) as T;
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, normalizeUiData(item)])
+    ) as T;
+  }
+  return value;
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -75,7 +97,7 @@ function buildErrorMessage(status: number, data: unknown): ApiError {
       }
     }
     if (messages.length > 0) {
-      return new ApiError(messages.join(" — "), fieldErrors);
+      return new ApiError(messages.join(" · "), fieldErrors);
     }
   }
   if (status === 401) return new ApiError("Identifiants invalides ou session expirée.");
@@ -118,7 +140,7 @@ export async function apiFetch<T>(
   }
   if (res.status === 204) return undefined as unknown as T;
   try {
-    return await res.json();
+    return normalizeUiData(await res.json());
   } catch {
     return undefined as unknown as T;
   }
@@ -140,7 +162,7 @@ export const api = {
 };
 
 /**
- * Upload d'un FormData (fichier vidéo/PDF/image) avec suivi de progression réel — `fetch()` ne
+ * Upload d'un FormData (fichier vidéo/PDF/image) avec suivi de progression réel · `fetch()` ne
  * permet pas d'observer la progression d'un envoi, on utilise donc XMLHttpRequest pour ce cas
  * précis. `onProgress` reçoit un pourcentage (0-100).
  */
@@ -171,7 +193,7 @@ export function apiUploadWithProgress<T>(
         /* réponse non-JSON */
       }
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(data as T);
+        resolve(normalizeUiData(data as T));
       } else {
         reject(buildErrorMessage(xhr.status, data));
       }
@@ -188,7 +210,7 @@ export function apiUploadWithProgress<T>(
 /**
  * Pour les Server Components : tente l'appel API et retourne `fallback` en cas d'échec,
  * SANS masquer l'information. `ok: false` signale une vraie panne (API injoignable) à distinguer
- * d'un résultat simplement vide (`ok: true`, tableau/liste vide) — évite la confusion "aucune
+ * d'un résultat simplement vide (`ok: true`, tableau/liste vide) · évite la confusion "aucune
  * donnée" alors qu'il s'agit en réalité d'une erreur réseau/configuration.
  */
 export async function safeGet<T>(
@@ -219,4 +241,36 @@ export function formatDuration(minutes: number): string {
 
 export function levelLabel(level: string): string {
   return { beginner: "Débutant", intermediate: "Intermédiaire", expert: "Expert" }[level] || level;
+}
+
+/** Télécharge une ressource protégée avec le même jeton JWT que les appels API. */
+export async function apiDownload(path: string, filename = "download"): Promise<void> {
+  const token = getToken();
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      method: "GET",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiError("Impossible de télécharger le fichier. Vérifiez votre connexion.");
+  }
+
+  if (!response.ok) {
+    let data: unknown = null;
+    try { data = await response.json(); } catch { /* réponse non JSON */ }
+    throw buildErrorMessage(response.status, data);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }

@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class Order(models.Model):
@@ -25,6 +26,10 @@ class Order(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status", "created_at"], name="payments_or_status_6f471d_idx"),
+            models.Index(fields=["user", "status"], name="payments_or_user_id_8d1a2e_idx"),
+        ]
 
     def __str__(self):
         return f"Commande #{self.id} — {self.user} — {self.get_status_display()}"
@@ -61,6 +66,38 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f"{self.item_type} — {self.course or self.pdf_product or self.formation}"
+
+
+class FormationSeatReservation(models.Model):
+    """Réservation temporaire d'une place pendant un checkout externe.
+
+    La ligne de formation est verrouillée pendant la création du checkout ; les réservations
+    actives sont comptées avec les inscriptions afin d'éviter de vendre la dernière place
+    à plusieurs utilisateurs en parallèle.
+    """
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="seat_reservations")
+    formation = models.ForeignKey(
+        "formations.InteractiveFormation", on_delete=models.CASCADE, related_name="seat_reservations"
+    )
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="formation_seat_reservations")
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["order", "formation"], name="uniq_order_formation_reservation"),
+        ]
+        indexes = [
+            models.Index(fields=["formation", "expires_at"], name="payments_fo_formati_7a9c55_idx"),
+            models.Index(fields=["user", "expires_at"], name="payments_fo_user_id_0cb3d6_idx"),
+        ]
+
+    @property
+    def is_active(self):
+        return self.expires_at > timezone.now() and self.order.status == Order.Status.PENDING
+
+    def __str__(self):
+        return f"Réservation {self.formation} — {self.user}"
 
 
 class PayoutProfile(models.Model):

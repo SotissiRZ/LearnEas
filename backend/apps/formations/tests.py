@@ -1,5 +1,8 @@
 from datetime import timedelta
 from decimal import Decimal
+import tempfile
+
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 from django.utils import timezone
 from rest_framework import status
@@ -7,7 +10,7 @@ from rest_framework.test import APITestCase
 
 from apps.accounts.models import User
 from apps.catalog.models import Category
-from .models import InteractiveFormation, FormationEnrollment, FormationSession, FormationAttendance
+from .models import InteractiveFormation, FormationEnrollment, FormationSession, FormationAttendance, FormationSignal
 
 
 class InteractiveFormationRegressionTests(APITestCase):
@@ -112,3 +115,92 @@ class InteractiveFormationRegressionTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         rows = response.data.get("results", response.data)
         self.assertEqual([row["id"] for row in rows], [session.id])
+    def _started_session_with_student(self):
+        session = FormationSession.objects.create(
+            formation=self.formation, session_number=1, scheduled_at=timezone.now(),
+            duration_minutes=75, started_at=timezone.now(),
+        )
+        FormationEnrollment.objects.get_or_create(user=self.student, formation=self.formation)
+        self.client.force_authenticate(self.student)
+        joined = self.client.post(f"/api/sessions/{session.id}/join/", {}, format="json")
+        self.assertEqual(joined.status_code, status.HTTP_201_CREATED, joined.data)
+        return session, joined.data["id"]
+
+    def test_live_hand_raise_is_visible_in_presence(self):
+        session, attendance_id = self._started_session_with_student()
+        raised = self.client.post(
+            f"/api/sessions/{session.id}/hand/",
+            {"attendance_id": attendance_id, "raised": True},
+            format="json",
+        )
+        self.assertEqual(raised.status_code, status.HTTP_200_OK, raised.data)
+        self.assertTrue(raised.data["hand_raised"])
+
+        self.client.force_authenticate(self.organizer)
+        presence = self.client.get(f"/api/sessions/{session.id}/presence/")
+        self.assertEqual(presence.status_code, status.HTTP_200_OK, presence.data)
+        student_row = next(row for row in presence.data if row["user_id"] == self.student.id)
+        self.assertTrue(student_row["hand_raised"])
+
+    def test_live_moderation_signal_is_organizer_only(self):
+        session, _ = self._started_session_with_student()
+        denied = self.client.post(
+            f"/api/sessions/{session.id}/signal/",
+            {"recipient_id": self.organizer.id, "kind": "control", "payload": {"action": "mute"}},
+            format="json",
+        )
+        self.assertEqual(denied.status_code, status.HTTP_403_FORBIDDEN, denied.data)
+
+        self.client.force_authenticate(self.organizer)
+        allowed = self.client.post(
+            f"/api/sessions/{session.id}/signal/",
+            {"recipient_id": self.student.id, "kind": "control", "payload": {"action": "camera_off"}},
+            format="json",
+        )
+        self.assertEqual(allowed.status_code, status.HTTP_201_CREATED, allowed.data)
+
+    def test_live_room_file_upload_list_and_download(self):
+        session, _ = self._started_session_with_student()
+        with tempfile.TemporaryDirectory() as tmpdir, self.settings(MEDIA_ROOT=tmpdir):
+            upload = SimpleUploadedFile("support.pdf", b"fake-pdf-content", content_type="application/pdf")
+            created = self.client.post(
+                f"/api/sessions/{session.id}/files/", {"file": upload}, format="multipart"
+            )
+            self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+            self.assertEqual(created.data["name"], "support.pdf")
+
+            listed = self.client.get(f"/api/sessions/{session.id}/files/")
+            self.assertEqual(listed.status_code, status.HTTP_200_OK, listed.data)
+            self.assertEqual(len(listed.data), 1)
+
+            downloaded = self.client.get(f'/api{created.data["download_path"]}')
+            self.assertEqual(downloaded.status_code, status.HTTP_200_OK)
+            self.assertIn("attachment", downloaded.get("Content-Disposition", ""))
+    def test_shared_code_signal_keeps_latest_state_per_recipient(self):
+        session, _ = self._started_session_with_student()
+        first = self.client.post(
+            f"/api/sessions/{session.id}/signal/",
+            {
+                "recipient_id": self.organizer.id,
+                "kind": "code",
+                "payload": {"language": "javascript", "file_name": "main.js", "text": "const a = 1;"},
+            },
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED, first.data)
+        second = self.client.post(
+            f"/api/sessions/{session.id}/signal/",
+            {
+                "recipient_id": self.organizer.id,
+                "kind": "code",
+                "payload": {"language": "javascript", "file_name": "main.js", "text": "const a = 2;"},
+            },
+            format="json",
+        )
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED, second.data)
+        signals = FormationSignal.objects.filter(
+            session=session, sender=self.student, recipient=self.organizer, kind=FormationSignal.Kind.CODE
+        )
+        self.assertEqual(signals.count(), 1)
+        self.assertEqual(signals.first().payload["text"], "const a = 2;")
+

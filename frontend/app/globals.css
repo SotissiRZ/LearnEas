@@ -64,3 +64,25 @@ body {
 .table-head th {
   @apply px-4 py-3 font-semibold;
 }
+
+
+/* Mobile-first hardening · cible 320px+ */
+html, body { max-width: 100%; overflow-x: hidden; }
+img, video, iframe, svg { max-width: 100%; }
+button, a, input, select, textarea { touch-action: manipulation; }
+@media (max-width: 640px) {
+  input, select, textarea { font-size: 16px !important; }
+  .container-app { padding-left: 1rem; padding-right: 1rem; }
+  table { min-width: 640px; }
+}
+
+/* Salle live : boutons partagés entre l'en-tête et les panneaux */
+.toolbar-secondary {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50;
+}
+.toolbar-success {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50;
+}
+.toolbar-danger {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50;
+}

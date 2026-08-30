@@ -3,6 +3,7 @@ set -euo pipefail
 
 echo "== LearnEas backend entrypoint =="
 
+if [ "${SKIP_BOOTSTRAP:-false}" != "true" ]; then
 # --- Attente de la base de données (Postgres) ---
 if [ -n "${DB_HOST:-}" ] || [ -n "${DATABASE_URL:-}" ]; then
   echo "Attente de la disponibilité de la base de données..."
@@ -44,6 +45,16 @@ python manage.py collectstatic --noinput --clear
 if [ "${SEED_DEMO:-false}" = "true" ]; then
   echo "Insertion des données de démonstration (SEED_DEMO=true)..."
   python manage.py seed_demo || echo "seed_demo déjà exécuté ou en erreur non bloquante."
+fi
+
+fi
+
+# Les volumes existants peuvent avoir été créés par une ancienne image root.
+# Le chown au démarrage préserve la compatibilité puis le processus applicatif perd ses privilèges.
+if [ "$(id -u)" = "0" ]; then
+  chown -R learneas:learneas /app/staticfiles /app/media 2>/dev/null || true
+  echo "Démarrage en utilisateur non privilégié learneas : $*"
+  exec gosu learneas "$@"
 fi
 
 echo "Démarrage : $*"

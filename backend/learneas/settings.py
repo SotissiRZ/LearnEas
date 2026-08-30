@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     "apps.faq",
     "apps.chat",
     "apps.formations",
+    "rest_framework_simplejwt.token_blacklist",
 ]
 
 MIDDLEWARE = [
@@ -139,12 +140,26 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 12,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_THROTTLE_CLASSES": (
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ),
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "120/hour",
+        "user": "1200/hour",
+        "auth": "10/min",
+        "password_reset": "5/hour",
+        "checkout": "20/hour",
+        "media": "300/hour",
+    },
 }
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(hours=6),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=14),
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=1),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
 }
 
 CORS_ALLOWED_ORIGINS = config(
@@ -161,6 +176,8 @@ SPECTACULAR_SETTINGS = {
 
 STRIPE_SECRET_KEY = config("STRIPE_SECRET_KEY", default="")
 STRIPE_PUBLISHABLE_KEY = config("STRIPE_PUBLISHABLE_KEY", default="")
+STRIPE_WEBHOOK_SECRET = config("STRIPE_WEBHOOK_SECRET", default="")
+PAYMENT_CURRENCY = config("PAYMENT_CURRENCY", default="MAD")
 
 # Répartition des ventes instructeurs / plateforme
 PLATFORM_COMMISSION_PERCENT = config("PLATFORM_COMMISSION_PERCENT", default=15, cast=int)
@@ -187,6 +204,13 @@ DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="LearnEas <no-reply@le
 # Redis / Celery (emails asynchrones, tâches planifiées) — service "redis" du docker-compose
 # ---------------------------------------------------------------------------
 REDIS_URL = config("REDIS_URL", default="redis://localhost:6379/0")
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": REDIS_URL,
+        "TIMEOUT": 300,
+    }
+}
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_ACCEPT_CONTENT = ["json"]
@@ -212,3 +236,14 @@ if not DEBUG:
         default="http://localhost,http://127.0.0.1",
         cast=Csv(),
     )
+
+
+# Garde-fous de déploiement : refuser les secrets/hosts de développement en production.
+if not DEBUG:
+    if SECRET_KEY in {"dev-secret-key-change-me", "change-me-in-production"} or len(SECRET_KEY) < 32:
+        raise RuntimeError("SECRET_KEY invalide pour la production.")
+    if "*" in ALLOWED_HOSTS:
+        raise RuntimeError("ALLOWED_HOSTS='*' est interdit en production.")
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+    X_FRAME_OPTIONS = "DENY"

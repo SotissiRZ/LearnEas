@@ -1,5 +1,6 @@
 from datetime import timedelta
 from django.contrib.auth import get_user_model
+from django.http import FileResponse
 from django.db.models import Q, Sum, Min, Max
 from django.utils import timezone
 from rest_framework import viewsets, permissions, filters, status
@@ -10,7 +11,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from apps.catalog.permissions import IsInstructorOrAdmin
 from .models import (
     InteractiveFormation, FormationSession, FormationEnrollment,
-    FormationAttendance, FormationSignal, FormationStatus,
+    FormationAttendance, FormationSignal, FormationStatus, FormationRoomFile,
 )
 from .serializers import (
     InteractiveFormationListSerializer, InteractiveFormationDetailSerializer,
@@ -269,8 +270,80 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
                 "user_id": record.user_id,
                 "name": record.user.get_full_name() or record.user.username,
                 "role": record.role,
+                "hand_raised": record.hand_raised,
             })
         return Response(people)
+
+    @action(detail=True, methods=["post"])
+    def hand(self, request, pk=None):
+        session = self.get_object()
+        self._require_access(request, session)
+        attendance_id = request.data.get("attendance_id")
+        attendance = FormationAttendance.objects.filter(
+            id=attendance_id, session=session, user=request.user, left_at__isnull=True
+        ).first()
+        if not attendance:
+            return Response({"detail": "Présence introuvable ou déjà clôturée."}, status=404)
+        attendance.hand_raised = bool(request.data.get("raised", False))
+        attendance.save(update_fields=["hand_raised"])
+        return Response({"ok": True, "hand_raised": attendance.hand_raised})
+
+    @action(detail=True, methods=["get", "post"], url_path="files")
+    def files(self, request, pk=None):
+        session = self.get_object()
+        self._require_access(request, session)
+        if request.method == "POST":
+            upload = request.FILES.get("file")
+            if not upload:
+                return Response({"file": ["Sélectionnez un fichier."]}, status=400)
+            max_size = 20 * 1024 * 1024
+            if upload.size > max_size:
+                return Response({"file": ["Le fichier dépasse la limite de 20 Mo."]}, status=400)
+            blocked = {".exe", ".msi", ".bat", ".cmd", ".com", ".scr", ".js", ".vbs", ".ps1", ".sh"}
+            lower_name = upload.name.lower()
+            if any(lower_name.endswith(ext) for ext in blocked):
+                return Response({"file": ["Ce type de fichier n'est pas autorisé dans une salle live."]}, status=400)
+            item = FormationRoomFile.objects.create(
+                session=session,
+                uploader=request.user,
+                file=upload,
+                original_name=upload.name[:255],
+                content_type=getattr(upload, "content_type", "") or "",
+                size=upload.size,
+            )
+            return Response(self._room_file_payload(item), status=status.HTTP_201_CREATED)
+
+        files = session.room_files.select_related("uploader").all()[:100]
+        return Response([self._room_file_payload(item) for item in files])
+
+    def _room_file_payload(self, item):
+        return {
+            "id": item.id,
+            "name": item.original_name,
+            "content_type": item.content_type,
+            "size": item.size,
+            "uploaded_at": item.uploaded_at,
+            "uploader_id": item.uploader_id,
+            "uploader_name": item.uploader.get_full_name() or item.uploader.username,
+            "download_path": f"/sessions/{item.session_id}/files/{item.id}/download/",
+        }
+
+    @action(detail=True, methods=["get"], url_path=r"files/(?P<file_id>\d+)/download")
+    def file_download(self, request, pk=None, file_id=None):
+        session = self.get_object()
+        self._require_access(request, session)
+        item = FormationRoomFile.objects.filter(id=file_id, session=session).first()
+        if not item:
+            return Response({"detail": "Fichier introuvable."}, status=404)
+        try:
+            handle = item.file.open("rb")
+        except (FileNotFoundError, OSError):
+            return Response({"detail": "Fichier indisponible sur le stockage."}, status=404)
+        response = FileResponse(handle, as_attachment=True, filename=item.original_name)
+        if item.content_type:
+            response["Content-Type"] = item.content_type
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
     @action(detail=True, methods=["get", "post"])
     def signal(self, request, pk=None):
@@ -282,12 +355,43 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
             payload = request.data.get("payload") or {}
             if kind not in FormationSignal.Kind.values:
                 return Response({"kind": ["Type de signal invalide."]}, status=400)
+            if kind == FormationSignal.Kind.CHAT:
+                text = str(payload.get("text", "")).strip()
+                if not text:
+                    return Response({"payload": ["Le message ne peut pas être vide."]}, status=400)
+                if len(text) > 2000:
+                    return Response({"payload": ["Le message est limité à 2000 caractères."]}, status=400)
+                payload = {"text": text, "sent_at": payload.get("sent_at")}
+            if kind == FormationSignal.Kind.CONTROL:
+                self._require_organizer(request, session)
+                action_name = payload.get("action")
+                if action_name not in {"mute", "camera_off", "remove"}:
+                    return Response({"payload": ["Action de modération invalide."]}, status=400)
+                payload = {"action": action_name}
+            if kind == FormationSignal.Kind.CODE:
+                text = str(payload.get("text", ""))
+                if len(text) > 100000:
+                    return Response({"payload": ["Le code partagé est limité à 100 000 caractères."]}, status=400)
+                language = str(payload.get("language", "text"))
+                if language not in {"javascript", "html", "css", "python", "java", "c", "cpp", "text"}:
+                    return Response({"payload": ["Langage de code invalide."]}, status=400)
+                file_name = str(payload.get("file_name", "code.txt")).strip()[:80] or "code.txt"
+                payload = {
+                    "text": text,
+                    "language": language,
+                    "file_name": file_name,
+                    "sent_at": payload.get("sent_at"),
+                }
             try:
                 recipient = User.objects.get(id=recipient_id)
             except User.DoesNotExist:
                 return Response({"recipient_id": ["Participant introuvable."]}, status=400)
             if not _can_access_session(recipient, session):
                 return Response({"recipient_id": ["Ce participant n'a pas accès à la séance."]}, status=400)
+            if kind == FormationSignal.Kind.CODE:
+                FormationSignal.objects.filter(
+                    session=session, sender=request.user, recipient=recipient, kind=FormationSignal.Kind.CODE
+                ).delete()
             signal = FormationSignal.objects.create(
                 session=session, sender=request.user, recipient=recipient, kind=kind, payload=payload
             )
