@@ -1,3 +1,31 @@
+# v27 — Correction du démarrage backend
+
+- Correction du `SystemCheckError models.E034` sur `FormationSessionInvite`.
+- Nom de l’index `(session, email)` raccourci de `formation_invite_session_email_idx` à `form_inv_sess_email_idx` pour respecter la limite Django de 30 caractères.
+- Modèle et migration `0007_session_email_invites.py` alignés pour éviter toute divergence de schéma.
+
+---
+
+# v26 — Correctif build Navbar / Administration technique
+
+- Correction de l’erreur JSX bloquante dans `components/layout/Navbar.tsx` introduite par le lien **Administration technique** du menu mobile.
+- La branche utilisateur connectée du menu mobile est désormais correctement enveloppée dans un fragment React.
+- Le lien **Administration technique** reste réservé aux administrateurs et ferme le menu mobile lors de son ouverture.
+- Validation syntaxique de l’ensemble des fichiers TypeScript/TSX du frontend.
+
+---
+
+# v25 — Indicateurs live intégrés au titre & administration technique
+
+- Les indicateurs **Participants, Mains, Live et Planifié** sont désormais de petites pastilles affichées directement à la suite du titre de la réunion.
+- Le titre de séance possède une largeur maximale responsive et est tronqué proprement pour éviter tout débordement.
+- Suppression de l’ancienne rangée dédiée aux indicateurs afin de libérer davantage d’espace vertical pour la scène, l’éditeur et le tableau blanc.
+- Le bouton **Indicateurs** continue de masquer/réafficher ces mini-indicateurs.
+- Ajout dans le menu de profil des administrateurs d’un bouton **Administration technique** ouvrant Django Admin dans un nouvel onglet.
+- Le même accès est disponible dans le menu mobile pour les comptes administrateurs.
+
+---
+
 # v24 — Réunion enrichie : profil, éditeur flexible, durée fiable et tableau blanc
 
 - Refonte de la tuile vidéo locale : profil organisateur compact avec avatar/initiale et nom en surimpression ; lorsque la caméra est coupée, l’avatar remplace proprement le flux noir.

@@ -32,7 +32,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="formationsessioninvite",
-            index=models.Index(fields=["session", "email"], name="formation_invite_session_email_idx"),
+            index=models.Index(fields=["session", "email"], name="form_inv_sess_email_idx"),
         ),
         migrations.AlterField(
             model_name="formationattendance",

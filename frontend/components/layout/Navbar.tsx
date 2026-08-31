@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   Search, ShoppingCart, GraduationCap, ChevronDown, LayoutDashboard,
-  BookOpen, FileText, LogOut, User as UserIcon, Menu, X, MessageCircle,
+  BookOpen, FileText, LogOut, User as UserIcon, Menu, X, MessageCircle, Wrench, ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useCart } from "@/hooks/useCart";
@@ -57,6 +57,7 @@ export default function Navbar() {
 
   const dashboardHref =
     user?.role === "admin" ? "/dashboard/admin" : user?.role === "instructor" ? "/dashboard/instructor" : "/dashboard/student";
+  const djangoAdminHref = (process.env.NEXT_PUBLIC_API_URL || "/api").replace(/\/api\/?$/, "/admin/");
 
   return (
     <header className="sticky top-0 z-40 border-b border-gray-100 bg-white/95 backdrop-blur">
@@ -116,7 +117,7 @@ export default function Navbar() {
                 <ChevronDown size={16} />
               </button>
               {menuOpen && (
-                <div className="absolute right-0 top-12 w-56 rounded-xl border border-gray-100 bg-white p-2 shadow-soft">
+                <div className="absolute right-0 top-12 w-64 rounded-xl border border-gray-100 bg-white p-2 shadow-soft">
                   <p className="px-2 py-1 text-sm font-semibold">{user.first_name || user.username}</p>
                   <p className="px-2 pb-2 text-xs capitalize text-gray-500">{user.role}</p>
                   <Link href={dashboardHref} onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
@@ -134,6 +135,18 @@ export default function Navbar() {
                   <Link href="/dashboard/student/profile" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
                     <UserIcon size={16} /> Profil
                   </Link>
+                  {user.role === "admin" && (
+                    <a
+                      href={djangoAdminHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={() => setMenuOpen(false)}
+                      className="flex items-center justify-between gap-2 rounded-lg px-2 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"
+                    >
+                      <span className="flex items-center gap-2"><Wrench size={16} /> Administration technique</span>
+                      <ExternalLink size={13} />
+                    </a>
+                  )}
                   <button
                     onClick={() => { logout(); setMenuOpen(false); router.push("/"); }}
                     className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-red-600 hover:bg-red-50"
@@ -173,7 +186,26 @@ export default function Navbar() {
                 {platform.registration_enabled && <Link href="/register" className="rounded-lg px-3 py-2 font-semibold text-brand-700">S'inscrire</Link>}
               </>
             ) : (
-              <Link href={dashboardHref} className="rounded-lg px-3 py-2 font-semibold text-brand-700">Tableau de bord</Link>
+              <>
+                <Link
+                  href={dashboardHref}
+                  onClick={() => setMobileOpen(false)}
+                  className="rounded-lg px-3 py-2 font-semibold text-brand-700"
+                >
+                  Tableau de bord
+                </Link>
+                {user.role === "admin" && (
+                  <a
+                    href={djangoAdminHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setMobileOpen(false)}
+                    className="flex items-center gap-2 rounded-lg px-3 py-2 font-semibold text-brand-700 hover:bg-brand-50"
+                  >
+                    <Wrench size={16} /> Administration technique <ExternalLink size={13} />
+                  </a>
+                )}
+              </>
             )}
           </div>
         </div>

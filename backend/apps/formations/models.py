@@ -225,7 +225,7 @@ class FormationSessionInvite(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["session", "email"], name="uniq_session_invite_email")
         ]
-        indexes = [models.Index(fields=["session", "email"], name="formation_invite_session_email_idx")]
+        indexes = [models.Index(fields=["session", "email"], name="form_inv_sess_email_idx")]
 
     @property
     def is_active(self):
