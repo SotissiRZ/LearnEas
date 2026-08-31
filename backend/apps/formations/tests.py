@@ -10,7 +10,7 @@ from rest_framework.test import APITestCase
 
 from apps.accounts.models import User
 from apps.catalog.models import Category
-from .models import InteractiveFormation, FormationEnrollment, FormationSession, FormationAttendance, FormationSignal
+from .models import InteractiveFormation, FormationEnrollment, FormationSession, FormationAttendance, FormationSignal, FormationSessionInvite
 
 
 class InteractiveFormationRegressionTests(APITestCase):
@@ -59,17 +59,19 @@ class InteractiveFormationRegressionTests(APITestCase):
             session_number=1,
             scheduled_at=timezone.now(),
             duration_minutes=75,
+            started_at=timezone.now() - timedelta(minutes=15),
         )
         FormationEnrollment.objects.create(user=self.student, formation=self.formation)
         joined = timezone.now() - timedelta(minutes=12)
-        FormationAttendance.objects.create(
+        attendance = FormationAttendance.objects.create(
             session=session,
             user=self.student,
             role=FormationAttendance.Role.PARTICIPANT,
-            joined_at=joined,
-            last_seen_at=timezone.now(),
-            left_at=timezone.now(),
             duration_seconds=720,
+        )
+        ended = joined + timedelta(minutes=12)
+        FormationAttendance.objects.filter(id=attendance.id).update(
+            joined_at=joined, last_seen_at=ended, left_at=ended, duration_seconds=720
         )
         self.client.force_authenticate(self.organizer)
         response = self.client.get(f"/api/sessions/{session.id}/report/")
@@ -204,3 +206,103 @@ class InteractiveFormationRegressionTests(APITestCase):
         self.assertEqual(signals.count(), 1)
         self.assertEqual(signals.first().payload["text"], "const a = 2;")
 
+    def test_whiteboard_signal_keeps_latest_snapshot(self):
+        session, _ = self._started_session_with_student()
+        payload = {"strokes": [{"id": "s1", "color": "#10b981", "width": 4, "points": [{"x": 0.1, "y": 0.2}, {"x": 0.2, "y": 0.3}]}]}
+        first = self.client.post(
+            f"/api/sessions/{session.id}/signal/",
+            {"recipient_id": self.organizer.id, "kind": "whiteboard", "payload": payload},
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED, first.data)
+        payload["strokes"][0]["points"].append({"x": 0.3, "y": 0.4})
+        second = self.client.post(
+            f"/api/sessions/{session.id}/signal/",
+            {"recipient_id": self.organizer.id, "kind": "whiteboard", "payload": payload},
+            format="json",
+        )
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED, second.data)
+        signals = FormationSignal.objects.filter(
+            session=session, sender=self.student, recipient=self.organizer, kind=FormationSignal.Kind.WHITEBOARD
+        )
+        self.assertEqual(signals.count(), 1)
+        self.assertEqual(len(signals.first().payload["strokes"][0]["points"]), 3)
+
+    def test_report_does_not_count_time_before_session_start(self):
+        session = FormationSession.objects.create(
+            formation=self.formation, session_number=1, scheduled_at=timezone.now(), duration_minutes=75,
+            started_at=timezone.now() - timedelta(minutes=4), ended_at=timezone.now(), completed=True,
+            actual_duration_seconds=240,
+        )
+        FormationEnrollment.objects.create(user=self.student, formation=self.formation)
+        attendance = FormationAttendance.objects.create(
+            session=session, user=self.student, role=FormationAttendance.Role.PARTICIPANT,
+            duration_seconds=999999,
+        )
+        # Simule une ancienne ligne corrompue démarrée bien avant la séance.
+        joined = session.started_at - timedelta(hours=20)
+        FormationAttendance.objects.filter(id=attendance.id).update(
+            joined_at=joined, last_seen_at=session.ended_at, left_at=session.ended_at, duration_seconds=999999
+        )
+        self.client.force_authenticate(self.organizer)
+        response = self.client.get(f"/api/sessions/{session.id}/report/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["participants"][0]["total_seconds"], 240)
+
+
+class FormationSessionInviteTests(APITestCase):
+    def setUp(self):
+        self.organizer = User.objects.create_user(
+            username="invite_org", email="invite-org@example.com", password="passpass123", role=User.Role.INSTRUCTOR
+        )
+        self.guest = User.objects.create_user(
+            username="invite_guest", email="guest@example.com", password="passpass123", role=User.Role.STUDENT
+        )
+        category = Category.objects.create(name="Invites")
+        self.formation = InteractiveFormation.objects.create(
+            instructor=self.organizer, category=category, title="Session invités", description="Live",
+            price=0, num_sessions=1, session_duration_minutes=60, max_students=10, published=True,
+        )
+        self.session = FormationSession.objects.create(
+            formation=self.formation, session_number=1, scheduled_at=timezone.now(),
+            duration_minutes=60, started_at=timezone.now(),
+        )
+
+    def test_organizer_can_invite_non_enrolled_student_by_email(self):
+        self.client.force_authenticate(self.organizer)
+        with self.settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"):
+            response = self.client.post(
+                f"/api/sessions/{self.session.id}/invites/", {"email": self.guest.email}, format="json"
+            )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertTrue(FormationSessionInvite.objects.filter(session=self.session, email=self.guest.email).exists())
+        self.assertFalse(FormationEnrollment.objects.filter(user=self.guest, formation=self.formation).exists())
+
+    def test_invited_student_can_access_and_join_without_enrollment(self):
+        FormationSessionInvite.objects.create(
+            session=self.session, email=self.guest.email, invited_by=self.organizer, invited_user=self.guest
+        )
+        self.client.force_authenticate(self.guest)
+        room = self.client.get(f"/api/sessions/{self.session.id}/room/")
+        self.assertEqual(room.status_code, status.HTTP_200_OK, room.data)
+        self.assertTrue(room.data["is_guest"])
+        joined = self.client.post(f"/api/sessions/{self.session.id}/join/", {}, format="json")
+        self.assertEqual(joined.status_code, status.HTTP_201_CREATED, joined.data)
+        self.assertEqual(joined.data["role"], FormationAttendance.Role.GUEST)
+        self.assertFalse(FormationEnrollment.objects.filter(user=self.guest, formation=self.formation).exists())
+
+    def test_uninvited_non_enrolled_student_cannot_access(self):
+        self.client.force_authenticate(self.guest)
+        response = self.client.get(f"/api/sessions/{self.session.id}/room/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_revoked_invitation_removes_session_access(self):
+        invite = FormationSessionInvite.objects.create(
+            session=self.session, email=self.guest.email, invited_by=self.organizer, invited_user=self.guest
+        )
+        self.client.force_authenticate(self.organizer)
+        revoked = self.client.post(f"/api/sessions/{self.session.id}/invites/{invite.id}/revoke/", {}, format="json")
+        self.assertEqual(revoked.status_code, status.HTTP_200_OK, revoked.data)
+        self.client.force_authenticate(self.guest)
+        room = self.client.get(f"/api/sessions/{self.session.id}/room/")
+        self.assertEqual(room.status_code, status.HTTP_404_NOT_FOUND)

@@ -263,22 +263,24 @@ function AdminDashboardContent() {
   if (!ready) return <GuardScreen />;
 
   return (
-    <div className="container-app py-8">
-      <div className="grid gap-6 lg:grid-cols-[235px_minmax(0,1fr)]">
-        <AdminSidebar activeTab={tab} />
-        <main className="min-w-0">
-          {tab === "overview" && <OverviewTab key={searchParams.toString()} />}
-          {tab === "users" && <UsersTab key={searchParams.toString()} />}
-          {tab === "applications" && <ApplicationsTab key={searchParams.toString()} />}
-          {tab === "content" && <ContentTab key={searchParams.toString()} />}
-          {tab === "orders" && <OrdersTab key={searchParams.toString()} />}
-          {tab === "payouts" && <PayoutsTab key={searchParams.toString()} />}
-          {tab === "sessions" && <SessionsTab key={searchParams.toString()} />}
-          {tab === "certificates" && <CertificatesTab key={searchParams.toString()} />}
-          {tab === "categories" && <CategoriesTab key={searchParams.toString()} />}
-          {tab === "moderation" && <ModerationTab key={searchParams.toString()} />}
-          {tab === "settings" && <SettingsTab key={searchParams.toString()} />}
-        </main>
+    <div className="lg:fixed lg:inset-x-0 lg:bottom-0 lg:top-16 lg:z-30 lg:overflow-hidden lg:bg-white">
+      <div className="container-app py-4 lg:h-full lg:max-w-none lg:px-0 lg:py-0">
+        <div className="grid gap-4 lg:relative lg:block lg:h-full lg:min-h-0">
+          <AdminSidebar activeTab={tab} />
+          <main className="min-w-0 lg:ml-16 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:px-5 lg:py-4 lg:pb-8 lg:transition-[margin-left] lg:duration-200 lg:ease-out lg:peer-hover:ml-60">
+            {tab === "overview" && <OverviewTab key={searchParams.toString()} />}
+            {tab === "users" && <UsersTab key={searchParams.toString()} />}
+            {tab === "applications" && <ApplicationsTab key={searchParams.toString()} />}
+            {tab === "content" && <ContentTab key={searchParams.toString()} />}
+            {tab === "orders" && <OrdersTab key={searchParams.toString()} />}
+            {tab === "payouts" && <PayoutsTab key={searchParams.toString()} />}
+            {tab === "sessions" && <SessionsTab key={searchParams.toString()} />}
+            {tab === "certificates" && <CertificatesTab key={searchParams.toString()} />}
+            {tab === "categories" && <CategoriesTab key={searchParams.toString()} />}
+            {tab === "moderation" && <ModerationTab key={searchParams.toString()} />}
+            {tab === "settings" && <SettingsTab key={searchParams.toString()} />}
+          </main>
+        </div>
       </div>
     </div>
   );

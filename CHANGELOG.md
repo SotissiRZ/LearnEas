@@ -1,3 +1,88 @@
+# v24 — Réunion enrichie : profil, éditeur flexible, durée fiable et tableau blanc
+
+- Refonte de la tuile vidéo locale : profil organisateur compact avec avatar/initiale et nom en surimpression ; lorsque la caméra est coupée, l’avatar remplace proprement le flux noir.
+- Correction du bouton caméra : réactivation du track existant ou réacquisition de la caméra si le track a été interrompu, synchronisation du flux local et des pairs WebRTC.
+- Barre de contrôles du bas réductible/déployable ; en mode compact seuls les icônes restent visibles afin de libérer la scène principale.
+- Ajout du **tableau blanc collaboratif** avec dessin tactile/souris, couleurs, épaisseur, annulation et effacement synchronisés entre participants.
+- Éditeur de code amélioré avec thèmes Midnight/Dracula/Clair, coloration syntaxique légère et console redimensionnable par glisser-déposer ou boutons +/- .
+- Rapport de séance corrigé : la présence est recalculée dans la fenêtre réelle de la séance et n’utilise plus directement les anciennes durées potentiellement gonflées. Les durées sont affichées en heures/minutes/secondes réelles.
+- Le rapport instructeur présente désormais l’organisateur de façon plus compacte avec avatar, nom et email.
+- Ajout du signal collaboratif `whiteboard` et de la migration `0008_whiteboard_signal.py`.
+- Tests de régression ajoutés pour le tableau blanc et les anciennes présences anormalement longues.
+
+---
+
+# v23 — Invitations email aux séances live
+
+- L'organisateur peut inviter un apprenant **non inscrit à la formation** avec son adresse email.
+- L'invitation donne accès uniquement à la séance concernée et ne crée aucune inscription à la formation.
+- Une adresse correspondant déjà à un compte LearnEas obtient immédiatement l'accès invité ; une adresse sans compte reste en attente jusqu'à l'inscription avec le même email.
+- Email d'invitation avec lien direct vers la salle et lien d'inscription prérempli.
+- Les invités apparaissent avec le rôle **Invité** dans les présences live.
+- États d'invitation visibles par l'organisateur : compte trouvé, compte à créer, séance rejointe, invitation révoquée.
+- L'organisateur peut révoquer une invitation.
+- Les invités ne sont pas ajoutés aux inscrits et ne deviennent pas éligibles au certificat de formation par cette invitation.
+- Migration Django : `0007_session_email_invites.py`.
+
+---
+
+# v22 — Sidebar rail sans chevauchement
+
+- Correction du rail latéral Admin et Instructeur qui recouvrait le contenu au survol.
+- Sur grand écran, le contenu principal passe de 64 px à 240 px de marge gauche en même temps que la sidebar s’ouvre.
+- Transition synchronisée entre sidebar et contenu pour éviter tout masquage de titre, filtre, tableau ou bouton.
+- Le rail reste collé au bord gauche et se replie en icônes lorsque le pointeur le quitte.
+
+---
+
+# v21 — Sidebars desktop en rail d’icônes expansible
+
+- Les sidebars **Administration** et **Instructeur** sont maintenant collées au bord gauche de l’écran sur grand écran.
+- Largeur réduite à **64 px** au repos avec uniquement les icônes visibles.
+- Au survol, le rail s’élargit à **240 px** et révèle les libellés avec une transition douce.
+- L’ouverture se fait en superposition afin d’éviter tout décalage du contenu central.
+- Le contenu principal réserve uniquement la largeur du rail réduit et conserve son scroll indépendant.
+- Sur mobile et tablette, la navigation horizontale sticky existante est conservée.
+
+---
+
+# v20 — Navbar et sidebars dashboard figés
+
+- Dashboards **Admin** et **Instructeur** verrouillés dans la hauteur disponible sous la navbar sur desktop.
+- La navbar reste visible pendant toute la navigation du dashboard.
+- Les sidebars Admin/Instructeur ne défilent plus avec le contenu principal.
+- Le contenu central possède désormais son propre scroll vertical.
+- Si le menu latéral dépasse la hauteur de l’écran, seul le menu lui-même défile.
+- Sur mobile/tablette, le menu dashboard reste sticky sous la navbar et conserve sa navigation horizontale.
+- Le footer ne vient plus interrompre le travail dans les dashboards sur desktop.
+
+---
+
+# v19 — Salle live épurée, panneaux repliables & exécution Python
+
+- **Espace de travail prioritaire** : en-tête réduit à une seule ligne et indicateurs transformés en mini-cartes très compactes.
+- Boutons **Indicateurs**, **Panneau** et **Focus** pour masquer/réafficher les zones secondaires à la demande.
+- Panneau Participants / Chat / Fichiers repliable afin d’agrandir instantanément la scène ou l’éditeur.
+- Console de l’éditeur de code repliable afin de donner toute la largeur au code.
+- Barre de contrôles inférieure élargie et forcée sur **une seule ligne** sur les grands écrans.
+- Boutons d’action rendus plus explicites, avec messages d’erreur pour Démarrer/Terminer et fallback de copie.
+- **Python exécutable dans le navigateur** via Pyodide/WebAssembly (version épinglée), avec capture de stdout/stderr.
+- JavaScript reste exécuté dans une iframe sandboxée ; HTML et CSS disposent d’un aperçu direct.
+- Java, C, C++ et texte restent éditables/partageables mais le bouton Exécuter est désactivé avec une explication au lieu de sembler cassé.
+- CSP nginx adaptée pour autoriser la version épinglée de Pyodide depuis jsDelivr et WebAssembly.
+- **JWT** : ajout du renouvellement automatique du jeton d’accès sur réponse 401 puis répétition de la requête, afin d’éviter les boutons/API inactifs après expiration du token.
+
+---
+
+# v18 — Salle live encore plus compacte
+
+- Réduction supplémentaire de la taille des éléments de la salle live : en-tête, KPI, carte d'entrée, scène vidéo, panneau latéral et barre d'actions.
+- Tuiles vidéo et états vides moins hauts pour limiter l'effet de zoom.
+- Éditeur de code compacté : barre d'outils, sélecteurs, panneau console et zone d'édition allégés.
+- Largeur utile augmentée pour mieux exploiter l'écran tout en diminuant l'encombrement visuel.
+
+---
+
 # v17 — Salle live fixe & éditeur de code intégré
 
 - La salle live occupe désormais **100 % du viewport** en couche fixe : le header et le footer du site ne peuvent plus apparaître pendant la réunion.

@@ -161,6 +161,7 @@ export interface FormationSession {
   notes: string;
   started_at: string | null;
   ended_at: string | null;
+  actual_duration_seconds: number;
   actual_duration_minutes: number;
   can_join: boolean;
 }

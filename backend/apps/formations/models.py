@@ -156,6 +156,7 @@ class FormationAttendance(models.Model):
     class Role(models.TextChoices):
         ORGANIZER = "organizer", "Organisateur"
         PARTICIPANT = "participant", "Participant"
+        GUEST = "guest", "Invité"
         ADMIN = "admin", "Administrateur"
 
     session = models.ForeignKey(FormationSession, on_delete=models.CASCADE, related_name="attendance_records")
@@ -180,7 +181,7 @@ class FormationAttendance(models.Model):
 
 
 class FormationSignal(models.Model):
-    """Messages éphémères de signalisation WebRTC et chat léger entre participants."""
+    """Messages éphémères WebRTC et états collaboratifs (chat, code, tableau blanc)."""
 
     class Kind(models.TextChoices):
         OFFER = "offer", "Offer"
@@ -189,6 +190,7 @@ class FormationSignal(models.Model):
         CHAT = "chat", "Chat"
         CONTROL = "control", "Moderation control"
         CODE = "code", "Shared code editor"
+        WHITEBOARD = "whiteboard", "Shared whiteboard"
 
     session = models.ForeignKey(FormationSession, on_delete=models.CASCADE, related_name="signals")
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sent_formation_signals")
@@ -200,6 +202,38 @@ class FormationSignal(models.Model):
     class Meta:
         ordering = ["id"]
         indexes = [models.Index(fields=["session", "recipient", "id"])]
+
+class FormationSessionInvite(models.Model):
+    """Invitation email donnant accès à une seule séance sans inscrire à la formation."""
+
+    session = models.ForeignKey(FormationSession, on_delete=models.CASCADE, related_name="email_invites")
+    email = models.EmailField()
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sent_formation_session_invites"
+    )
+    invited_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="formation_session_invites",
+    )
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["session", "email"], name="uniq_session_invite_email")
+        ]
+        indexes = [models.Index(fields=["session", "email"], name="formation_invite_session_email_idx")]
+
+    @property
+    def is_active(self):
+        return self.revoked_at is None and not self.session.completed and self.session.ended_at is None
+
+    def __str__(self):
+        return f"{self.email} -> {self.session}"
+
 
 def formation_room_file_upload_to(instance, filename):
     safe_name = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]

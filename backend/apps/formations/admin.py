@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import InteractiveFormation, FormationSession, FormationEnrollment, FormationAttendance, FormationSignal, FormationRoomFile
+from .models import InteractiveFormation, FormationSession, FormationEnrollment, FormationAttendance, FormationSignal, FormationRoomFile, FormationSessionInvite
 
 
 class FormationSessionInline(admin.TabularInline):
@@ -48,3 +48,11 @@ class FormationRoomFileAdmin(admin.ModelAdmin):
     list_filter = ("session__formation", "content_type")
     search_fields = ("original_name", "uploader__email", "uploader__username")
     readonly_fields = ("session", "uploader", "file", "original_name", "content_type", "size", "uploaded_at")
+
+
+@admin.register(FormationSessionInvite)
+class FormationSessionInviteAdmin(admin.ModelAdmin):
+    list_display = ("session", "email", "invited_by", "invited_user", "created_at", "accepted_at", "revoked_at")
+    list_filter = ("session__formation",)
+    search_fields = ("email", "invited_user__email", "session__formation__title")
+    readonly_fields = ("token", "created_at", "accepted_at", "revoked_at")

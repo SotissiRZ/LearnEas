@@ -116,6 +116,7 @@ Admin Django : **http://localhost/admin**
 - Choix du microphone et de la caméra pendant la séance, ainsi que mode plein écran.
 - Pour l'organisateur : commandes de modération (couper micro/caméra, retirer un participant).
 - Partage de fichiers de séance avec téléchargement authentifié et limite de 20 Mo par fichier.
+- Invitation ponctuelle par email d'un apprenant non inscrit : accès limité à la séance, statut d'invitation et révocation par l'organisateur, sans création d'une inscription à la formation.
 - Enregistrement local côté organisateur de la grille vidéo et du mix audio disponibles au moment de l'enregistrement ; le fichier WebM est téléchargé sur le poste de l'organisateur et n'est pas stocké automatiquement sur le serveur.
 - Pour une production fiable derrière des NAT/réseaux mobiles, un **TURN** reste nécessaire. Pour des classes nombreuses, prévoir une architecture **SFU** plutôt qu'un maillage WebRTC pair-à-pair.
 
@@ -324,3 +325,7 @@ Bon lancement avec **LearnEas** 🚀
 
 L’API LearnEas (`/api/...`) utilise JWT (`Authorization: Bearer ...`) et **pas** les sessions Django. Cette séparation évite qu’un cookie de session créé par `/admin/` impose à tort un jeton CSRF aux endpoints publics comme `/api/auth/login/` ou `/api/auth/register/`. Le Django Admin continue, lui, à utiliser les sessions et la protection CSRF standard de Django.
 
+
+## Exécution de code dans les séances live
+
+La salle live peut exécuter JavaScript dans une iframe sandboxée et Python dans le navigateur via Pyodide/WebAssembly (version épinglée `0.27.7` chargée depuis jsDelivr). HTML et CSS disposent d'un aperçu direct. Java, C et C++ restent éditables et synchronisés mais ne sont pas exécutés côté serveur, afin de ne pas exposer le backend à l'exécution arbitraire de code. En environnement à accès Internet filtré, autoriser `https://cdn.jsdelivr.net` ou héberger les ressources Pyodide en interne.

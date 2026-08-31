@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { GraduationCap, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -17,6 +17,7 @@ const AFRICAN_COUNTRIES = [
 
 export default function RegisterPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const register = useAuth((s) => s.register);
   const [form, setForm] = useState({
     email: "", first_name: "", last_name: "", country: "",
@@ -25,6 +26,13 @@ export default function RegisterPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [globalError, setGlobalError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const invitedEmail = searchParams.get("email")?.trim().toLowerCase();
+    if (invitedEmail) {
+      setForm((current) => ({ ...current, email: invitedEmail }));
+    }
+  }, [searchParams]);
 
   function set(key: string, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -54,7 +62,8 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register(form);
-      router.push("/dashboard/student");
+      const next = searchParams.get("next");
+      router.push(next && next.startsWith("/") ? next : "/dashboard/student");
     } catch (err) {
       if (err instanceof ApiError) {
         setFieldErrors(err.fieldErrors);

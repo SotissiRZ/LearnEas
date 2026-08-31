@@ -1,7 +1,12 @@
 from datetime import timedelta
+from urllib.parse import quote
+from django.conf import settings
+from django.core.mail import send_mail
+from django.core.validators import validate_email
+from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from django.http import FileResponse
-from django.db.models import Q, Sum, Min, Max
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import viewsets, permissions, filters, status
 from rest_framework.decorators import action
@@ -11,7 +16,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from apps.catalog.permissions import IsInstructorOrAdmin
 from .models import (
     InteractiveFormation, FormationSession, FormationEnrollment,
-    FormationAttendance, FormationSignal, FormationStatus, FormationRoomFile,
+    FormationAttendance, FormationSignal, FormationStatus, FormationRoomFile, FormationSessionInvite,
 )
 from .serializers import (
     InteractiveFormationListSerializer, InteractiveFormationDetailSerializer,
@@ -34,17 +39,29 @@ def _is_organizer(user, formation):
     ))
 
 
+def _active_session_invite(user, session):
+    if not user or not user.is_authenticated or not user.email:
+        return None
+    return FormationSessionInvite.objects.filter(
+        session=session, email__iexact=user.email, revoked_at__isnull=True
+    ).first()
+
+
 def _can_access_session(user, session):
     if _is_organizer(user, session.formation):
         return True
-    return FormationEnrollment.objects.filter(user=user, formation=session.formation).exists()
+    if FormationEnrollment.objects.filter(user=user, formation=session.formation).exists():
+        return True
+    return _active_session_invite(user, session) is not None
 
 
-def _role_for(user, formation):
+def _role_for(user, formation, session=None):
     if user.role == "admin" and user.id not in (formation.instructor_id, formation.co_instructor_id):
         return FormationAttendance.Role.ADMIN
     if user.id in (formation.instructor_id, formation.co_instructor_id):
         return FormationAttendance.Role.ORGANIZER
+    if session is not None and _active_session_invite(user, session):
+        return FormationAttendance.Role.GUEST
     return FormationAttendance.Role.PARTICIPANT
 
 
@@ -117,8 +134,12 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
         if user.role == "admin":
             return qs
         enrolled_ids = FormationEnrollment.objects.filter(user=user).values_list("formation_id", flat=True)
+        invited_session_ids = FormationSessionInvite.objects.filter(
+            email__iexact=user.email, revoked_at__isnull=True
+        ).values_list("session_id", flat=True) if user.email else []
         return qs.filter(
-            Q(formation__instructor=user) | Q(formation__co_instructor=user) | Q(formation_id__in=enrolled_ids)
+            Q(formation__instructor=user) | Q(formation__co_instructor=user) |
+            Q(formation_id__in=enrolled_ids) | Q(id__in=invited_session_ids)
         ).distinct()
 
     @action(detail=False, methods=["get"], permission_classes=[permissions.IsAuthenticated], url_path="mine")
@@ -180,9 +201,16 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
             "ended_at": session.ended_at,
             "completed": session.completed,
             "is_organizer": _is_organizer(request.user, session.formation),
+            "is_guest": bool(_active_session_invite(request.user, session)) and not FormationEnrollment.objects.filter(user=request.user, formation=session.formation).exists(),
+            "organizer": {
+                "id": session.formation.instructor.id,
+                "name": session.formation.instructor.get_full_name() or session.formation.instructor.username,
+                "avatar": session.formation.instructor.avatar.url if getattr(session.formation.instructor, "avatar", None) else None,
+            },
             "user": {
                 "id": request.user.id,
                 "name": request.user.get_full_name() or request.user.username,
+                "avatar": request.user.avatar.url if getattr(request.user, "avatar", None) else None,
             },
         })
 
@@ -213,10 +241,24 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
 
         # Ferme une ancienne connexion restée ouverte pour ce même utilisateur/session.
         for old in FormationAttendance.objects.filter(session=session, user=request.user, left_at__isnull=True):
-            old.close()
+            # Ne jamais compter une période hors-ligne comme du temps de présence. Une ancienne
+            # connexion est clôturée à son dernier heartbeat connu, pas à l'instant du nouveau join.
+            old.close(old.last_seen_at or timezone.now())
+
+        invite = _active_session_invite(request.user, session)
+        if invite:
+            update_fields = []
+            if invite.invited_user_id != request.user.id:
+                invite.invited_user = request.user
+                update_fields.append("invited_user")
+            if not invite.accepted_at:
+                invite.accepted_at = timezone.now()
+                update_fields.append("accepted_at")
+            if update_fields:
+                invite.save(update_fields=update_fields)
 
         attendance = FormationAttendance.objects.create(
-            session=session, user=request.user, role=_role_for(request.user, session.formation)
+            session=session, user=request.user, role=_role_for(request.user, session.formation, session)
         )
         enrollment = FormationEnrollment.objects.filter(user=request.user, formation=session.formation).first()
         if enrollment:
@@ -271,6 +313,7 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
                 "name": record.user.get_full_name() or record.user.username,
                 "role": record.role,
                 "hand_raised": record.hand_raised,
+                "avatar": record.user.avatar.url if getattr(record.user, "avatar", None) else None,
             })
         return Response(people)
 
@@ -287,6 +330,88 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
         attendance.hand_raised = bool(request.data.get("raised", False))
         attendance.save(update_fields=["hand_raised"])
         return Response({"ok": True, "hand_raised": attendance.hand_raised})
+
+    @action(detail=True, methods=["get", "post"], url_path="invites")
+    def invites(self, request, pk=None):
+        session = self.get_object()
+        self._require_organizer(request, session)
+
+        if request.method == "POST":
+            email = str(request.data.get("email", "")).strip().lower()
+            if not email:
+                return Response({"email": ["Saisissez une adresse email."]}, status=400)
+            try:
+                validate_email(email)
+            except ValidationError:
+                return Response({"email": ["Adresse email invalide."]}, status=400)
+
+            if email in {session.formation.instructor.email.lower(), (session.formation.co_instructor.email.lower() if session.formation.co_instructor and session.formation.co_instructor.email else "")}:
+                return Response({"email": ["Cette personne organise déjà la séance."]}, status=400)
+            existing_user = User.objects.filter(email__iexact=email).first()
+            if existing_user and FormationEnrollment.objects.filter(user=existing_user, formation=session.formation).exists():
+                return Response({"email": ["Cet apprenant est déjà inscrit à la formation."]}, status=400)
+
+            invite, _ = FormationSessionInvite.objects.update_or_create(
+                session=session, email=email,
+                defaults={
+                    "invited_by": request.user,
+                    "invited_user": existing_user,
+                    "accepted_at": None,
+                    "revoked_at": None,
+                },
+            )
+            join_url = f"{settings.FRONTEND_URL.rstrip('/')}/live/session/{session.id}"
+            register_url = f"{settings.FRONTEND_URL.rstrip('/')}/register?next=/live/session/{session.id}&email={quote(email)}"
+            send_mail(
+                subject=f"Invitation LearnEas : {session.formation.title}",
+                message=(
+                    f"Bonjour,\n\n"
+                    f"{request.user.get_full_name() or request.user.username} vous invite à participer à la séance "
+                    f"{session.session_number} de « {session.formation.title} » sur LearnEas.\n\n"
+                    f"Rejoindre la séance : {join_url}\n\n"
+                    f"Si vous n'avez pas encore de compte LearnEas, créez-en un avec cette adresse email :\n{register_url}\n\n"
+                    f"Cette invitation donne accès uniquement à cette séance et ne vous inscrit pas à la formation."
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[email],
+                fail_silently=True,
+            )
+            payload = self._invite_payload(invite)
+            if settings.DEBUG:
+                payload["dev_join_url"] = join_url
+            return Response(payload, status=status.HTTP_201_CREATED)
+
+        rows = session.email_invites.select_related("invited_user", "invited_by").all()[:100]
+        return Response([self._invite_payload(invite) for invite in rows])
+
+    def _invite_payload(self, invite):
+        if invite.revoked_at:
+            invite_status = "revoked"
+        elif invite.accepted_at:
+            invite_status = "accepted"
+        elif invite.invited_user_id:
+            invite_status = "account_exists"
+        else:
+            invite_status = "pending_account"
+        return {
+            "id": invite.id,
+            "email": invite.email,
+            "status": invite_status,
+            "created_at": invite.created_at,
+            "accepted_at": invite.accepted_at,
+            "user_id": invite.invited_user_id,
+        }
+
+    @action(detail=True, methods=["post"], url_path=r"invites/(?P<invite_id>\d+)/revoke")
+    def invite_revoke(self, request, pk=None, invite_id=None):
+        session = self.get_object()
+        self._require_organizer(request, session)
+        invite = FormationSessionInvite.objects.filter(id=invite_id, session=session).first()
+        if not invite:
+            return Response({"detail": "Invitation introuvable."}, status=404)
+        invite.revoked_at = timezone.now()
+        invite.save(update_fields=["revoked_at"])
+        return Response(self._invite_payload(invite))
 
     @action(detail=True, methods=["get", "post"], url_path="files")
     def files(self, request, pk=None):
@@ -382,15 +507,53 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
                     "file_name": file_name,
                     "sent_at": payload.get("sent_at"),
                 }
+            if kind == FormationSignal.Kind.WHITEBOARD:
+                strokes = payload.get("strokes", [])
+                if not isinstance(strokes, list) or len(strokes) > 120:
+                    return Response({"payload": ["Le tableau blanc dépasse la limite de 120 tracés."]}, status=400)
+                cleaned = []
+                total_points = 0
+                for stroke in strokes:
+                    if not isinstance(stroke, dict):
+                        continue
+                    points = stroke.get("points", [])
+                    if not isinstance(points, list):
+                        continue
+                    points = points[:600]
+                    total_points += len(points)
+                    if total_points > 12000:
+                        return Response({"payload": ["Le tableau blanc contient trop de points."]}, status=400)
+                    cleaned_points = []
+                    for point in points:
+                        if not isinstance(point, dict):
+                            continue
+                        try:
+                            x = min(max(float(point.get("x", 0)), 0.0), 1.0)
+                            y = min(max(float(point.get("y", 0)), 0.0), 1.0)
+                        except (TypeError, ValueError):
+                            continue
+                        cleaned_points.append({"x": round(x, 4), "y": round(y, 4)})
+                    color = str(stroke.get("color", "#10b981"))[:16]
+                    try:
+                        width = min(max(float(stroke.get("width", 3)), 1.0), 16.0)
+                    except (TypeError, ValueError):
+                        width = 3.0
+                    cleaned.append({
+                        "id": str(stroke.get("id", ""))[:80],
+                        "color": color,
+                        "width": width,
+                        "points": cleaned_points,
+                    })
+                payload = {"strokes": cleaned, "sent_at": payload.get("sent_at")}
             try:
                 recipient = User.objects.get(id=recipient_id)
             except User.DoesNotExist:
                 return Response({"recipient_id": ["Participant introuvable."]}, status=400)
             if not _can_access_session(recipient, session):
                 return Response({"recipient_id": ["Ce participant n'a pas accès à la séance."]}, status=400)
-            if kind == FormationSignal.Kind.CODE:
+            if kind in {FormationSignal.Kind.CODE, FormationSignal.Kind.WHITEBOARD}:
                 FormationSignal.objects.filter(
-                    session=session, sender=request.user, recipient=recipient, kind=FormationSignal.Kind.CODE
+                    session=session, sender=request.user, recipient=recipient, kind=kind
                 ).delete()
             signal = FormationSignal.objects.create(
                 session=session, sender=request.user, recipient=recipient, kind=kind, payload=payload
@@ -428,6 +591,8 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
         session.completed = True
         session.save(update_fields=["started_at", "ended_at", "actual_duration_seconds", "completed"])
 
+        # Ferme d'abord les connexions déjà inactives à leur dernier heartbeat connu.
+        _close_stale_attendances(session)
         for attendance in FormationAttendance.objects.filter(session=session, left_at__isnull=True):
             attendance.close(now)
         session.signals.all().delete()
@@ -447,35 +612,67 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
         session = self.get_object()
         self._require_organizer(request, session)
         _close_stale_attendances(session)
-        rows = (
-            FormationAttendance.objects.filter(session=session)
-            .values("user_id", "user__first_name", "user__last_name", "user__username", "user__email", "role")
-            .annotate(
-                first_join=Min("joined_at"), last_leave=Max("left_at"), total_seconds=Sum("duration_seconds")
-            )
-            .order_by("first_join")
-        )
+
+        # Le temps pédagogique est calculé à partir de la fenêtre réelle de la séance.
+        # Cela corrige aussi les anciennes présences restées ouvertes plusieurs heures/jours.
+        session_start = session.started_at
+        session_end = session.ended_at or timezone.now()
+        aggregated = {}
+        attendances = FormationAttendance.objects.filter(session=session).select_related("user").order_by("joined_at")
+        for attendance in attendances:
+            user = attendance.user
+            key = (user.id, attendance.role)
+            row = aggregated.setdefault(key, {
+                "user_id": user.id,
+                "name": user.get_full_name() or user.username,
+                "email": user.email,
+                "role": attendance.role,
+                "first_join": attendance.joined_at,
+                "last_leave": attendance.left_at,
+                "total_seconds": 0,
+            })
+            row["first_join"] = min(row["first_join"], attendance.joined_at)
+            if attendance.left_at and (not row["last_leave"] or attendance.left_at > row["last_leave"]):
+                row["last_leave"] = attendance.left_at
+
+            if not session_start:
+                continue
+            started = max(attendance.joined_at, session_start)
+            observed_end = attendance.left_at or attendance.last_seen_at or started
+            ended = min(observed_end, session_end)
+            if ended > started:
+                row["total_seconds"] += int((ended - started).total_seconds())
+
+        # Aucun participant ne peut avoir plus de présence que la durée réelle de la séance.
+        max_session_seconds = 0
+        if session_start:
+            max_session_seconds = max(int((session_end - session_start).total_seconds()), 0)
+        rows = []
+        for row in aggregated.values():
+            if max_session_seconds:
+                row["total_seconds"] = min(row["total_seconds"], max_session_seconds)
+            else:
+                row["total_seconds"] = 0
+            rows.append(row)
+        rows.sort(key=lambda row: row["first_join"])
+
         organizers = [session.formation.instructor]
         if session.formation.co_instructor:
             organizers.append(session.formation.co_instructor)
         return Response({
             "session": FormationSessionSerializer(session, context=self.get_serializer_context()).data,
             "organizers": [
-                {"id": u.id, "name": u.get_full_name() or u.username, "email": u.email} for u in organizers
-            ],
-            "participants": [
                 {
-                    "user_id": r["user_id"],
-                    "name": (f'{r["user__first_name"]} {r["user__last_name"]}'.strip() or r["user__username"]),
-                    "email": r["user__email"],
-                    "role": r["role"],
-                    "first_join": r["first_join"],
-                    "last_leave": r["last_leave"],
-                    "total_seconds": r["total_seconds"] or 0,
+                    "id": u.id,
+                    "name": u.get_full_name() or u.username,
+                    "email": u.email,
+                    "avatar": u.avatar.url if getattr(u, "avatar", None) else None,
                 }
-                for r in rows
+                for u in organizers
             ],
+            "participants": rows,
         })
+
 
 
 class MyFormationsViewSet(viewsets.ReadOnlyModelViewSet):

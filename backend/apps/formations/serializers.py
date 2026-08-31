@@ -25,7 +25,7 @@ class FormationSessionSerializer(serializers.ModelSerializer):
         fields = [
             "id", "formation_id", "formation_title", "organizer_name", "session_number",
             "scheduled_at", "duration_minutes", "completed", "notes", "started_at",
-            "ended_at", "actual_duration_minutes", "can_join",
+            "ended_at", "actual_duration_seconds", "actual_duration_minutes", "can_join",
         ]
 
     def get_organizer_name(self, obj):

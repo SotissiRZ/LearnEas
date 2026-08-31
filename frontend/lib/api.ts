@@ -34,6 +34,41 @@ function getToken(): string | null {
   return localStorage.getItem("learneas_access");
 }
 
+let refreshPromise: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const refresh = localStorage.getItem("learneas_refresh");
+  if (!refresh) return null;
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(`${API_URL}/auth/token/refresh/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh }),
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("Refresh JWT refusé");
+      const data = await response.json() as { access?: string; refresh?: string };
+      if (!data.access) throw new Error("Nouveau jeton absent");
+      localStorage.setItem("learneas_access", data.access);
+      if (data.refresh) localStorage.setItem("learneas_refresh", data.refresh);
+      return data.access;
+    } catch {
+      localStorage.removeItem("learneas_access");
+      localStorage.removeItem("learneas_refresh");
+      localStorage.removeItem("learneas_user");
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
 function sanitizeUiText(value: string): string {
   return value
     .replace(/\s*—\s*/g, " · ")
@@ -127,6 +162,18 @@ export async function apiFetch<T>(
     throw new ApiError(
       "Impossible de contacter le serveur. Vérifiez votre connexion ou réessayez plus tard."
     );
+  }
+
+  if (res.status === 401 && token && typeof window !== "undefined" && !path.includes("/auth/token/refresh/")) {
+    const renewed = await refreshAccessToken();
+    if (renewed) {
+      headers.Authorization = `Bearer ${renewed}`;
+      try {
+        res = await fetch(`${API_URL}${path}`, { ...options, headers, cache: "no-store" });
+      } catch {
+        throw new ApiError("Impossible de contacter le serveur. Vérifiez votre connexion ou réessayez plus tard.");
+      }
+    }
   }
 
   if (!res.ok) {
