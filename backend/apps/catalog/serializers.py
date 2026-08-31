@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import serializers
 from apps.accounts.serializers import UserPublicSerializer
 from apps.common.fields import RelativeImageField, RelativeFileField, ProtectedFileField
@@ -188,7 +189,7 @@ class CourseWriteSerializer(serializers.ModelSerializer):
             attrs["discount_price"] = None
         thumbnail = attrs.get("thumbnail")
         if thumbnail:
-            validate_upload_limits(thumbnail, max_bytes=10 * 1024 * 1024, extensions={".jpg", ".jpeg", ".png", ".webp", ".avif"}, field="thumbnail")
+            validate_upload_limits(thumbnail, max_bytes=settings.MAX_IMAGE_UPLOAD_MB * 1024 * 1024, extensions={".jpg", ".jpeg", ".png", ".webp", ".avif"}, field="thumbnail")
         # `featured` est une décision éditoriale de l'administrateur. Le frontend peut
         # néanmoins envoyer `featured=false` avec un formulaire générique : on l'ignore.
         if request and request.user.role != "admin":
@@ -243,7 +244,7 @@ class LessonWriteSerializer(serializers.ModelSerializer):
             validate_upload_limits(subtitles_file, max_bytes=5 * 1024 * 1024, extensions={".vtt"}, field="subtitles_file")
         video_file = attrs.get("video_file")
         if video_file:
-            validate_upload_limits(video_file, max_bytes=200 * 1024 * 1024, extensions={".mp4", ".webm", ".mov", ".m4v"}, field="video_file")
+            validate_upload_limits(video_file, max_bytes=settings.MAX_VIDEO_UPLOAD_MB * 1024 * 1024, extensions={".mp4", ".webm", ".mov", ".m4v"}, field="video_file")
         video_url = attrs.get("video_url")
         if self.instance:
             video_file = video_file or self.instance.video_file
@@ -272,10 +273,10 @@ class PDFResourceWriteSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         if attrs.get("file"):
-            validate_upload_limits(attrs["file"], max_bytes=50 * 1024 * 1024, extensions={".pdf"}, field="file")
+            validate_upload_limits(attrs["file"], max_bytes=settings.MAX_PDF_UPLOAD_MB * 1024 * 1024, extensions={".pdf"}, field="file")
             attrs["page_count"] = extract_pdf_page_count(attrs["file"])
         if attrs.get("cover_image"):
-            validate_upload_limits(attrs["cover_image"], max_bytes=10 * 1024 * 1024, extensions={".jpg", ".jpeg", ".png", ".webp", ".avif"}, field="cover_image")
+            validate_upload_limits(attrs["cover_image"], max_bytes=settings.MAX_IMAGE_UPLOAD_MB * 1024 * 1024, extensions={".jpg", ".jpeg", ".png", ".webp", ".avif"}, field="cover_image")
         return attrs
 
 
@@ -330,13 +331,13 @@ class PDFProductWriteSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         if attrs.get("file"):
-            validate_upload_limits(attrs["file"], max_bytes=50 * 1024 * 1024, extensions={".pdf"}, field="file")
+            validate_upload_limits(attrs["file"], max_bytes=settings.MAX_PDF_UPLOAD_MB * 1024 * 1024, extensions={".pdf"}, field="file")
             attrs["page_count"] = extract_pdf_page_count(attrs["file"])
         if attrs.get("preview_file"):
-            validate_upload_limits(attrs["preview_file"], max_bytes=20 * 1024 * 1024, extensions={".pdf"}, field="preview_file")
+            validate_upload_limits(attrs["preview_file"], max_bytes=min(settings.MAX_PDF_UPLOAD_MB, 50) * 1024 * 1024, extensions={".pdf"}, field="preview_file")
             extract_pdf_page_count(attrs["preview_file"])
         if attrs.get("cover_image"):
-            validate_upload_limits(attrs["cover_image"], max_bytes=10 * 1024 * 1024, extensions={".jpg", ".jpeg", ".png", ".webp", ".avif"}, field="cover_image")
+            validate_upload_limits(attrs["cover_image"], max_bytes=settings.MAX_IMAGE_UPLOAD_MB * 1024 * 1024, extensions={".jpg", ".jpeg", ".png", ".webp", ".avif"}, field="cover_image")
         price = attrs.get("price", getattr(self.instance, "price", 0))
         is_free = attrs.get("is_free", getattr(self.instance, "is_free", False))
         if price is not None and price < 0:

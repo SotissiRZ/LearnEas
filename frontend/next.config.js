@@ -21,6 +21,15 @@ const connectSources = [
   'stun:', 'turn:', 'turns:', 'wss:', 'ws:',
 ].filter(Boolean).join(' ');
 
+const frameSources = [
+  "'self'",
+  'blob:',
+  apiOrigin,
+  'https://checkout.stripe.com',
+  'https://youcanpay.com',
+  'https://pay.genius.ci',
+].filter(Boolean).join(' ');
+
 const csp = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -34,7 +43,7 @@ const csp = [
   "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net",
   "worker-src 'self' blob:",
   `connect-src ${connectSources}`,
-  "frame-src 'self' https://checkout.stripe.com https://youcanpay.com https://pay.genius.ci",
+  `frame-src ${frameSources}`,
 ].join('; ');
 
 const nextConfig = {

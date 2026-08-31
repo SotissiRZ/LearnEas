@@ -88,7 +88,7 @@ def extract_video_duration_minutes(file_obj) -> int:
             ],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=120,
             check=False,
         )
         if result.returncode != 0:

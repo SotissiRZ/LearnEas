@@ -23,6 +23,8 @@ en charge**, listées explicitement à la fin de ce document.
 - Modération live réservée à l’organisateur ; une séance terminée refuse les nouveaux signaux métier.
 - Fichiers pédagogiques et fichiers de réunion privés protégés ; accès local via `X-Accel-Redirect` interne et URLs S3 présignées courtes en stockage distant.
 - Uploads bornés par taille/type et métadonnées PDF/vidéo vérifiées côté serveur.
+- v29 : uploads vidéo jusqu’à 2 Go par défaut côté Docker local, limites configurables côté Django et validation navigateur avant transfert ; les gros fichiers sont spoulés sur disque plutôt qu’en mémoire.
+- v29 : lecteur PDF média privé vérifié contre les blocages CSP/X-Frame ; seul le point d’accès média signé est embeddable par les origines frontend autorisées.
 - CSP, `nosniff`, frame deny, Referrer-Policy et Permissions-Policy sur Nginx et Next.js/Vercel.
 - CSP Next.js ajoute dynamiquement l’origine `NEXT_PUBLIC_API_URL` quand Railway et Vercel sont sur des domaines distincts.
 - Pyodide/Python exécuté dans un **Web Worker** séparé sans accès au DOM, localStorage ou JWT ; JavaScript/HTML/CSS exécutés dans des iframes sandboxées.
@@ -136,3 +138,13 @@ Ces points ne sont pas des bugs corrigibles uniquement dans le dépôt :
 - [ ] TURN testé depuis 4G/5G et réseaux d’entreprise.
 - [ ] Tests Django, build Next.js et `docker compose config` réussis dans CI/l’environnement de livraison.
 - [ ] Sauvegardes PostgreSQL et bucket média restaurées au moins une fois en environnement de test.
+
+## Correctif média v29 — vérifications ciblées
+
+- Python : compilation syntaxique de tout `backend/` réussie.
+- Frontend : parsing des 95 fichiers TS/TSX réussi ; `next.config.js` charge sans erreur.
+- Docker Compose : `docker-compose.yml` et `docker-compose.dev.yml` valides en YAML.
+- Nginx : `nginx -t` réussi sur la configuration v29.
+- Test d'intégration Nginx simulant `X-Accel-Redirect` : le PDF privé est servi en `application/pdf`, `SAMEORIGIN`, `frame-ancestors 'self'` et avec support des requêtes Range.
+- Les tests Django complets restent à rejouer dans l'image Docker, car Django n'est pas installé dans l'environnement de packaging actuel.
+

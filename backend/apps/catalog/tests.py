@@ -2,6 +2,7 @@ from io import BytesIO
 from decimal import Decimal
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from pypdf import PdfWriter
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -106,6 +107,42 @@ class CatalogAccessRegressionTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertEqual(response.data["page_count"], 4)
+
+
+    @override_settings(MAX_VIDEO_UPLOAD_MB=1)
+    def test_video_upload_limit_is_configurable_and_reported_before_ffprobe(self):
+        self.client.force_authenticate(self.instructor)
+        oversized = SimpleUploadedFile(
+            "oversized.mp4",
+            b"0" * (1024 * 1024 + 1),
+            content_type="video/mp4",
+        )
+        response = self.client.post(
+            "/api/catalog/lessons/",
+            {
+                "section": self.section.id,
+                "title": "Vidéo trop lourde",
+                "video_file": oversized,
+                "order": 2,
+                "is_preview": False,
+            },
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertIn("1 Mo", str(response.data))
+
+    def test_private_pdf_media_endpoint_can_be_embedded_by_learneas(self):
+        self.client.force_authenticate(self.instructor)
+        detail = self.client.get(f"/api/catalog/courses/{self.course.slug}/")
+        self.assertEqual(detail.status_code, status.HTTP_200_OK)
+        protected_url = detail.data["pdf_resources"][0]["file"]
+        self.assertTrue(protected_url.startswith("/api/media/private/?token="))
+
+        media = self.client.get(protected_url)
+        self.assertEqual(media.status_code, status.HTTP_200_OK)
+        self.assertIn("/_protected_media/", media["X-Accel-Redirect"])
+        self.assertIn("frame-ancestors", media["Content-Security-Policy"])
+        self.assertNotEqual(media.get("X-Frame-Options"), "DENY")
 
     def test_category_write_uses_learneas_admin_role(self):
         self.client.force_authenticate(self.admin)

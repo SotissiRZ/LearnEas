@@ -117,6 +117,15 @@ STORAGES = {
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
+# Limites médias configurables. Les vidéos de formation dépassent fréquemment 200 Mo ;
+# les gros uploads basculent rapidement sur un fichier temporaire disque afin d'éviter
+# de charger le processus Gunicorn en mémoire.
+MAX_VIDEO_UPLOAD_MB = config("MAX_VIDEO_UPLOAD_MB", default=2048, cast=int)
+MAX_PDF_UPLOAD_MB = config("MAX_PDF_UPLOAD_MB", default=100, cast=int)
+MAX_IMAGE_UPLOAD_MB = config("MAX_IMAGE_UPLOAD_MB", default=15, cast=int)
+FILE_UPLOAD_MAX_MEMORY_SIZE = config("FILE_UPLOAD_MAX_MEMORY_SIZE", default=2 * 1024 * 1024, cast=int)
+PRIVATE_MEDIA_TOKEN_MAX_AGE = config("PRIVATE_MEDIA_TOKEN_MAX_AGE", default=12 * 60 * 60, cast=int)
+
 # Railway utilise un disque éphémère par défaut : activez USE_S3 avec un bucket S3-compatible
 # (AWS, Cloudflare R2, Backblaze, MinIO, etc.) pour conserver durablement les médias.
 if USE_S3:

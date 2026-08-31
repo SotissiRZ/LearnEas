@@ -1,3 +1,17 @@
+# v29 — Upload vidéo volumineux & lecteur PDF débloqué
+
+- Correction de l'erreur HTTP **413** lors de l'ajout de vidéos de cours : limite Nginx portée à 2 Go, timeouts d'upload/proxy étendus et timeout Gunicorn adapté aux traitements longs.
+- Limites médias backend rendues configurables (`MAX_VIDEO_UPLOAD_MB`, `MAX_PDF_UPLOAD_MB`, `MAX_IMAGE_UPLOAD_MB`) avec bascule rapide des gros fichiers vers le stockage temporaire disque.
+- Validation frontend des formats et tailles vidéo avant l'envoi, avec message d'erreur 413 explicite et progression conservée.
+- Formats vidéo explicitement supportés : MP4, WebM, MOV et M4V.
+- Correction du lecteur PDF bloqué par la CSP Nginx : `frame-src` autorise désormais les ressources LearnEas de même origine et les blobs, sans rendre le site lui-même intégrable par un tiers.
+- Le point d'accès média signé est exempté de `X-Frame-Options: DENY` uniquement pour les médias privés, avec `frame-ancestors` limité aux frontends configurés.
+- Les médias privés servis localement utilisent `SAMEORIGIN`, `Accept-Ranges` et restent `private, no-store` afin de préserver lecture, recherche, zoom et navigation native des PDF/vidéos.
+- Durée de validité des URLs médias signées rendue configurable et portée à 12 h par défaut pour éviter les coupures lors de longues sessions d'apprentissage.
+- Tests de régression ajoutés pour la limite vidéo configurable et l'intégration du lecteur PDF signé.
+
+---
+
 # v28 — Audit complet, mini-IDE multi-fichiers & paiements configurables
 
 ### Finitions de livraison

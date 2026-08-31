@@ -83,6 +83,7 @@ Admin Django : **http://localhost/admin**
 - Les informations juridiques (raison sociale, adresse, pays, immatriculation, identifiant fiscal, email confidentialité et délai de remboursement) sont configurables dans **Admin → Paramètres**.
 - Lecteur vidéo unifié : contrôles natifs complets, ±10 s, recommencer, volume/mute, vitesse 0,5× à 2×, boucle, sous-titres WebVTT, Picture-in-Picture, plein écran, nouvel onglet, téléchargement et raccourcis clavier (K/Espace, J/L, flèches, M, F).
 - Lecteur PDF unifié : barre native du navigateur (pages, recherche, zoom, miniatures selon navigateur), plein écran/modal, impression, nouvel onglet et téléchargement.
+- Upload vidéo instructeur : MP4/WebM/MOV/M4V, progression réelle, métadonnées extraites automatiquement et limite Docker locale de 2 Go par défaut (`MAX_VIDEO_UPLOAD_MB`).
 - Les leçons acceptent désormais un fichier de sous-titres `.vtt` et une transcription.
 - **Apprenant → Mes certificats** : registre personnel, filtres, affichage, impression/PDF, partage et vérification publique.
 - **Instructeur → Certificats** : règles par cours/formation, seuil de progression ou de présence réelle, délivrance automatique/manuelle ou groupée, validité, apparence, signataire, préfixe, registre, révocation et réémission.

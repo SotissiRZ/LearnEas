@@ -116,6 +116,7 @@ function buildErrorMessage(status: number, data: unknown): ApiError {
   if (status === 401) return new ApiError("Identifiants invalides ou session expirée.");
   if (status === 403) return new ApiError("Vous n'avez pas les droits nécessaires pour cette action.");
   if (status === 404) return new ApiError("Ressource introuvable.");
+  if (status === 413) return new ApiError("Le fichier est trop volumineux pour le serveur. La limite du proxy LearnEas est actuellement d’environ 2 Go.");
   if (status >= 500) return new ApiError("Erreur serveur, veuillez réessayer dans quelques instants.");
   return new ApiError(`Une erreur est survenue (${status}).`);
 }
