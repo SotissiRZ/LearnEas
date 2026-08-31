@@ -1,3 +1,27 @@
+# v28 — Audit complet, mini-IDE multi-fichiers & paiements configurables
+
+### Finitions de livraison
+- Checkout gratuit : acquisition possible même si aucune passerelle externe n’est active/configurée.
+- IDE multi-fichiers : chemins normalisés et uniques ; correction d’un identifiant manquant détecté au contrôle TypeScript.
+- PostgreSQL/Django : contrainte de réservation raccourcie à `uniq_order_form_res` et migration `payments/0008` de compatibilité pour les bases v27 déjà migrées.
+- Diagnostic email : validation Django réelle de l’adresse destinataire.
+- Rapport d’audit final : séparation explicite entre contrôles statiques réussis et contrôles runtime qui devront être rejoués avec les dépendances/Docker disponibles.
+
+- Audit sécurité/intégrité/performance repris de bout en bout ; corrections JWT, redirections, médias privés, throttling live, validations, transactions et requêtes N+1.
+- Indicateurs live **Participants / Mains / Live / Planifié** agrandis et centrés indépendamment du titre.
+- Éditeur live transformé en **mini-IDE multi-fichiers** avec projets libres/POO et modèles React, Next.js, Django, Django REST Framework, FastAPI, Flask et Node/Express.
+- Python multi-fichiers exécuté dans un Web Worker Pyodide isolé ; imports locaux, thèmes/coloration syntaxique et console redimensionnable.
+- Correction définitive des permissions instructeur : création/modification de cours, leçons, ressources et PDF autonomes ; le champ admin `featured` est ignoré pour l’instructeur au lieu de bloquer la requête.
+- Paiements rendus dynamiques : devises et passerelles administrables, drivers Stripe / YouCan Pay / GeniusPay / manuel et diagnostics de connexion.
+- Mode test des passerelles réellement relié aux credentials sandbox ; environnement figé par commande avec `provider_sandbox`.
+- Réconciliation et webhooks renforcés : montant, devise, référence, utilisateur, statut, signature et anti-rejeu selon le prestataire.
+- Test email depuis les paramètres admin.
+- Démarrage Docker ordonné par healthchecks backend/frontend pour supprimer les 502 pendant migrations/démarrage.
+- Configuration Railway/Vercel et stockage S3-compatible documentés dans README/AUDIT.
+- Tests de régression ajoutés pour contenu instructeur, configuration paiement et diagnostics admin.
+
+---
+
 # v27 — Correction du démarrage backend
 
 - Correction du `SystemCheckError models.E034` sur `FormationSessionInvite`.

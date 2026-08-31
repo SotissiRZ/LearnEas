@@ -10,7 +10,7 @@ interface AuthState {
   hydrate: () => void;
   login: (email: string, password: string) => Promise<AuthUser>;
   register: (payload: Record<string, string>) => Promise<AuthUser>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
 }
 
@@ -48,11 +48,18 @@ export const useAuth = create<AuthState>((set, get) => ({
     return data.user;
   },
 
-  logout: () => {
-    localStorage.removeItem("learneas_access");
-    localStorage.removeItem("learneas_refresh");
-    localStorage.removeItem("learneas_user");
-    set({ user: null });
+  logout: async () => {
+    const refresh = typeof window !== "undefined" ? localStorage.getItem("learneas_refresh") : null;
+    try {
+      if (refresh) await api.post("/auth/logout/", { refresh });
+    } catch {
+      // La déconnexion locale doit toujours fonctionner, même si le réseau est indisponible.
+    } finally {
+      localStorage.removeItem("learneas_access");
+      localStorage.removeItem("learneas_refresh");
+      localStorage.removeItem("learneas_user");
+      set({ user: null });
+    }
   },
 
   refreshMe: async () => {

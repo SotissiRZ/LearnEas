@@ -11,3 +11,12 @@ class CheckoutRateThrottle(UserRateThrottle):
 
 class MediaRateThrottle(UserRateThrottle):
     scope = "media"
+
+class LiveRateThrottle(UserRateThrottle):
+    scope = "live"
+
+class AdminTestRateThrottle(UserRateThrottle):
+    scope = "admin_test"
+
+class WebhookRateThrottle(AnonRateThrottle):
+    scope = "webhook"

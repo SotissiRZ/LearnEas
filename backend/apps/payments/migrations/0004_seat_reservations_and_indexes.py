@@ -32,7 +32,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name="formationseatreservation",
-            constraint=models.UniqueConstraint(fields=("order", "formation"), name="uniq_order_formation_reservation"),
+            constraint=models.UniqueConstraint(fields=("order", "formation"), name="uniq_order_form_res"),
         ),
         migrations.AddIndex(
             model_name="formationseatreservation",

@@ -20,6 +20,21 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     def get_recipient_name(self, obj):
         return obj.recipient.get_full_name() or obj.recipient.username
 
+    def validate(self, attrs):
+        sender = self.context["request"].user
+        recipient = attrs.get("recipient")
+        content = str(attrs.get("content", "") or "").strip()
+        if not recipient or not recipient.is_active:
+            raise serializers.ValidationError({"recipient": "Destinataire invalide ou inactif."})
+        if recipient.id == sender.id:
+            raise serializers.ValidationError({"recipient": "Vous ne pouvez pas vous envoyer un message à vous-même."})
+        if not content:
+            raise serializers.ValidationError({"content": "Le message ne peut pas être vide."})
+        if len(content) > 5000:
+            raise serializers.ValidationError({"content": "Le message est limité à 5 000 caractères."})
+        attrs["content"] = content
+        return attrs
+
     def create(self, validated_data):
         validated_data["sender"] = self.context["request"].user
         return super().create(validated_data)

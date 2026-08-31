@@ -69,28 +69,6 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
-function sanitizeUiText(value: string): string {
-  return value
-    .replace(/\s*—\s*/g, " · ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
-function normalizeUiData<T>(value: T): T {
-  if (typeof value === "string") {
-    return sanitizeUiText(value) as T;
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => normalizeUiData(item)) as T;
-  }
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, normalizeUiData(item)])
-    ) as T;
-  }
-  return value;
-}
-
 const FIELD_LABELS: Record<string, string> = {
   username: "Nom d'utilisateur",
   email: "Email",
@@ -187,7 +165,7 @@ export async function apiFetch<T>(
   }
   if (res.status === 204) return undefined as unknown as T;
   try {
-    return normalizeUiData(await res.json());
+    return await res.json();
   } catch {
     return undefined as unknown as T;
   }
@@ -213,45 +191,35 @@ export const api = {
  * permet pas d'observer la progression d'un envoi, on utilise donc XMLHttpRequest pour ce cas
  * précis. `onProgress` reçoit un pourcentage (0-100).
  */
-export function apiUploadWithProgress<T>(
+export async function apiUploadWithProgress<T>(
   path: string,
   formData: FormData,
   onProgress?: (percent: number) => void,
   method: "POST" | "PATCH" = "POST"
 ): Promise<T> {
-  return new Promise((resolve, reject) => {
+  const attempt = (token: string | null) => new Promise<{ status: number; data: unknown }>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open(method, `${API_URL}${path}`);
-
-    const token = getToken();
     if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && onProgress) {
-        onProgress(Math.round((e.loaded / e.total) * 100));
-      }
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) onProgress(Math.round((event.loaded / event.total) * 100));
     };
-
     xhr.onload = () => {
       let data: unknown = null;
-      try {
-        data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
-      } catch {
-        /* réponse non-JSON */
-      }
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(normalizeUiData(data as T));
-      } else {
-        reject(buildErrorMessage(xhr.status, data));
-      }
+      try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { /* réponse non JSON */ }
+      resolve({ status: xhr.status, data });
     };
-
-    xhr.onerror = () => {
-      reject(new ApiError("Impossible de contacter le serveur. Vérifiez votre connexion ou réessayez plus tard."));
-    };
-
+    xhr.onerror = () => reject(new ApiError("Impossible de contacter le serveur. Vérifiez votre connexion ou réessayez plus tard."));
     xhr.send(formData);
   });
+
+  let result = await attempt(getToken());
+  if (result.status === 401 && typeof window !== "undefined") {
+    const renewed = await refreshAccessToken();
+    if (renewed) result = await attempt(renewed);
+  }
+  if (result.status < 200 || result.status >= 300) throw buildErrorMessage(result.status, result.data);
+  return result.data as T;
 }
 
 /**
@@ -292,24 +260,27 @@ export function levelLabel(level: string): string {
 
 /** Télécharge une ressource protégée avec le même jeton JWT que les appels API. */
 export async function apiDownload(path: string, filename = "download"): Promise<void> {
-  const token = getToken();
+  const doFetch = (token: string | null) => fetch(`${API_URL}${path}`, {
+    method: "GET",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    cache: "no-store",
+  });
+
   let response: Response;
   try {
-    response = await fetch(`${API_URL}${path}`, {
-      method: "GET",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      cache: "no-store",
-    });
+    response = await doFetch(getToken());
+    if (response.status === 401 && typeof window !== "undefined") {
+      const renewed = await refreshAccessToken();
+      if (renewed) response = await doFetch(renewed);
+    }
   } catch {
     throw new ApiError("Impossible de télécharger le fichier. Vérifiez votre connexion.");
   }
-
   if (!response.ok) {
     let data: unknown = null;
     try { data = await response.json(); } catch { /* réponse non JSON */ }
     throw buildErrorMessage(response.status, data);
   }
-
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");

@@ -144,7 +144,7 @@ export default function InstructorSessionsPage() {
                 <div className="flex flex-wrap gap-2">
                   {report.organizers.map((organizer) => (
                     <div key={organizer.id} className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
-                      {organizer.avatar ? <img src={organizer.avatar} alt="" className="h-9 w-9 rounded-full object-cover" /> : <span className="grid h-9 w-9 place-items-center rounded-full bg-brand-100 text-xs font-bold text-brand-700">{organizer.name.charAt(0).toUpperCase()}</span>}
+                      {organizer.avatar ? <img loading="lazy" decoding="async" src={organizer.avatar} alt="" className="h-9 w-9 rounded-full object-cover" /> : <span className="grid h-9 w-9 place-items-center rounded-full bg-brand-100 text-xs font-bold text-brand-700">{organizer.name.charAt(0).toUpperCase()}</span>}
                       <div><p className="text-xs font-semibold">{organizer.name}</p><p className="flex items-center gap-1 text-[10px] text-gray-400"><Mail size={10} /> {organizer.email}</p></div>
                     </div>
                   ))}

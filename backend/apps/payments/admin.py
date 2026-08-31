@@ -1,23 +1,65 @@
 from django.contrib import admin
-from .models import Order, OrderItem, PayoutProfile, InstructorPayout
+from .models import Currency, PaymentGateway, Order, OrderItem, PayoutProfile, InstructorPayout
+
+
+@admin.register(Currency)
+class CurrencyAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "symbol", "exchange_rate", "decimal_places", "is_active", "is_default", "sort_order")
+    list_filter = ("is_active", "is_default", "decimal_places")
+    search_fields = ("code", "name")
+    ordering = ("sort_order", "code")
+
+
+@admin.register(PaymentGateway)
+class PaymentGatewayAdmin(admin.ModelAdmin):
+    list_display = ("name", "code", "is_active", "sandbox", "sort_order")
+    list_filter = ("is_active", "sandbox")
+    search_fields = ("name", "code")
+    ordering = ("sort_order", "name")
+
 
 
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 0
-    readonly_fields = ("instructor", "platform_fee_amount", "instructor_earning_amount")
+    can_delete = False
+    readonly_fields = (
+        "item_type", "course", "pdf_product", "formation", "instructor", "unit_price",
+        "platform_fee_amount", "instructor_earning_amount",
+    )
+
+    def has_add_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ("invoice_number", "user", "status", "provider", "total_amount", "created_at")
-    list_filter = ("status", "provider")
+    list_display = ("invoice_number", "user", "status", "provider", "currency", "total_amount", "created_at")
+    list_filter = ("status", "provider", "provider_sandbox", "currency")
+    search_fields = ("invoice_number", "user__email", "provider_reference")
+    readonly_fields = (
+        "user", "status", "provider", "provider_sandbox", "base_total_amount", "total_amount",
+        "currency", "provider_reference", "invoice_number", "created_at", "paid_at",
+    )
     inlines = [OrderItemInline]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(PayoutProfile)
 class PayoutProfileAdmin(admin.ModelAdmin):
     list_display = ("instructor", "method", "account_name", "updated_at")
+    readonly_fields = ("instructor", "method", "account_name", "account_reference", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(InstructorPayout)
@@ -25,3 +67,13 @@ class InstructorPayoutAdmin(admin.ModelAdmin):
     list_display = ("instructor", "amount", "method", "status", "requested_at", "processed_at", "reference")
     list_filter = ("status", "method")
     search_fields = ("instructor__email", "instructor__username", "reference")
+    readonly_fields = (
+        "instructor", "amount", "status", "method", "account_reference_snapshot", "requested_at",
+        "processed_at", "reference", "note",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

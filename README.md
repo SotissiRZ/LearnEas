@@ -98,8 +98,12 @@ Admin Django : **http://localhost/admin**
 - Recherche, filtres (catégorie, niveau, gratuit), tri (récent, prix, note, popularité).
 
 ### Achat & accès
-- Panier (persisté en local), checkout Stripe hébergé et confirmation par webhook signé. Les moyens non intégrés (PayPal/Mobile Money) restent explicitement indisponibles au lieu d’être simulés.
-- Une commande peut contenir plusieurs cours et PDF en même temps.
+- Panier persisté localement et checkout à passerelles configurables côté administrateur.
+- Drivers intégrés : **Stripe**, **YouCan Pay**, **GeniusPay** et **paiement manuel**. Les secrets restent exclusivement dans les variables d’environnement serveur.
+- L’administrateur active/désactive les moyens de paiement, choisit leurs devises et leur mode test, et peut exécuter un diagnostic de connexion sans débiter un client.
+- Les devises (code ISO, symbole, taux, précision, devise de checkout par défaut) sont administrables sans redéploiement. **MAD reste la devise comptable de base** des prix et revenus ; son taux vaut toujours 1.
+- Chaque commande mémorise l’environnement `sandbox/live` utilisé afin qu’un changement ultérieur de configuration ne fasse pas vérifier une transaction avec les mauvaises clés.
+- Une commande peut contenir plusieurs cours, PDF et formations live en même temps.
 - **Le contenu vidéo/PDF est verrouillé côté API tant que l'achat n'est pas confirmé** (pas juste côté
   affichage) — vérifié par tests réels (voir plus bas).
 - Leçons en "aperçu gratuit" consultables sans achat.
@@ -118,6 +122,10 @@ Admin Django : **http://localhost/admin**
 - Partage de fichiers de séance avec téléchargement authentifié et limite de 20 Mo par fichier.
 - Invitation ponctuelle par email d'un apprenant non inscrit : accès limité à la séance, statut d'invitation et révocation par l'organisateur, sans création d'une inscription à la formation.
 - Enregistrement local côté organisateur de la grille vidéo et du mix audio disponibles au moment de l'enregistrement ; le fichier WebM est téléchargé sur le poste de l'organisateur et n'est pas stocké automatiquement sur le serveur.
+- **Mini-IDE collaboratif multi-fichiers** : création/renommage/suppression de fichiers, projets libres/POO et modèles React, Next.js, Django, Django REST Framework, FastAPI, Flask et Node/Express.
+- Coloration syntaxique et thèmes d’éditeur ; console redimensionnable. JavaScript/HTML/CSS s’exécutent dans des iframes sandboxées et Python dans un Web Worker Pyodide isolé avec fichiers/imports locaux.
+- Les projets framework côté serveur (Django/DRF/FastAPI/Flask/Express/Next.js) sont éditables et collaboratifs, mais ne sont **pas exécutés sur le serveur LearnEas** : aucun moteur d’exécution de code arbitraire multi-tenant n’est activé par défaut.
+- Tableau blanc collaboratif avec dessin souris/tactile, couleurs, épaisseur, annulation et effacement synchronisés.
 - Pour une production fiable derrière des NAT/réseaux mobiles, un **TURN** reste nécessaire. Pour des classes nombreuses, prévoir une architecture **SFU** plutôt qu'un maillage WebRTC pair-à-pair.
 
 ### Comptes & rôles
@@ -136,6 +144,7 @@ Admin Django : **http://localhost/admin**
     L'admin peut créer/désactiver des comptes, gérer les rôles, approuver/refuser les demandes instructeur, modérer le catalogue et les avis. Tous les KPI
     sont navigables vers leur détail, les listes sont filtrables/paginées et les rapports de présence
     s'ouvrent dans une fenêtre dédiée.
+    Un compte admin **technique** (`is_staff` + `is_superuser`) dispose aussi du bouton **Administration technique** vers Django Admin ; ce privilège n’est pas accordé automatiquement aux simples admins applicatifs.
 
 
 ### Paramétrage administrateur
@@ -148,6 +157,9 @@ redéploiement :
 - l'autorisation des demandes pour devenir instructeur ;
 - le pourcentage de commission de la plateforme sur les nouvelles ventes ;
 - le montant minimum autorisé pour une demande de versement instructeur.
+- les devises actives, leur taux par rapport au MAD et la devise de checkout par défaut ;
+- les passerelles Stripe / YouCan Pay / GeniusPay / paiement manuel, leurs devises compatibles et leur mode test ;
+- un diagnostic d’envoi email et un diagnostic non transactionnel de chaque passerelle de paiement.
 
 Les paramètres financiers enregistrés en base remplacent les valeurs d'environnement pour les
 nouvelles opérations. Les anciennes lignes de vente gardent les montants de commission déjà
@@ -249,7 +261,7 @@ npm run dev                       # http://localhost:3000
 | `catalog` | `Category`, `Course`, `Section`, `Lesson`, `PDFResource` (inclus dans un cours), `PDFProduct` (vendu seul) |
 | `formations` | `InteractiveFormation`, `FormationSession`, `FormationEnrollment`, `FormationAttendance`, `FormationSignal` |
 | `enrollments` | `CourseEnrollment`, `LessonProgress`, `PDFPurchase`, `Wishlist`, `Certificate` |
-| `payments` | `Order`, `OrderItem`, `FormationSeatReservation`, `PayoutProfile`, `InstructorPayout` |
+| `payments` | `Currency`, `PaymentGateway`, `Order`, `OrderItem`, `FormationSeatReservation`, `PayoutProfile`, `InstructorPayout` |
 | `reviews` | `Review`, `LessonComment` |
 | `faq` | `FAQ` |
 | `chat` | `ChatMessage` |
@@ -264,7 +276,7 @@ npm run dev                       # http://localhost:3000
 > refusera volontairement de démarrer si une clé de développement est utilisée avec `DEBUG=False`.
 
 
-La v9 applique les garde-fous suivants : JWT pour l’API, rotation/blacklist des refresh tokens,
+La v28 applique notamment les garde-fous suivants : JWT pour l’API, rotation/blacklist des refresh tokens,
 throttling Redis partagé entre workers, mots de passe validés par Django, médias pédagogiques privés
 servis via URL signée + `X-Accel-Redirect`, Stripe Checkout + webhook signé, réservation temporaire
 atomique des places live, contrôles de rôles côté API, CSP/en-têtes nginx, secrets faibles et
@@ -274,13 +286,11 @@ backend/Celery exécutés sous utilisateur non privilégié après bootstrap.
 Avant exposition Internet, configurez obligatoirement :
 
 1. `SECRET_KEY` aléatoire long, `DEBUG=False`, `ALLOWED_HOSTS` et HTTPS réel (`USE_HTTPS=True`).
-2. `STRIPE_SECRET_KEY` **et** `STRIPE_WEBHOOK_SECRET`; configurez chez Stripe l’URL
-   `https://votre-domaine/api/payments/stripe/webhook/`.
-3. Un SMTP réel pour les emails transactionnels.
-4. Un serveur TURN pour fiabiliser les classes WebRTC sur réseaux mobiles/NAT restrictifs.
-5. Un stockage objet/CDN et idéalement HLS adaptatif pour les vidéos importantes ; le disque local
-   reste adapté au développement et aux petites installations.
-6. Un vrai prestataire Mobile Money avant d’afficher Orange Money/MTN/Wave comme moyens actifs.
+2. Les clés **live et test séparées** des prestataires activés. Pour Stripe, configurez `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` et `STRIPE_TEST_SECRET_KEY` / `STRIPE_TEST_WEBHOOK_SECRET` selon les environnements. Pour YouCan Pay, le token utilisé par LearnEas doit autoriser la création et la consultation des factures ; renseignez un token sandbox séparé si votre compte en fournit un. Pour GeniusPay, renseignez les couples clé/secret et secrets webhook distincts sandbox/live.
+3. Les URLs webhook HTTPS : `/api/payments/stripe/webhook/` et `/api/payments/geniuspay/webhook/`. YouCan Pay est réconcilié côté serveur en relisant l’état de la facture lors du retour/vérification.
+4. Un SMTP réel pour les emails transactionnels puis utilisez **Admin → Paramètres → Test email**.
+5. Un serveur TURN pour fiabiliser les classes WebRTC sur réseaux mobiles/NAT restrictifs.
+6. Un stockage objet/CDN et idéalement HLS adaptatif pour les vidéos importantes ; sur Railway activez `USE_S3=True` et `REQUIRE_REMOTE_MEDIA=True`.
 
 Les limitations et priorités restantes sont détaillées dans [`AUDIT.md`](./AUDIT.md).
 

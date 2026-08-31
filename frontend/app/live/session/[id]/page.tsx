@@ -7,6 +7,9 @@ import {
   Copy,
   Download,
   FileText,
+  X,
+  FolderOpen,
+  FilePlus,
   Hand,
   Loader2,
   Maximize2,
@@ -120,8 +123,69 @@ type WorkspaceMode = "video" | "code" | "whiteboard";
 type ModerationAction = "mute" | "camera_off" | "remove";
 type CodeLanguage = "javascript" | "html" | "css" | "python" | "java" | "c" | "cpp" | "text";
 type CodeTheme = "midnight" | "dracula" | "light";
+type CodeFramework = "none" | "react" | "nextjs" | "django" | "drf" | "fastapi" | "flask" | "express";
+interface CodeProjectFile { id: string; path: string; language: CodeLanguage; content: string }
 interface WhiteboardPoint { x: number; y: number }
 interface WhiteboardStroke { id: string; color: string; width: number; points: WhiteboardPoint[] }
+
+function languageFromPath(path: string): CodeLanguage {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".py")) return "python";
+  if (lower.endsWith(".html")) return "html";
+  if (lower.endsWith(".css")) return "css";
+  if (lower.endsWith(".java")) return "java";
+  if (lower.endsWith(".cpp") || lower.endsWith(".cc")) return "cpp";
+  if (lower.endsWith(".c")) return "c";
+  if (lower.endsWith(".js") || lower.endsWith(".jsx") || lower.endsWith(".mjs") || lower.endsWith(".ts") || lower.endsWith(".tsx")) return "javascript";
+  return "text";
+}
+
+function projectTemplate(framework: CodeFramework): CodeProjectFile[] {
+  const file = (path: string, content: string): CodeProjectFile => ({ id: path, path, language: languageFromPath(path), content });
+  if (framework === "react") return [
+    file("src/App.jsx", `export default function App() {\n  return <main className="app"><h1>Bonjour React</h1></main>;\n}`),
+    file("src/main.jsx", `import React from "react";\nimport { createRoot } from "react-dom/client";\nimport App from "./App";\nimport "./styles.css";\n\ncreateRoot(document.getElementById("root")).render(<App />);`),
+    file("src/styles.css", `.app { font-family: system-ui; padding: 2rem; }`),
+    file("index.html", `<div id="root"></div><script type="module" src="/src/main.jsx"></script>`),
+    file("package.json", `{"scripts":{"dev":"vite","build":"vite build"},"dependencies":{"vite":"latest","react":"latest","react-dom":"latest"}}`),
+  ];
+  if (framework === "nextjs") return [
+    file("app/page.jsx", `export default function Page() {\n  return <main><h1>LearnEas avec Next.js</h1></main>;\n}`),
+    file("app/layout.jsx", `export default function RootLayout({ children }) {\n  return <html lang="fr"><body>{children}</body></html>;\n}`),
+    file("app/globals.css", `body { margin: 0; font-family: system-ui; }`),
+    file("package.json", `{"scripts":{"dev":"next dev","build":"next build","start":"next start"},"dependencies":{"next":"latest","react":"latest","react-dom":"latest"}}`),
+  ];
+  if (framework === "django" || framework === "drf") {
+    const base = [
+      file("manage.py", `import os, sys\n\nif __name__ == "__main__":\n    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")\n    from django.core.management import execute_from_command_line\n    execute_from_command_line(sys.argv)`),
+      file("config/__init__.py", ``),
+      file("config/settings.py", `SECRET_KEY = "atelier-uniquement"\nDEBUG = True\nROOT_URLCONF = "config.urls"\nINSTALLED_APPS = ["django.contrib.contenttypes", "django.contrib.auth", "app"${framework === "drf" ? `, "rest_framework"` : ""}]\nMIDDLEWARE = []\nDATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": "db.sqlite3"}}\nDEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"\nUSE_TZ = True`),
+      file("config/urls.py", `from django.urls import path, include\n\nurlpatterns = [path("", include("app.urls"))]`),
+      file("app/__init__.py", ``),
+      file("app/models.py", `from django.db import models\n\nclass Article(models.Model):\n    title = models.CharField(max_length=200)\n    created_at = models.DateTimeField(auto_now_add=True)\n\n    def __str__(self):\n        return self.title`),
+      file("app/views.py", framework === "drf" ? `from rest_framework.viewsets import ModelViewSet\nfrom .models import Article\nfrom .serializers import ArticleSerializer\n\nclass ArticleViewSet(ModelViewSet):\n    queryset = Article.objects.all()\n    serializer_class = ArticleSerializer` : `from django.http import JsonResponse\n\ndef home(request):\n    return JsonResponse({"message": "Bonjour Django"})`),
+      file("app/urls.py", framework === "drf" ? `from rest_framework.routers import DefaultRouter\nfrom .views import ArticleViewSet\n\nrouter = DefaultRouter()\nrouter.register("articles", ArticleViewSet)\nurlpatterns = router.urls` : `from django.urls import path\nfrom .views import home\n\nurlpatterns = [path("", home)]`),
+    ];
+    if (framework === "drf") base.push(file("app/serializers.py", `from rest_framework import serializers\nfrom .models import Article\n\nclass ArticleSerializer(serializers.ModelSerializer):\n    class Meta:\n        model = Article\n        fields = "__all__"`));
+    return base;
+  }
+  if (framework === "fastapi") return [
+    file("main.py", `from fastapi import FastAPI\nfrom models import Article\n\napp = FastAPI()\n\n@app.get("/")\ndef home():\n    return {"message": "Bonjour FastAPI"}`),
+    file("models.py", `from dataclasses import dataclass\n\n@dataclass\nclass Article:\n    title: str`),
+    file("requirements.txt", `fastapi\nuvicorn`),
+  ];
+  if (framework === "flask") return [
+    file("app.py", `from flask import Flask, jsonify\nfrom services.greeting import greeting\n\napp = Flask(__name__)\n\n@app.get("/")\ndef home():\n    return jsonify(message=greeting("LearnEas"))`),
+    file("services/greeting.py", `def greeting(name):\n    return f"Bonjour {name}"`),
+    file("requirements.txt", `flask`),
+  ];
+  if (framework === "express") return [
+    file("server.js", `const express = require("express");\nconst api = require("./routes/api");\nconst app = express();\napp.use("/api", api);\napp.listen(3000, () => console.log("Serveur prêt"));`),
+    file("routes/api.js", `const router = require("express").Router();\nrouter.get("/", (req, res) => res.json({ message: "Bonjour Express" }));\nmodule.exports = router;`),
+    file("package.json", `{"scripts":{"start":"node server.js"},"dependencies":{"express":"latest"}}`),
+  ];
+  return [file("main.js", `class Apprenant {\n  constructor(nom) { this.nom = nom; }\n  saluer() { return \`Bonjour ${'${this.nom}'}\`; }\n}\n\nconsole.log(new Apprenant("LearnEas").saluer());`)];
+}
 
 export default function LiveSessionPage() {
   const params = useParams<{ id: string }>();
@@ -163,6 +227,11 @@ export default function LiveSessionPage() {
   const [codeLanguage, setCodeLanguage] = useState<CodeLanguage>("javascript");
   const [codeFileName, setCodeFileName] = useState("main.js");
   const [codeText, setCodeText] = useState(`// Atelier LearnEas\nfunction bienvenue(nom) {\n  return \`Bonjour \${nom} !\`;\n}\n\nconsole.log(bienvenue("LearnEas"));`);
+  const [codeFramework, setCodeFramework] = useState<CodeFramework>("none");
+  const [activeCodeFileId, setActiveCodeFileId] = useState("main");
+  const [codeFiles, setCodeFiles] = useState<CodeProjectFile[]>([
+    { id: "main", path: "main.js", language: "javascript", content: `// Atelier LearnEas\nfunction bienvenue(nom) {\n  return \`Bonjour \${nom} !\`;\n}\n\nconsole.log(bienvenue("LearnEas"));` },
+  ]);
   const [codeOutput, setCodeOutput] = useState("");
   const [codeRunning, setCodeRunning] = useState(false);
   const [metricsCollapsed, setMetricsCollapsed] = useState(false);
@@ -186,8 +255,6 @@ export default function LiveSessionPage() {
   const codeRunnerRef = useRef<HTMLIFrameElement | null>(null);
   const skipCodeBroadcastRef = useRef(false);
   const codeRunNonceRef = useRef(0);
-  const pyodideRef = useRef<any>(null);
-  const pyodideLoadPromiseRef = useRef<Promise<any> | null>(null);
   const whiteboardBroadcastTimerRef = useRef<number | null>(null);
   const whiteboardRecipientsRef = useRef<Set<number>>(new Set());
 
@@ -337,12 +404,15 @@ export default function LiveSessionPage() {
           language: codeLanguage,
           file_name: codeFileName,
           text: codeText,
+          framework: codeFramework,
+          active_file_id: activeCodeFileId,
+          files: codeFiles.slice(0, 30).map((file) => ({ id: file.id, path: file.path, language: file.language, content: file.content.slice(0, 100000) })),
           sent_at: new Date().toISOString(),
         }).catch(() => {});
       });
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [attendanceId, room, people, codeLanguage, codeFileName, codeText, sendSignal]);
+  }, [attendanceId, room, people, codeLanguage, codeFileName, codeText, codeFramework, activeCodeFileId, codeFiles, sendSignal]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -485,12 +555,32 @@ export default function LiveSessionPage() {
 
       if (message.kind === "code") {
         skipCodeBroadcastRef.current = true;
-        const nextLanguage = String(message.payload?.language || "javascript") as CodeLanguage;
-        setCodeLanguage(nextLanguage);
-        setCodeFileName(String(message.payload?.file_name || "main.js"));
-        setCodeText(String(message.payload?.text || ""));
+        const incomingFiles = Array.isArray(message.payload?.files) ? message.payload.files : [];
+        if (incomingFiles.length) {
+          const cleaned: CodeProjectFile[] = incomingFiles.slice(0, 30).map((item: any, index: number) => ({
+            id: String(item?.id || item?.path || `file-${index}`).slice(0, 100),
+            path: String(item?.path || `file-${index}.txt`).slice(0, 120),
+            language: String(item?.language || languageFromPath(String(item?.path || ""))) as CodeLanguage,
+            content: String(item?.content || "").slice(0, 100000),
+          }));
+          const requestedId = String(message.payload?.active_file_id || cleaned[0].id);
+          const active = cleaned.find((file) => file.id === requestedId) || cleaned[0];
+          setCodeFiles(cleaned);
+          setActiveCodeFileId(active.id);
+          setCodeFileName(active.path);
+          setCodeLanguage(active.language);
+          setCodeText(active.content);
+          setCodeFramework((String(message.payload?.framework || "none") as CodeFramework));
+        } else {
+          const nextLanguage = String(message.payload?.language || "javascript") as CodeLanguage;
+          const name = String(message.payload?.file_name || "main.js");
+          const content = String(message.payload?.text || "");
+          setCodeLanguage(nextLanguage); setCodeFileName(name); setCodeText(content);
+          setCodeFiles([{ id: "main", path: name, language: nextLanguage, content }]);
+          setActiveCodeFileId("main");
+        }
         setWorkspaceMode("code");
-        setNotice(`${message.sender_name} partage l’éditeur de code.`);
+        setNotice(`${message.sender_name} partage le projet de code.`);
         return;
       }
 
@@ -1153,14 +1243,92 @@ export default function LiveSessionPage() {
     if (recorder && recorder.state !== "inactive") recorder.stop();
   }
 
+  function uniqueCodeFilePath(value: string, ignoreId?: string) {
+    const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "").split("/").filter((part) => part && part !== "." && part !== "..").join("/").slice(0, 120) || "file.txt";
+    const occupied = new Set(codeFiles.filter((file) => file.id !== ignoreId).map((file) => file.path.toLowerCase()));
+    if (!occupied.has(normalized.toLowerCase())) return normalized;
+    const slash = normalized.lastIndexOf("/");
+    const directory = slash >= 0 ? normalized.slice(0, slash + 1) : "";
+    const filename = slash >= 0 ? normalized.slice(slash + 1) : normalized;
+    const dot = filename.lastIndexOf(".");
+    const stem = dot > 0 ? filename.slice(0, dot) : filename;
+    const extension = dot > 0 ? filename.slice(dot) : "";
+    let index = 2;
+    let candidate = `${directory}${stem}-${index}${extension}`;
+    while (occupied.has(candidate.toLowerCase())) candidate = `${directory}${stem}-${++index}${extension}`;
+    return candidate.slice(0, 120);
+  }
+
+  function updateActiveProjectFile(patch: Partial<CodeProjectFile>) {
+    setCodeFiles((current) => current.map((file) => file.id === activeCodeFileId ? { ...file, ...patch } : file));
+  }
+
+  function updateActiveCodeText(value: string) {
+    const otherChars = codeFiles.reduce((total, file) => total + (file.id === activeCodeFileId ? 0 : file.content.length), 0);
+    const available = Math.max(0, Math.min(100000, 220000 - otherChars));
+    const content = value.slice(0, available);
+    if (value.length > available) setNotice("Le projet collaboratif est limité à 220 000 caractères au total.");
+    setCodeText(content);
+    updateActiveProjectFile({ content });
+  }
+
   function updateCodeLanguage(language: CodeLanguage) {
     setCodeLanguage(language);
-    const extensions: Record<CodeLanguage, string> = {
-      javascript: "js", html: "html", css: "css", python: "py", java: "java", c: "c", cpp: "cpp", text: "txt",
-    };
-    const base = codeFileName.replace(/\.[^.]+$/, "") || "main";
-    setCodeFileName(`${base}.${extensions[language]}`);
+    const extensions: Record<CodeLanguage, string> = { javascript: "js", html: "html", css: "css", python: "py", java: "java", c: "c", cpp: "cpp", text: "txt" };
+    const current = codeFiles.find((file) => file.id === activeCodeFileId);
+    const path = current?.path || codeFileName;
+    const base = path.replace(/\.[^./]+$/, "") || "main";
+    const nextPath = uniqueCodeFilePath(`${base}.${extensions[language]}`, activeCodeFileId);
+    setCodeFileName(nextPath);
+    updateActiveProjectFile({ language, path: nextPath });
     setCodeOutput("");
+  }
+
+  function renameCodeFile(value: string) {
+    const safe = uniqueCodeFilePath(value, activeCodeFileId);
+    setCodeFileName(safe);
+    const language = languageFromPath(safe);
+    setCodeLanguage(language);
+    updateActiveProjectFile({ path: safe, language });
+  }
+
+  function selectCodeFile(id: string) {
+    const file = codeFiles.find((item) => item.id === id);
+    if (!file) return;
+    setActiveCodeFileId(file.id);
+    setCodeFileName(file.path);
+    setCodeLanguage(file.language);
+    setCodeText(file.content);
+    setCodeOutput("");
+  }
+
+  function addCodeFile() {
+    if (codeFiles.length >= 30) { setNotice("Le projet est limité à 30 fichiers dans la salle live."); return; }
+    const id = `file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const existing = new Set(codeFiles.map((file) => file.path));
+    let n = 1; let path = "nouveau.py";
+    while (existing.has(path)) path = `nouveau-${++n}.py`;
+    const file: CodeProjectFile = { id, path, language: "python", content: "" };
+    setCodeFiles((current) => [...current, file]);
+    setActiveCodeFileId(id); setCodeFileName(path); setCodeLanguage("python"); setCodeText(""); setCodeOutput("");
+  }
+
+  function removeCodeFile(id: string) {
+    if (codeFiles.length <= 1) { setNotice("Un projet doit conserver au moins un fichier."); return; }
+    const remaining = codeFiles.filter((file) => file.id !== id);
+    setCodeFiles(remaining);
+    if (id === activeCodeFileId) {
+      const next = remaining[0];
+      setActiveCodeFileId(next.id); setCodeFileName(next.path); setCodeLanguage(next.language); setCodeText(next.content); setCodeOutput("");
+    }
+  }
+
+  function changeCodeFramework(framework: CodeFramework) {
+    if (framework !== codeFramework && codeFiles.some((file) => file.content.trim()) && !confirm("Charger ce modèle va remplacer les fichiers actuels du projet. Continuer ?")) return;
+    const files = projectTemplate(framework);
+    const first = files[0];
+    setCodeFramework(framework); setCodeFiles(files); setActiveCodeFileId(first.id);
+    setCodeFileName(first.path); setCodeLanguage(first.language); setCodeText(first.content); setCodeOutput("");
   }
 
   function copyCode() {
@@ -1191,50 +1359,43 @@ export default function LiveSessionPage() {
     URL.revokeObjectURL(url);
   }
 
-  async function ensurePyodide() {
-    if (pyodideRef.current) return pyodideRef.current;
-    if (pyodideLoadPromiseRef.current) return pyodideLoadPromiseRef.current;
-
-    pyodideLoadPromiseRef.current = new Promise<any>((resolve, reject) => {
-      const w = window as any;
-      const boot = async () => {
+  async function runPythonProjectInWorker(): Promise<string> {
+    const pythonFiles = codeFiles.filter((item) => item.path.toLowerCase().endsWith(".py")).map((item) => ({ path: item.path, content: item.content }));
+    const workerSource = `
+      self.onmessage = async (event) => {
         try {
-          const instance = await w.loadPyodide({
-            indexURL: "https://cdn.jsdelivr.net/pyodide/v0.27.7/full/",
-          });
-          pyodideRef.current = instance;
-          resolve(instance);
+          importScripts("https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js");
+          const pyodide = await loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.27.7/full/" });
+          let output = "";
+          pyodide.setStdout({ batched: (text) => { output += text + "\\n"; } });
+          pyodide.setStderr({ batched: (text) => { output += "Erreur: " + text + "\\n"; } });
+          const root = "/home/pyodide/learneas_project";
+          pyodide.FS.mkdirTree(root);
+          for (const file of event.data.files) {
+            const safe = String(file.path || "").replace(/\\\\/g, "/").replace(/^\\/+/, "").split("/").filter((part) => part && part !== "." && part !== "..").join("/");
+            if (!safe) continue;
+            const absolute = root + "/" + safe;
+            pyodide.FS.mkdirTree(absolute.slice(0, absolute.lastIndexOf("/")));
+            pyodide.FS.writeFile(absolute, String(file.content || ""), { encoding: "utf8" });
+          }
+          const active = String(event.data.active || "main.py").replace(/\\\\/g, "/").replace(/^\\/+/, "").split("/").filter((part) => part && part !== "." && part !== "..").join("/");
+          pyodide.runPython("import os,sys,importlib; os.chdir(" + JSON.stringify(root) + "); sys.path.insert(0," + JSON.stringify(root) + ") if " + JSON.stringify(root) + " not in sys.path else None; importlib.invalidate_caches()");
+          await pyodide.runPythonAsync("exec(compile(open(" + JSON.stringify(active) + ").read(), " + JSON.stringify(active) + ", 'exec'))");
+          self.postMessage({ output: output.trim() || "Exécution Python terminée sans sortie." });
         } catch (error) {
-          pyodideLoadPromiseRef.current = null;
-          reject(error);
+          self.postMessage({ output: "Erreur Python: " + (error && error.message ? error.message : String(error)) });
         }
       };
-
-      if (typeof w.loadPyodide === "function") {
-        boot();
-        return;
-      }
-
-      const existing = document.querySelector<HTMLScriptElement>('script[data-learneas-pyodide="true"]');
-      if (existing) {
-        existing.addEventListener("load", boot, { once: true });
-        existing.addEventListener("error", () => reject(new Error("Chargement de Pyodide impossible.")), { once: true });
-        return;
-      }
-
-      const script = document.createElement("script");
-      script.src = "https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js";
-      script.async = true;
-      script.dataset.learneasPyodide = "true";
-      script.onload = boot;
-      script.onerror = () => {
-        pyodideLoadPromiseRef.current = null;
-        reject(new Error("Chargement de Pyodide impossible."));
-      };
-      document.head.appendChild(script);
+    `;
+    const blobUrl = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
+    const worker = new Worker(blobUrl);
+    return await new Promise<string>((resolve) => {
+      const cleanup = (value: string) => { worker.terminate(); URL.revokeObjectURL(blobUrl); resolve(value); };
+      const timer = window.setTimeout(() => cleanup("Erreur Python: délai d'exécution dépassé (20 s)."), 20000);
+      worker.onmessage = (event) => { window.clearTimeout(timer); cleanup(String(event.data?.output || "Exécution terminée.")); };
+      worker.onerror = () => { window.clearTimeout(timer); cleanup("Erreur Python: moteur isolé indisponible."); };
+      worker.postMessage({ files: pythonFiles, active: codeFileName });
     });
-
-    return pyodideLoadPromiseRef.current;
   }
 
   async function runCode() {
@@ -1243,35 +1404,25 @@ export default function LiveSessionPage() {
     setCodeOutput("");
     const nonce = ++codeRunNonceRef.current;
 
+    if (codeFramework !== "none") {
+      setCodeOutput(`Projet ${codeFramework} multi-fichiers prêt pour l'édition et la collaboration. Son exécution complète requiert un runner serveur isolé et n'est pas lancée dans le navigateur.`);
+      setCodeRunning(false);
+      return;
+    }
     if (codeLanguage === "html") {
       setCodeOutput("Aperçu HTML actualisé dans le panneau de résultat.");
       setCodeRunning(false);
       return;
     }
-
     if (codeLanguage === "css") {
       setCodeOutput("Aperçu CSS actualisé dans le panneau de résultat.");
       setCodeRunning(false);
       return;
     }
-
     if (codeLanguage === "python") {
-      try {
-        setCodeOutput("Chargement du moteur Python…");
-        const pyodide = await ensurePyodide();
-        let captured = "";
-        pyodide.setStdout({ batched: (text: string) => { captured += `${text}\n`; } });
-        pyodide.setStderr({ batched: (text: string) => { captured += `Erreur: ${text}\n`; } });
-        const result = await pyodide.runPythonAsync(codeText);
-        if (result !== undefined && result !== null && String(result) !== "None") {
-          captured += `${String(result)}\n`;
-        }
-        setCodeOutput(captured.trim() || "Exécution Python terminée sans sortie.");
-      } catch (error) {
-        setCodeOutput(`Erreur Python: ${error instanceof Error ? error.message : String(error)}`);
-      } finally {
-        setCodeRunning(false);
-      }
+      setCodeOutput("Chargement du moteur Python isolé…");
+      setCodeOutput(await runPythonProjectInWorker());
+      setCodeRunning(false);
       return;
     }
 
@@ -1318,25 +1469,23 @@ export default function LiveSessionPage() {
   return (
     <div className="fixed inset-0 z-[100] h-[100dvh] overflow-hidden bg-gray-950 text-white">
       <div className="mx-auto flex h-full max-w-[1820px] flex-col px-2.5 py-2.5 sm:px-4">
-        <div className="mb-2 shrink-0 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-2.5">
-            {room.organizer.avatar ? <img src={room.organizer.avatar} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-white/10" /> : <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/15 text-[11px] font-bold text-brand-200">{room.organizer.name.charAt(0).toUpperCase()}</span>}
-            <div className="min-w-0 flex-1">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-brand-300">Salle LearnEas · Séance {room.session_number} · {room.organizer.name}</p>
-              <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden">
-                <h1 className="min-w-0 max-w-[320px] truncate text-base font-bold sm:max-w-[430px] sm:text-lg 2xl:max-w-[560px]" title={room.title}>{room.title}</h1>
-                {!metricsCollapsed && (
-                  <div className="hidden min-w-0 items-center gap-1 sm:flex">
-                    <InlineMetric icon={<Users size={11} />} label="Participants" value={`${participantsCount}`} />
-                    <InlineMetric icon={<Hand size={11} />} label="Mains" value={`${raisedHandsCount}`} />
-                    <InlineMetric icon={<StopCircle size={11} />} label="Live" value={elapsedLabel} />
-                    <InlineMetric icon={<Monitor size={11} />} label="Planifié" value={`${room.planned_duration_minutes} min`} />
-                  </div>
-                )}
-              </div>
+        <div className="mb-2 grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 xl:grid-cols-[minmax(260px,1fr)_auto_minmax(260px,1fr)]">
+          <div className="flex min-w-0 items-center gap-2.5">
+            {room.organizer.avatar ? <img loading="lazy" decoding="async" src={room.organizer.avatar} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-white/10" /> : <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/15 text-[11px] font-bold text-brand-200">{room.organizer.name.charAt(0).toUpperCase()}</span>}
+            <div className="min-w-0">
+              <p className="truncate text-[9px] font-semibold uppercase tracking-[0.16em] text-brand-300">Salle LearnEas · Séance {room.session_number} · {room.organizer.name}</p>
+              <h1 className="mt-0.5 max-w-[300px] truncate text-base font-bold sm:max-w-[420px] sm:text-lg 2xl:max-w-[520px]" title={room.title}>{room.title}</h1>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-1 overflow-x-auto">
+          {!metricsCollapsed && (
+            <div className="order-3 col-span-2 flex min-w-0 items-center justify-center gap-1.5 overflow-x-auto xl:order-none xl:col-span-1">
+              <InlineMetric icon={<Users size={16} />} label="Participants" value={`${participantsCount}`} />
+              <InlineMetric icon={<Hand size={16} />} label="Mains" value={`${raisedHandsCount}`} />
+              <InlineMetric icon={<StopCircle size={16} />} label="Live" value={elapsedLabel} />
+              <InlineMetric icon={<Monitor size={16} />} label="Planifié" value={`${room.planned_duration_minutes} min`} />
+            </div>
+          )}
+          <div className="flex shrink-0 items-center justify-self-end gap-1 overflow-x-auto">
             <button type="button" onClick={() => setMetricsCollapsed((value) => !value)} className="toolbar-secondary !px-2 !py-1.5 !text-[10px]">
               {metricsCollapsed ? <ChevronDown size={13} /> : <ChevronUp size={13} />} Indicateurs
             </button>
@@ -1431,12 +1580,19 @@ export default function LiveSessionPage() {
                     language={codeLanguage}
                     fileName={codeFileName}
                     code={codeText}
+                    framework={codeFramework}
+                    files={codeFiles}
+                    activeFileId={activeCodeFileId}
                     output={codeOutput}
                     running={codeRunning}
                     runnerRef={codeRunnerRef}
+                    onFrameworkChange={changeCodeFramework}
+                    onSelectFile={selectCodeFile}
+                    onAddFile={addCodeFile}
+                    onRemoveFile={removeCodeFile}
                     onLanguageChange={updateCodeLanguage}
-                    onFileNameChange={setCodeFileName}
-                    onCodeChange={setCodeText}
+                    onFileNameChange={renameCodeFile}
+                    onCodeChange={updateActiveCodeText}
                     onRun={runCode}
                     onCopy={copyCode}
                     onDownload={downloadCode}
@@ -1558,7 +1714,7 @@ export default function LiveSessionPage() {
                         <div key={person.user_id} className={`rounded-2xl border px-2.5 py-2 ${person.hand_raised ? "border-amber-400/40 bg-amber-400/10" : "border-white/10 bg-black/20"}`}>
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex min-w-0 items-center gap-2">
-                              {person.avatar ? <img src={person.avatar} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" /> : <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/15 text-[11px] font-bold text-brand-200">{person.name.charAt(0).toUpperCase()}</span>}
+                              {person.avatar ? <img loading="lazy" decoding="async" src={person.avatar} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" /> : <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/15 text-[11px] font-bold text-brand-200">{person.name.charAt(0).toUpperCase()}</span>}
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2"><p className="truncate text-xs font-medium text-white">{person.name}</p>{person.hand_raised && <Hand size={13} className="shrink-0 text-amber-300" />}</div>
                                 <p className="text-[10px] text-gray-400">{person.role === "organizer" ? "Organisateur" : person.role === "admin" ? "Administrateur" : person.role === "guest" ? "Invité" : "Participant"}</p>
@@ -1727,9 +1883,16 @@ function CodeWorkspace({
   language,
   fileName,
   code,
+  framework,
+  files,
+  activeFileId,
   output,
   running,
   runnerRef,
+  onFrameworkChange,
+  onSelectFile,
+  onAddFile,
+  onRemoveFile,
   onLanguageChange,
   onFileNameChange,
   onCodeChange,
@@ -1741,9 +1904,16 @@ function CodeWorkspace({
   language: CodeLanguage;
   fileName: string;
   code: string;
+  framework: CodeFramework;
+  files: CodeProjectFile[];
+  activeFileId: string;
   output: string;
   running: boolean;
   runnerRef: React.RefObject<HTMLIFrameElement>;
+  onFrameworkChange: (framework: CodeFramework) => void;
+  onSelectFile: (id: string) => void;
+  onAddFile: () => void;
+  onRemoveFile: (id: string) => void;
   onLanguageChange: (language: CodeLanguage) => void;
   onFileNameChange: (value: string) => void;
   onCodeChange: (value: string) => void;
@@ -1760,7 +1930,7 @@ function CodeWorkspace({
   const [consoleCollapsed, setConsoleCollapsed] = useState(false);
   const [consolePercent, setConsolePercent] = useState(30);
   const [theme, setTheme] = useState<CodeTheme>("midnight");
-  const canRun = ["javascript", "python", "html", "css"].includes(language);
+  const canRun = framework === "none" && ["javascript", "python", "html", "css"].includes(language);
   const lineNumbers = useMemo(() => Array.from({ length: Math.max(code.split("\n").length, 1) }, (_, index) => index + 1), [code]);
   const palette = codeThemePalette(theme);
   const highlighted = useMemo(() => highlightCode(code, language, theme), [code, language, theme]);
@@ -1794,15 +1964,21 @@ function CodeWorkspace({
           <button type="button" onClick={onCopy} className="toolbar-secondary !px-2 !py-1 !text-[10px]"><Copy size={13} /> Copier</button>
           <button type="button" onClick={onDownload} className="toolbar-secondary !px-2 !py-1 !text-[10px]"><Download size={13} /> Télécharger</button>
           <button type="button" onClick={() => setConsoleCollapsed((value) => !value)} className="toolbar-secondary !px-2 !py-1 !text-[10px]">{consoleCollapsed ? <PanelRightOpen size={12} /> : <PanelRightClose size={12} />} Console</button>
-          <button type="button" onClick={onRun} disabled={running || !canRun} title={canRun ? "Exécuter le code" : "Exécution locale disponible pour JavaScript, Python, HTML et CSS"} className="toolbar-success !px-2 !py-1 !text-[10px] disabled:cursor-not-allowed disabled:opacity-45">{running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} {running ? "Exécution…" : "Exécuter"}</button>
+          <button type="button" onClick={onRun} disabled={running || !canRun} title={canRun ? "Exécuter le code" : framework !== "none" ? "Le projet framework est éditable/collaboratif ; son runtime serveur isolé n’est pas activé dans la réunion." : "Exécution locale disponible pour JavaScript, Python, HTML et CSS"} className="toolbar-success !px-2 !py-1 !text-[10px] disabled:cursor-not-allowed disabled:opacity-45">{running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} {running ? "Exécution…" : "Exécuter"}</button>
         </div>
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-white/10 bg-black/15 px-2.5 py-1.5">
+        <label className="flex items-center gap-1 text-[10px] text-gray-400">Projet<select value={framework} onChange={(event) => onFrameworkChange(event.target.value as CodeFramework)} className="rounded-lg border border-white/10 bg-gray-950 px-2 py-1 text-[11px] text-white outline-none focus:border-brand-400"><option value="none">Libre / POO</option><option value="react">React</option><option value="nextjs">Next.js</option><option value="django">Django</option><option value="drf">Django REST</option><option value="fastapi">FastAPI</option><option value="flask">Flask</option><option value="express">Node / Express</option></select></label>
         <label className="flex items-center gap-1 text-[10px] text-gray-400">Langage<select value={language} onChange={(event) => onLanguageChange(event.target.value as CodeLanguage)} className="rounded-lg border border-white/10 bg-gray-950 px-2 py-1 text-[11px] text-white outline-none focus:border-brand-400"><option value="javascript">JavaScript</option><option value="html">HTML</option><option value="css">CSS</option><option value="python">Python</option><option value="java">Java</option><option value="c">C</option><option value="cpp">C++</option><option value="text">Texte</option></select></label>
         <label className="flex items-center gap-1 text-[10px] text-gray-400">Thème<select value={theme} onChange={(event) => setTheme(event.target.value as CodeTheme)} className="rounded-lg border border-white/10 bg-gray-950 px-2 py-1 text-[11px] text-white outline-none focus:border-brand-400"><option value="midnight">Midnight</option><option value="dracula">Dracula</option><option value="light">Clair</option></select></label>
-        <label className="flex min-w-0 flex-1 items-center gap-1 text-[10px] text-gray-400">Fichier<input value={fileName} onChange={(event) => onFileNameChange(event.target.value.slice(0, 80))} className="min-w-[110px] max-w-xs flex-1 rounded-lg border border-white/10 bg-gray-950 px-2 py-1 font-mono text-[11px] text-white outline-none focus:border-brand-400" /></label>
+        <label className="flex min-w-0 flex-1 items-center gap-1 text-[10px] text-gray-400">Fichier<input value={fileName} onChange={(event) => onFileNameChange(event.target.value.slice(0, 120))} className="min-w-[110px] max-w-xs flex-1 rounded-lg border border-white/10 bg-gray-950 px-2 py-1 font-mono text-[11px] text-white outline-none focus:border-brand-400" /></label>
         <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-300">Live</span>
+      </div>
+      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-white/10 bg-black/10 px-2 py-1">
+        <FolderOpen size={13} className="mr-1 shrink-0 text-gray-500" />
+        {files.map((file) => <div key={file.id} className={`flex shrink-0 items-center rounded-lg border ${file.id === activeFileId ? "border-brand-400/40 bg-brand-400/10" : "border-white/10 bg-white/[0.03]"}`}><button type="button" onClick={() => onSelectFile(file.id)} className="max-w-[180px] truncate px-2 py-1 font-mono text-[10px] text-gray-200" title={file.path}>{file.path}</button>{files.length > 1 && <button type="button" onClick={() => onRemoveFile(file.id)} className="px-1.5 text-gray-500 hover:text-red-300" aria-label={`Fermer ${file.path}`}><X size={11} /></button>}</div>)}
+        <button type="button" onClick={onAddFile} disabled={files.length >= 30} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-dashed border-white/15 px-2 py-1 text-[10px] text-gray-400 hover:text-white disabled:opacity-40"><FilePlus size={11} /> Fichier</button>
       </div>
 
       <div ref={editorGridRef} className="grid min-h-0 flex-1" style={{ gridTemplateColumns: consoleCollapsed ? "minmax(0,1fr)" : `minmax(0, ${100 - consolePercent}fr) 5px minmax(190px, ${consolePercent}fr)` }}>
@@ -1891,10 +2067,10 @@ function highlightCode(code: string, language: CodeLanguage, theme: CodeTheme) {
 
 function InlineMetric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.045] px-1.5 text-[9px] text-gray-400">
+    <span className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.065] px-3.5 text-[11px] font-medium text-gray-300 shadow-sm shadow-black/10">
       <span className="text-brand-200">{icon}</span>
-      <span className="hidden xl:inline">{label}</span>
-      <strong className="text-[10px] font-semibold text-white">{value}</strong>
+      <span>{label}</span>
+      <strong className="text-[13px] font-semibold text-white">{value}</strong>
     </span>
   );
 }
@@ -1927,14 +2103,14 @@ function VideoTile({ title, subtitle, footer, videoRef, muted, handRaised, avata
       {!videoEnabled && (
         <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-gray-900 to-gray-950">
           <div className="text-center">
-            {avatar ? <img src={avatar} alt="" className="mx-auto h-16 w-16 rounded-full object-cover ring-2 ring-white/10" /> : <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-brand-500/15 text-2xl font-bold text-brand-200 ring-2 ring-white/10">{initial}</div>}
+            {avatar ? <img loading="lazy" decoding="async" src={avatar} alt="" className="mx-auto h-16 w-16 rounded-full object-cover ring-2 ring-white/10" /> : <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-brand-500/15 text-2xl font-bold text-brand-200 ring-2 ring-white/10">{initial}</div>}
             <p className="mt-2 text-xs font-semibold text-white">{title}</p>
             <p className="text-[10px] text-gray-500">Caméra désactivée</p>
           </div>
         </div>
       )}
       <div className="absolute left-2 top-2 flex max-w-[75%] items-center gap-2 rounded-full bg-black/60 py-1 pl-1 pr-2.5 backdrop-blur">
-        {avatar ? <img src={avatar} alt="" className="h-6 w-6 rounded-full object-cover" /> : <span className="grid h-6 w-6 place-items-center rounded-full bg-brand-500/20 text-[10px] font-bold text-brand-200">{initial}</span>}
+        {avatar ? <img loading="lazy" decoding="async" src={avatar} alt="" className="h-6 w-6 rounded-full object-cover" /> : <span className="grid h-6 w-6 place-items-center rounded-full bg-brand-500/20 text-[10px] font-bold text-brand-200">{initial}</span>}
         <div className="min-w-0 leading-tight"><div className="flex items-center gap-1"><p className="truncate text-[10px] font-semibold text-white">{title}</p>{handRaised && <Hand size={11} className="shrink-0 text-amber-300" />}</div><p className="truncate text-[8px] text-gray-400">{subtitle}</p></div>
       </div>
       <span className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[8px] text-gray-300 backdrop-blur">{footer}</span>

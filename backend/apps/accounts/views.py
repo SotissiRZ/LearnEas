@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth.password_validation import validate_password
 from django.core.mail import send_mail
 from django.conf import settings
 from django.db import transaction
@@ -13,6 +14,7 @@ from rest_framework.decorators import action
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -22,6 +24,7 @@ from .serializers import (
 )
 from .models import PlatformSettings, InstructorApplication
 from apps.common.throttles import AuthRateThrottle, PasswordResetRateThrottle
+from .authentication import password_fingerprint
 
 User = get_user_model()
 
@@ -32,6 +35,7 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
         token = super().get_token(user)
         token["role"] = user.role
         token["full_name"] = user.get_full_name() or user.username
+        token["pwd"] = password_fingerprint(user)
         return token
 
     def validate(self, attrs):
@@ -43,6 +47,24 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
 class LoginView(TokenObtainPairView):
     serializer_class = EmailTokenObtainPairSerializer
     throttle_classes = [AuthRateThrottle]
+
+
+def _blacklist_user_refresh_tokens(user):
+    for token in OutstandingToken.objects.filter(user=user):
+        BlacklistedToken.objects.get_or_create(token=token)
+
+
+class LogoutView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        refresh_value = request.data.get("refresh")
+        if refresh_value:
+            try:
+                RefreshToken(refresh_value).blacklist()
+            except Exception:
+                pass
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class RegisterView(generics.CreateAPIView):
@@ -57,7 +79,7 @@ class RegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        refresh = RefreshToken.for_user(user)
+        refresh = EmailTokenObtainPairSerializer.get_token(user)
         return Response(
             {
                 "user": UserSerializer(user).data,
@@ -238,13 +260,16 @@ class ChangePasswordView(APIView):
         new_password2 = request.data.get("new_password2", "")
         if not request.user.check_password(current_password):
             return Response({"current_password": ["Mot de passe actuel incorrect."]}, status=400)
-        if len(new_password) < 8:
-            return Response({"new_password": ["Doit contenir au moins 8 caractères."]}, status=400)
         if new_password != new_password2:
             return Response({"new_password2": ["Les mots de passe ne correspondent pas."]}, status=400)
+        try:
+            validate_password(new_password, user=request.user)
+        except Exception as exc:
+            return Response({"new_password": list(getattr(exc, "messages", [str(exc)]))}, status=400)
         request.user.set_password(new_password)
         request.user.save(update_fields=["password"])
-        return Response({"detail": "Mot de passe modifié avec succès."})
+        _blacklist_user_refresh_tokens(request.user)
+        return Response({"detail": "Mot de passe modifié avec succès. Reconnectez-vous sur vos appareils."})
 
 
 class InstructorApplyView(APIView):
@@ -361,8 +386,6 @@ class PasswordResetConfirmView(APIView):
         new_password = request.data.get("new_password", "")
         new_password2 = request.data.get("new_password2", "")
 
-        if len(new_password) < 8:
-            return Response({"new_password": ["Doit contenir au moins 8 caractères."]}, status=400)
         if new_password != new_password2:
             return Response({"new_password2": ["Les mots de passe ne correspondent pas."]}, status=400)
 
@@ -375,8 +398,13 @@ class PasswordResetConfirmView(APIView):
         if not default_token_generator.check_token(user, token):
             return Response({"detail": "Ce lien a expiré ou est invalide. Refaites une demande."}, status=400)
 
+        try:
+            validate_password(new_password, user=user)
+        except Exception as exc:
+            return Response({"new_password": list(getattr(exc, "messages", [str(exc)]))}, status=400)
         user.set_password(new_password)
-        user.save()
+        user.save(update_fields=["password"])
+        _blacklist_user_refresh_tokens(user)
         return Response({"detail": "Mot de passe modifié avec succès. Vous pouvez vous connecter."})
 
 

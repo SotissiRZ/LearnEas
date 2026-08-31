@@ -57,6 +57,14 @@ class Wishlist(models.Model):
 
     class Meta:
         ordering = ["-added_at"]
+        constraints = [
+            models.CheckConstraint(
+                check=(models.Q(course__isnull=False, pdf_product__isnull=True) | models.Q(course__isnull=True, pdf_product__isnull=False)),
+                name="wishlist_exactly_one_target",
+            ),
+            models.UniqueConstraint(fields=["user", "course"], condition=models.Q(course__isnull=False), name="uniq_wishlist_course"),
+            models.UniqueConstraint(fields=["user", "pdf_product"], condition=models.Q(pdf_product__isnull=False), name="uniq_wishlist_pdf"),
+        ]
 
 
 class Certificate(models.Model):
@@ -115,7 +123,7 @@ class Certificate(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.certificate_number} — {self.student_name}"
+        return f"{self.certificate_number} · {self.student_name}"
 
     @property
     def effective_status(self):

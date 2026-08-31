@@ -36,7 +36,7 @@ class ReviewViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsOwnerOrAdmin]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["course", "pdf_product", "rating"]
-    search_fields = ["comment", "user__email", "user__first_name", "user__last_name", "course__title", "pdf_product__title"]
+    search_fields = ["comment", "user__first_name", "user__last_name", "course__title", "pdf_product__title"]
     ordering_fields = ["created_at", "rating"]
     ordering = ["-created_at"]
 

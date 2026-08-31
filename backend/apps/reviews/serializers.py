@@ -21,6 +21,17 @@ class ReviewSerializer(serializers.ModelSerializer):
     def get_target_type(self, obj):
         return "course" if obj.course_id else "pdf" if obj.pdf_product_id else ""
 
+    def validate(self, attrs):
+        course = attrs.get("course", getattr(self.instance, "course", None))
+        pdf = attrs.get("pdf_product", getattr(self.instance, "pdf_product", None))
+        if bool(course) == bool(pdf):
+            raise serializers.ValidationError("Un avis doit cibler exactement un cours ou un PDF.")
+        comment = str(attrs.get("comment", getattr(self.instance, "comment", "")) or "").strip()
+        if len(comment) > 5000:
+            raise serializers.ValidationError({"comment": "Le commentaire est limité à 5 000 caractères."})
+        attrs["comment"] = comment
+        return attrs
+
     def create(self, validated_data):
         validated_data["user"] = self.context["request"].user
         review = super().create(validated_data)
@@ -58,6 +69,22 @@ class LessonCommentSerializer(serializers.ModelSerializer):
         if obj.parent_id is not None:
             return []
         return LessonCommentSerializer(obj.replies.all(), many=True).data
+
+    def validate(self, attrs):
+        lesson = attrs.get("lesson", getattr(self.instance, "lesson", None))
+        parent = attrs.get("parent", getattr(self.instance, "parent", None))
+        content = str(attrs.get("content", getattr(self.instance, "content", "")) or "").strip()
+        if not content:
+            raise serializers.ValidationError({"content": "Le commentaire ne peut pas être vide."})
+        if len(content) > 5000:
+            raise serializers.ValidationError({"content": "Le commentaire est limité à 5 000 caractères."})
+        if parent:
+            if parent.parent_id is not None:
+                raise serializers.ValidationError({"parent": "Une réponse ne peut pas être imbriquée au-delà d'un niveau."})
+            if lesson and parent.lesson_id != lesson.id:
+                raise serializers.ValidationError({"parent": "La réponse doit appartenir à la même leçon."})
+        attrs["content"] = content
+        return attrs
 
     def create(self, validated_data):
         validated_data["user"] = self.context["request"].user

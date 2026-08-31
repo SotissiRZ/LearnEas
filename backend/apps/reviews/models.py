@@ -18,10 +18,14 @@ class Review(models.Model):
                                      condition=models.Q(course__isnull=False)),
             models.UniqueConstraint(fields=["user", "pdf_product"], name="unique_review_per_pdf",
                                      condition=models.Q(pdf_product__isnull=False)),
+            models.CheckConstraint(
+                check=(models.Q(course__isnull=False, pdf_product__isnull=True) | models.Q(course__isnull=True, pdf_product__isnull=False)),
+                name="review_exactly_one_target",
+            ),
         ]
 
     def __str__(self):
-        return f"{self.user} — {self.rating}★"
+        return f"{self.user} · {self.rating}★"
 
 
 class LessonComment(models.Model):

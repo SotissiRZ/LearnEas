@@ -129,7 +129,7 @@ class Section(models.Model):
         ordering = ["order", "id"]
 
     def __str__(self):
-        return f"{self.course.title} — {self.title}"
+        return f"{self.course.title} · {self.title}"
 
     @property
     def duration_minutes(self):
@@ -153,7 +153,7 @@ class Lesson(models.Model):
         ordering = ["order", "id"]
 
     def __str__(self):
-        return f"{self.section.course.title} — {self.title}"
+        return f"{self.section.course.title} · {self.title}"
 
 
 class PDFResource(models.Model):
@@ -170,7 +170,7 @@ class PDFResource(models.Model):
         ordering = ["order", "id"]
 
     def __str__(self):
-        return f"{self.course.title} — {self.title} (PDF)"
+        return f"{self.course.title} · {self.title} (PDF)"
 
 
 class PDFProduct(models.Model):

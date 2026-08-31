@@ -63,7 +63,18 @@ export default function RegisterPage() {
     try {
       await register(form);
       const next = searchParams.get("next");
-      router.push(next && next.startsWith("/") ? next : "/dashboard/student");
+      let safeNext = "/dashboard/student";
+      if (next && next.startsWith("/") && !next.startsWith("//")) {
+        try {
+          const target = new URL(next, window.location.origin);
+          if (target.origin === window.location.origin) {
+            safeNext = `${target.pathname}${target.search}${target.hash}`;
+          }
+        } catch {
+          safeNext = "/dashboard/student";
+        }
+      }
+      router.push(safeNext);
     } catch (err) {
       if (err instanceof ApiError) {
         setFieldErrors(err.fieldErrors);

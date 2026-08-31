@@ -135,7 +135,7 @@ export default function Navbar() {
                   <Link href="/dashboard/student/profile" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
                     <UserIcon size={16} /> Profil
                   </Link>
-                  {user.role === "admin" && (
+                  {user.role === "admin" && user.technical_admin && (
                     <a
                       href={djangoAdminHref}
                       target="_blank"
@@ -194,7 +194,7 @@ export default function Navbar() {
                 >
                   Tableau de bord
                 </Link>
-                {user.role === "admin" && (
+                {user.role === "admin" && user.technical_admin && (
                   <a
                     href={djangoAdminHref}
                     target="_blank"

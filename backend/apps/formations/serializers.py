@@ -2,7 +2,7 @@ from rest_framework import serializers
 from apps.accounts.serializers import UserPublicSerializer
 from apps.catalog.serializers import CategorySerializer
 from apps.common.fields import RelativeImageField
-from .models import InteractiveFormation, FormationSession, FormationEnrollment, FormationAttendance
+from .models import InteractiveFormation, FormationSession, FormationEnrollment, FormationAttendance, FormationSessionInvite
 
 
 def _is_manager(user, formation):
@@ -39,9 +39,16 @@ class FormationSessionSerializer(serializers.ModelSerializer):
         user = request.user
         if _is_manager(user, obj.formation):
             return True
-        # Les apprenants ne rejoignent qu'une séance réellement démarrée ; cela évite
+        # Les apprenants/invités ne rejoignent qu'une séance réellement démarrée ; cela évite
         # de comptabiliser le temps d'attente comme temps de présence pédagogique.
-        return bool(obj.started_at and obj.formation_id in self.context.get("enrolled_formation_ids", set()))
+        if not obj.started_at:
+            return False
+        if obj.formation_id in self.context.get("enrolled_formation_ids", set()):
+            return True
+        email = (getattr(user, "email", "") or "").strip()
+        return bool(email and FormationSessionInvite.objects.filter(
+            session=obj, email__iexact=email, revoked_at__isnull=True
+        ).exists())
 
 
 class FormationSessionWriteSerializer(serializers.ModelSerializer):
@@ -53,7 +60,7 @@ class FormationSessionWriteSerializer(serializers.ModelSerializer):
             "id", "formation", "session_number", "scheduled_at",
             "duration_minutes", "completed", "notes",
         ]
-        read_only_fields = ["id", "duration_minutes"]
+        read_only_fields = ["id", "duration_minutes", "completed"]
 
     def validate_formation(self, formation):
         if not _is_manager(self.context["request"].user, formation):
@@ -140,6 +147,23 @@ class InteractiveFormationWriteSerializer(serializers.ModelSerializer):
         if value < 0 or value > 100:
             raise serializers.ValidationError("Le seuil de présence doit être compris entre 0 et 100 %.")
         return value
+
+    def validate(self, attrs):
+        start = attrs.get("start_date", getattr(self.instance, "start_date", None))
+        end = attrs.get("end_date", getattr(self.instance, "end_date", None))
+        if start and end and end < start:
+            raise serializers.ValidationError({"end_date": "La date de fin doit être postérieure à la date de début."})
+        price = attrs.get("price", getattr(self.instance, "price", 0))
+        if price is not None and price < 0:
+            raise serializers.ValidationError({"price": "Le prix ne peut pas être négatif."})
+        co = attrs.get("co_instructor", getattr(self.instance, "co_instructor", None))
+        request = self.context.get("request")
+        if co:
+            if co.role not in ("instructor", "admin") or not co.is_active:
+                raise serializers.ValidationError({"co_instructor": "Le co-instructeur doit être un instructeur actif."})
+            if request and co.id == request.user.id:
+                raise serializers.ValidationError({"co_instructor": "Choisissez un autre co-instructeur."})
+        return attrs
 
     def create(self, validated_data):
         from apps.enrollments.certificates import apply_platform_certificate_defaults

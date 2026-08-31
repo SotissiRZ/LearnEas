@@ -107,3 +107,21 @@ def extract_video_duration_minutes(file_obj) -> int:
                 os.unlink(path)
             except OSError:
                 pass
+
+
+def validate_upload_limits(file_obj, *, max_bytes: int, extensions: set[str], field: str = "file") -> None:
+    """Validation serveur minimale commune : taille + extension normalisée.
+
+    La validité structurelle est ensuite vérifiée par ImageField, PdfReader ou ffprobe selon le média.
+    """
+    if not file_obj:
+        return
+    size = int(getattr(file_obj, "size", 0) or 0)
+    if size <= 0:
+        raise serializers.ValidationError({field: "Le fichier est vide."})
+    if size > max_bytes:
+        raise serializers.ValidationError({field: f"Le fichier dépasse la limite de {max_bytes // (1024 * 1024)} Mo."})
+    suffix = Path(getattr(file_obj, "name", "")).suffix.lower()
+    if suffix not in extensions:
+        allowed = ", ".join(sorted(extensions))
+        raise serializers.ValidationError({field: f"Format non autorisé. Formats acceptés : {allowed}."})

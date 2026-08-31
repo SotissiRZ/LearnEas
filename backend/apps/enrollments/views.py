@@ -75,11 +75,20 @@ class WishlistViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         course_id = request.data.get("course")
         pdf_id = request.data.get("pdf_product")
-        obj, created = Wishlist.objects.get_or_create(
-            user=request.user,
-            course_id=course_id or None,
-            pdf_product_id=pdf_id or None,
-        )
+        if bool(course_id) == bool(pdf_id):
+            return Response({"detail": "Choisissez exactement un cours ou un PDF."}, status=400)
+        if course_id:
+            from apps.catalog.models import Course
+            target = Course.objects.filter(id=course_id, published=True).first()
+            if not target:
+                return Response({"course": ["Cours introuvable ou non publié."]}, status=404)
+            obj, created = Wishlist.objects.get_or_create(user=request.user, course=target, pdf_product=None)
+        else:
+            from apps.catalog.models import PDFProduct
+            target = PDFProduct.objects.filter(id=pdf_id, published=True).first()
+            if not target:
+                return Response({"pdf_product": ["PDF introuvable ou non publié."]}, status=404)
+            obj, created = Wishlist.objects.get_or_create(user=request.user, course=None, pdf_product=target)
         return Response(WishlistSerializer(obj).data, status=status.HTTP_201_CREATED if created else 200)
 
 

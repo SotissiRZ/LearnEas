@@ -1,26 +1,75 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { PlayCircle, Award, Clock, BookOpen } from "lucide-react";
-import { api, formatDuration } from "@/lib/api";
+import { useSearchParams } from "next/navigation";
+import { PlayCircle, Award, Clock, BookOpen, CreditCard, Loader2, RefreshCw } from "lucide-react";
+import { api, formatDuration, ApiError } from "@/lib/api";
 import { CourseEnrollment } from "@/types";
 import ProgressBar from "@/components/ui/ProgressBar";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import DashboardNav from "@/components/dashboard/DashboardNav";
 import GuardScreen from "@/components/ui/GuardScreen";
 
+
+type StudentOrder = {
+  id: number;
+  status: "pending" | "paid" | "failed" | "refunded";
+  provider: string;
+  base_total_amount: string;
+  total_amount: string;
+  currency: string;
+  invoice_number: string;
+  created_at: string;
+};
+
 export default function StudentDashboard() {
   const { ready } = useAuthGuard();
+  const searchParams = useSearchParams();
   const [enrollments, setEnrollments] = useState<CourseEnrollment[]>([]);
+  const [orders, setOrders] = useState<StudentOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [checkingOrderId, setCheckingOrderId] = useState<number | null>(null);
+  const [paymentMessage, setPaymentMessage] = useState("");
+  const autoConfirmedRef = useRef<number | null>(null);
+
+  const loadData = useCallback(async () => {
+    const [courseData, orderData] = await Promise.all([
+      api.get<{ results: CourseEnrollment[] } | CourseEnrollment[]>("/enrollments/my-courses/"),
+      api.get<{ results: StudentOrder[] } | StudentOrder[]>("/payments/orders/?ordering=-created_at&page_size=10"),
+    ]);
+    setEnrollments(Array.isArray(courseData) ? courseData : courseData.results);
+    setOrders(Array.isArray(orderData) ? orderData : orderData.results);
+  }, []);
+
+  const verifyOrder = useCallback(async (orderId: number, automatic = false) => {
+    setCheckingOrderId(orderId);
+    if (!automatic) setPaymentMessage("");
+    try {
+      await api.post(`/payments/orders/${orderId}/confirm/`, {});
+      setPaymentMessage("Paiement vérifié. Vos accès ont été actualisés.");
+      await loadData();
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : "Impossible de vérifier le paiement pour le moment.";
+      if (!automatic || !message.toLowerCase().includes("pas encore")) setPaymentMessage(message);
+    } finally {
+      setCheckingOrderId(null);
+    }
+  }, [loadData]);
 
   useEffect(() => {
     if (!ready) return;
-    api.get<{ results: CourseEnrollment[] } | CourseEnrollment[]>("/enrollments/my-courses/")
-      .then((data: any) => setEnrollments(data.results || data))
-      .finally(() => setLoading(false));
-  }, [ready]);
+    loadData().catch(() => {}).finally(() => setLoading(false));
+  }, [ready, loadData]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const raw = searchParams.get("order");
+    const orderId = raw ? Number(raw) : NaN;
+    if (!Number.isInteger(orderId) || orderId <= 0 || autoConfirmedRef.current === orderId) return;
+    autoConfirmedRef.current = orderId;
+    void verifyOrder(orderId, true);
+  }, [ready, searchParams, verifyOrder]);
 
   if (!ready) return <GuardScreen />;
 
@@ -36,6 +85,17 @@ export default function StudentDashboard() {
         <Stat icon={<Clock size={20} />} label="En cours" value={inProgress.length} />
         <Stat icon={<Award size={20} />} label="Terminés" value={completed.length} />
       </div>
+
+      {paymentMessage && <div className="mb-5 rounded-xl border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-800">{paymentMessage}</div>}
+
+      {orders.length > 0 && (
+        <section className="card mb-8 overflow-hidden">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+            <div><h2 className="flex items-center gap-2 font-bold"><CreditCard size={17} /> Mes commandes récentes</h2><p className="mt-0.5 text-xs text-gray-500">Les paiements externes sont toujours revérifiés côté serveur avant d'accorder un accès.</p></div>
+          </div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead className="table-head"><tr><th>Commande</th><th>Prestataire</th><th>Montant</th><th>Statut</th><th>Date</th><th></th></tr></thead><tbody className="divide-y divide-gray-100">{orders.map(order => <tr key={order.id}><td className="px-4 py-3 font-semibold">{order.invoice_number}</td><td className="px-4 py-3 capitalize">{order.provider}</td><td className="px-4 py-3">{Number(order.total_amount).toLocaleString("fr-FR")} {order.currency}</td><td className="px-4 py-3"><span className={`badge ${order.status === "paid" ? "bg-emerald-50 text-emerald-700" : order.status === "pending" ? "bg-amber-50 text-amber-700" : "bg-gray-100 text-gray-600"}`}>{order.status === "paid" ? "Payée" : order.status === "pending" ? "En attente" : order.status}</span></td><td className="px-4 py-3 text-xs text-gray-500">{new Date(order.created_at).toLocaleString("fr-FR")}</td><td className="px-4 py-3 text-right">{order.status === "pending" && order.provider !== "manual" && <button type="button" onClick={() => void verifyOrder(order.id)} disabled={checkingOrderId === order.id} className="btn-outline !py-1.5 !text-xs">{checkingOrderId === order.id ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Vérifier</button>}</td></tr>)}</tbody></table></div>
+        </section>
+      )}
 
       <h2 className="mb-4 text-xl font-bold">Mes cours</h2>
       {loading ? (

@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 from urllib.parse import quote
 from django.conf import settings
@@ -14,6 +15,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.catalog.permissions import IsInstructorOrAdmin
+from apps.common.throttles import LiveRateThrottle
 from .models import (
     InteractiveFormation, FormationSession, FormationEnrollment,
     FormationAttendance, FormationSignal, FormationStatus, FormationRoomFile, FormationSessionInvite,
@@ -265,7 +267,7 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
             enrollment.attended_sessions.add(session)
         return Response(AttendanceSerializer(attendance).data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=["post"])
+    @action(detail=True, methods=["post"], throttle_classes=[LiveRateThrottle])
     def heartbeat(self, request, pk=None):
         session = self.get_object()
         self._require_access(request, session)
@@ -470,14 +472,21 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
         response["X-Content-Type-Options"] = "nosniff"
         return response
 
-    @action(detail=True, methods=["get", "post"])
+    @action(detail=True, methods=["get", "post"], throttle_classes=[LiveRateThrottle])
     def signal(self, request, pk=None):
         session = self.get_object()
         self._require_access(request, session)
         if request.method == "POST":
+            if session.completed or session.ended_at:
+                return Response({"detail": "Cette séance est terminée."}, status=409)
             recipient_id = request.data.get("recipient_id")
             kind = request.data.get("kind")
             payload = request.data.get("payload") or {}
+            try:
+                if len(json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")) > 256_000:
+                    return Response({"payload": ["Payload de signalisation trop volumineux."]}, status=413)
+            except (TypeError, ValueError):
+                return Response({"payload": ["Payload JSON invalide."]}, status=400)
             if kind not in FormationSignal.Kind.values:
                 return Response({"kind": ["Type de signal invalide."]}, status=400)
             if kind == FormationSignal.Kind.CHAT:
@@ -494,17 +503,58 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
                     return Response({"payload": ["Action de modération invalide."]}, status=400)
                 payload = {"action": action_name}
             if kind == FormationSignal.Kind.CODE:
+                allowed_languages = {"javascript", "html", "css", "python", "java", "c", "cpp", "text"}
+                allowed_frameworks = {"none", "react", "nextjs", "django", "drf", "fastapi", "flask", "express"}
                 text = str(payload.get("text", ""))
                 if len(text) > 100000:
-                    return Response({"payload": ["Le code partagé est limité à 100 000 caractères."]}, status=400)
+                    return Response({"payload": ["Le code partagé est limité à 100 000 caractères par fichier."]}, status=400)
                 language = str(payload.get("language", "text"))
-                if language not in {"javascript", "html", "css", "python", "java", "c", "cpp", "text"}:
+                if language not in allowed_languages:
                     return Response({"payload": ["Langage de code invalide."]}, status=400)
-                file_name = str(payload.get("file_name", "code.txt")).strip()[:80] or "code.txt"
+                file_name = str(payload.get("file_name", "code.txt")).strip()[:120] or "code.txt"
+                framework = str(payload.get("framework", "none"))
+                if framework not in allowed_frameworks:
+                    return Response({"payload": ["Framework invalide."]}, status=400)
+                raw_files = payload.get("files", [])
+                cleaned_files = []
+                seen_paths = set()
+                total_chars = 0
+                if raw_files:
+                    if not isinstance(raw_files, list) or len(raw_files) > 30:
+                        return Response({"payload": ["Un projet est limité à 30 fichiers."]}, status=400)
+                    for item in raw_files:
+                        if not isinstance(item, dict):
+                            return Response({"payload": ["Structure de fichier invalide."]}, status=400)
+                        path = str(item.get("path", "")).strip().replace("\\", "/")[:160]
+                        if not path or path.startswith("/") or ".." in path.split("/"):
+                            return Response({"payload": ["Chemin de fichier invalide."]}, status=400)
+                        path_key = path.lower()
+                        if path_key in seen_paths:
+                            return Response({"payload": [f"Chemin de fichier dupliqué : {path}"]}, status=400)
+                        seen_paths.add(path_key)
+                        file_language = str(item.get("language", "text"))
+                        if file_language not in allowed_languages:
+                            return Response({"payload": ["Langage de fichier invalide."]}, status=400)
+                        content = str(item.get("content", ""))
+                        if len(content) > 100000:
+                            return Response({"payload": [f"Le fichier {path} dépasse 100 000 caractères."]}, status=400)
+                        total_chars += len(content)
+                        if total_chars > 220000:
+                            return Response({"payload": ["Le projet partagé dépasse 220 000 caractères."]}, status=413)
+                        cleaned_files.append({
+                            "id": str(item.get("id", path))[:160],
+                            "path": path,
+                            "language": file_language,
+                            "content": content,
+                        })
+                active_file_id = str(payload.get("active_file_id", ""))[:160]
                 payload = {
                     "text": text,
                     "language": language,
                     "file_name": file_name,
+                    "framework": framework,
+                    "active_file_id": active_file_id,
+                    "files": cleaned_files,
                     "sent_at": payload.get("sent_at"),
                 }
             if kind == FormationSignal.Kind.WHITEBOARD:

@@ -4,7 +4,7 @@ from .views import (
     LoginView, RegisterView, MeView, InstructorApplyView,
     PasswordResetRequestView, PasswordResetConfirmView,
     AdminUserViewSet, AdminInstructorApplicationViewSet, AdminPlatformSettingsView, PublicPlatformSettingsView,
-    InstructorOverviewView, InstructorStudentsView, ChangePasswordView,
+    InstructorOverviewView, InstructorStudentsView, ChangePasswordView, LogoutView,
 )
 
 router = DefaultRouter()
@@ -13,6 +13,7 @@ router.register("admin/instructor-applications", AdminInstructorApplicationViewS
 
 urlpatterns = [
     path("login/", LoginView.as_view(), name="login"),
+    path("logout/", LogoutView.as_view(), name="logout"),
     path("register/", RegisterView.as_view(), name="register"),
     path("me/", MeView.as_view(), name="me"),
     path("become-instructor/", InstructorApplyView.as_view(), name="become-instructor"),

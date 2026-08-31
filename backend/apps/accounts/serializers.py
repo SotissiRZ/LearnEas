@@ -29,15 +29,21 @@ class UserPublicSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     avatar = RelativeImageField(required=False, allow_null=True)
+    technical_admin = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             "id", "username", "email", "first_name", "last_name", "role",
             "avatar", "bio", "country", "headline", "domain",
-            "years_experience", "date_joined",
+            "years_experience", "date_joined", "technical_admin",
         ]
-        read_only_fields = ["id", "role", "date_joined"]
+        read_only_fields = ["id", "username", "email", "role", "date_joined", "technical_admin"]
+
+    def get_technical_admin(self, obj):
+        # L'administration Django expose des données beaucoup plus sensibles que le back-office
+        # applicatif. Elle reste donc réservée aux comptes techniques explicitement superuser.
+        return bool(obj.role == User.Role.ADMIN and obj.is_staff and obj.is_superuser)
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -112,16 +118,30 @@ class AdminUserCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Un compte existe déjà avec cet email.")
         return email
 
+    def validate(self, attrs):
+        candidate = User(
+            email=attrs.get("email", ""),
+            first_name=attrs.get("first_name", ""),
+            last_name=attrs.get("last_name", ""),
+            role=attrs.get("role", User.Role.STUDENT),
+        )
+        try:
+            validate_password(attrs.get("password", ""), user=candidate)
+        except Exception as exc:
+            raise serializers.ValidationError({"password": list(getattr(exc, "messages", [str(exc)]))})
+        return attrs
+
     def create(self, validated_data):
         from django.utils.text import slugify
         password = validated_data.pop("password")
         email = validated_data["email"]
-        base = slugify(email.split("@")[0]) or "user"
+        base = (slugify(email.split("@")[0]) or "user")[:140]
         username = base
         suffix = 1
         while User.objects.filter(username__iexact=username).exists():
             suffix += 1
-            username = f"{base}-{suffix}"
+            suffix_text = f"-{suffix}"
+            username = f"{base[:150-len(suffix_text)]}{suffix_text}"
         user = User(username=username, is_active=True, **validated_data)
         user.set_password(password)
         user.save()

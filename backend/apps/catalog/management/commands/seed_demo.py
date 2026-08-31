@@ -26,13 +26,13 @@ class Command(BaseCommand):
             "sarah_dev", "sarah@learneas.com", "instructor1234", role="instructor",
             first_name="Sarah", last_name="Benali", country="Maroc",
             domain="Développement web", years_experience=7,
-            headline="Développeuse Full-Stack — Django & React",
+            headline="Développeuse Full-Stack · Django & React",
         )
         koffi = self._user(
             "koffi_data", "koffi@learneas.com", "instructor1234", role="instructor",
             first_name="Koffi", last_name="Adjei", country="Côte d'Ivoire",
             domain="Data & Intelligence Artificielle", years_experience=6,
-            headline="Data Scientist — Python & Machine Learning",
+            headline="Data Scientist · Python & Machine Learning",
         )
         amina = self._user(
             "amina_design", "amina@learneas.com", "instructor1234", role="instructor",
@@ -298,9 +298,9 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("\n\u2714 Données de démonstration créées avec succès.\n"))
         self.stdout.write("Comptes disponibles (mot de passe entre parenthèses) :")
         self.stdout.write("  Admin........... admin@learneas.com (admin1234)")
-        self.stdout.write("  Instructeur..... sarah@learneas.com (instructor1234) — Dév. web")
-        self.stdout.write("  Instructeur..... koffi@learneas.com (instructor1234) — Data & IA")
-        self.stdout.write("  Instructeur..... amina@learneas.com (instructor1234) — Design")
+        self.stdout.write("  Instructeur..... sarah@learneas.com (instructor1234) · Dév. web")
+        self.stdout.write("  Instructeur..... koffi@learneas.com (instructor1234) · Data & IA")
+        self.stdout.write("  Instructeur..... amina@learneas.com (instructor1234) · Design")
         self.stdout.write("  Étudiant........ fatou@learneas.com (student1234)")
         self.stdout.write("  Étudiant........ jean@learneas.com (student1234)")
         self.stdout.write("  Étudiant........ aicha@learneas.com (student1234)")

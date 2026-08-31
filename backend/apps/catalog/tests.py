@@ -8,7 +8,7 @@ from rest_framework.test import APITestCase
 
 from apps.accounts.models import User
 from apps.enrollments.models import CourseEnrollment
-from .models import Category, Course, Section, Lesson, PDFResource
+from .models import Category, Course, Section, Lesson, PDFResource, PDFProduct
 
 
 def pdf_bytes(page_count=3):
@@ -115,3 +115,90 @@ class CatalogAccessRegressionTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_instructor_can_create_course_when_featured_false_is_sent(self):
+        self.client.force_authenticate(self.instructor)
+        response = self.client.post(
+            "/api/catalog/courses/",
+            {
+                "category": self.category.id,
+                "title": "Cours créé par instructeur",
+                "subtitle": "Sous-titre",
+                "description": "Description",
+                "price": "100.00",
+                "is_free": False,
+                "published": False,
+                "featured": False,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        created = Course.objects.get(pk=response.data["id"])
+        self.assertEqual(created.instructor_id, self.instructor.id)
+        self.assertFalse(created.featured)
+
+    def test_instructor_cannot_feature_course_even_if_true_is_sent(self):
+        self.client.force_authenticate(self.instructor)
+        response = self.client.patch(
+            f"/api/catalog/courses/{self.course.slug}/",
+            {"featured": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.course.refresh_from_db()
+        self.assertFalse(self.course.featured)
+
+
+class InstructorContentCreationTests(APITestCase):
+    def setUp(self):
+        self.instructor = User.objects.create_user(
+            username="content_trainer", email="content-trainer@example.com", password="passpass123", role=User.Role.INSTRUCTOR
+        )
+        self.category = Category.objects.create(name="Création")
+        self.client.force_authenticate(self.instructor)
+
+    def test_instructor_can_create_standalone_pdf_when_featured_is_sent(self):
+        upload = SimpleUploadedFile("guide.pdf", pdf_bytes(2), content_type="application/pdf")
+        response = self.client.post(
+            "/api/catalog/pdfs/",
+            {
+                "category": self.category.id,
+                "title": "Guide instructeur",
+                "description": "Document créé par un instructeur",
+                "level": "beginner",
+                "language": "Français",
+                "price": "25.00",
+                "is_free": False,
+                "published": False,
+                "featured": False,
+                "file": upload,
+            },
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        product = PDFProduct.objects.get(pk=response.data["id"])
+        self.assertEqual(product.instructor_id, self.instructor.id)
+        self.assertFalse(product.featured)
+        self.assertEqual(product.page_count, 2)
+
+    def test_instructor_cannot_self_feature_standalone_pdf(self):
+        upload = SimpleUploadedFile("guide2.pdf", pdf_bytes(1), content_type="application/pdf")
+        response = self.client.post(
+            "/api/catalog/pdfs/",
+            {
+                "category": self.category.id,
+                "title": "Guide non vedette",
+                "description": "Test featured",
+                "level": "beginner",
+                "language": "Français",
+                "price": "0",
+                "is_free": True,
+                "published": False,
+                "featured": True,
+                "file": upload,
+            },
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        product = PDFProduct.objects.get(pk=response.data["id"])
+        self.assertFalse(product.featured)

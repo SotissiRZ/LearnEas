@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from apps.accounts.serializers import UserPublicSerializer
 from apps.common.fields import RelativeImageField, RelativeFileField, ProtectedFileField
-from apps.common.media_metadata import extract_pdf_page_count, extract_video_duration_minutes
+from apps.common.media_metadata import extract_pdf_page_count, extract_video_duration_minutes, validate_upload_limits
 from .models import Category, Course, Section, Lesson, PDFResource, PDFProduct
 
 
@@ -176,8 +176,23 @@ class CourseWriteSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         request = self.context.get("request")
-        if request and request.user.role != "admin" and "featured" in attrs:
-            raise serializers.ValidationError({"featured": "Seul un administrateur peut mettre un cours en avant."})
+        price = attrs.get("price", getattr(self.instance, "price", 0))
+        discount = attrs.get("discount_price", getattr(self.instance, "discount_price", None))
+        is_free = attrs.get("is_free", getattr(self.instance, "is_free", False))
+        if price is not None and price < 0:
+            raise serializers.ValidationError({"price": "Le prix ne peut pas être négatif."})
+        if discount is not None and (discount < 0 or (price is not None and discount >= price)):
+            raise serializers.ValidationError({"discount_price": "Le prix promotionnel doit être positif et inférieur au prix normal."})
+        if is_free:
+            attrs["price"] = 0
+            attrs["discount_price"] = None
+        thumbnail = attrs.get("thumbnail")
+        if thumbnail:
+            validate_upload_limits(thumbnail, max_bytes=10 * 1024 * 1024, extensions={".jpg", ".jpeg", ".png", ".webp", ".avif"}, field="thumbnail")
+        # `featured` est une décision éditoriale de l'administrateur. Le frontend peut
+        # néanmoins envoyer `featured=false` avec un formulaire générique : on l'ignore.
+        if request and request.user.role != "admin":
+            attrs.pop("featured", None)
         return attrs
 
     def validate_certificate_threshold_percent(self, value):
@@ -224,9 +239,11 @@ class LessonWriteSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         subtitles_file = attrs.get("subtitles_file")
-        if subtitles_file and not subtitles_file.name.lower().endswith(".vtt"):
-            raise serializers.ValidationError({"subtitles_file": "Le fichier de sous-titres doit être au format WebVTT (.vtt)."})
+        if subtitles_file:
+            validate_upload_limits(subtitles_file, max_bytes=5 * 1024 * 1024, extensions={".vtt"}, field="subtitles_file")
         video_file = attrs.get("video_file")
+        if video_file:
+            validate_upload_limits(video_file, max_bytes=200 * 1024 * 1024, extensions={".mp4", ".webm", ".mov", ".m4v"}, field="video_file")
         video_url = attrs.get("video_url")
         if self.instance:
             video_file = video_file or self.instance.video_file
@@ -255,7 +272,10 @@ class PDFResourceWriteSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         if attrs.get("file"):
+            validate_upload_limits(attrs["file"], max_bytes=50 * 1024 * 1024, extensions={".pdf"}, field="file")
             attrs["page_count"] = extract_pdf_page_count(attrs["file"])
+        if attrs.get("cover_image"):
+            validate_upload_limits(attrs["cover_image"], max_bytes=10 * 1024 * 1024, extensions={".jpg", ".jpeg", ".png", ".webp", ".avif"}, field="cover_image")
         return attrs
 
 
@@ -310,10 +330,22 @@ class PDFProductWriteSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         if attrs.get("file"):
+            validate_upload_limits(attrs["file"], max_bytes=50 * 1024 * 1024, extensions={".pdf"}, field="file")
             attrs["page_count"] = extract_pdf_page_count(attrs["file"])
+        if attrs.get("preview_file"):
+            validate_upload_limits(attrs["preview_file"], max_bytes=20 * 1024 * 1024, extensions={".pdf"}, field="preview_file")
+            extract_pdf_page_count(attrs["preview_file"])
+        if attrs.get("cover_image"):
+            validate_upload_limits(attrs["cover_image"], max_bytes=10 * 1024 * 1024, extensions={".jpg", ".jpeg", ".png", ".webp", ".avif"}, field="cover_image")
+        price = attrs.get("price", getattr(self.instance, "price", 0))
+        is_free = attrs.get("is_free", getattr(self.instance, "is_free", False))
+        if price is not None and price < 0:
+            raise serializers.ValidationError({"price": "Le prix ne peut pas être négatif."})
+        if is_free:
+            attrs["price"] = 0
         request = self.context.get("request")
-        if request and request.user.role != "admin" and "featured" in attrs:
-            raise serializers.ValidationError({"featured": "Seul un administrateur peut mettre un PDF en avant."})
+        if request and request.user.role != "admin":
+            attrs.pop("featured", None)
         return attrs
 
     def create(self, validated_data):

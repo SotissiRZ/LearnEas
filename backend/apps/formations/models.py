@@ -111,7 +111,7 @@ class FormationSession(models.Model):
     duration_minutes = models.PositiveIntegerField(default=60)
     # Conservé uniquement pour compatibilité avec les anciennes données/migrations. L'API ne
     # demande plus et n'expose plus de lien de réunion externe.
-    meeting_link = models.URLField(blank=True, help_text="Champ historique — non utilisé par LearnEas")
+    meeting_link = models.URLField(blank=True, help_text="Champ historique · non utilisé par LearnEas")
     room_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     started_at = models.DateTimeField(null=True, blank=True)
     ended_at = models.DateTimeField(null=True, blank=True)
@@ -124,7 +124,7 @@ class FormationSession(models.Model):
         unique_together = ("formation", "session_number")
 
     def __str__(self):
-        return f"{self.formation.title} — Séance {self.session_number}"
+        return f"{self.formation.title} · Séance {self.session_number}"
 
     @property
     def actual_duration_minutes(self):
@@ -256,5 +256,5 @@ class FormationRoomFile(models.Model):
         indexes = [models.Index(fields=["session", "-uploaded_at"])]
 
     def __str__(self):
-        return f"{self.session} — {self.original_name}"
+        return f"{self.session} · {self.original_name}"
 

@@ -11,9 +11,31 @@ x-backend-env: &backend-env
   USE_HTTPS: ${USE_HTTPS:-False}
   FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
   STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+  STRIPE_TEST_SECRET_KEY: ${STRIPE_TEST_SECRET_KEY:-}
   STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+  STRIPE_TEST_WEBHOOK_SECRET: ${STRIPE_TEST_WEBHOOK_SECRET:-}
   STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+  YOUCANPAY_ACCESS_TOKEN: ${YOUCANPAY_ACCESS_TOKEN:-}
+  YOUCANPAY_API_BASE: ${YOUCANPAY_API_BASE:-https://youcanpay.com/api/v2}
+  YOUCANPAY_SANDBOX_ACCESS_TOKEN: ${YOUCANPAY_SANDBOX_ACCESS_TOKEN:-}
+  YOUCANPAY_SANDBOX_API_BASE: ${YOUCANPAY_SANDBOX_API_BASE:-}
+  GENIUSPAY_API_KEY: ${GENIUSPAY_API_KEY:-}
+  GENIUSPAY_API_SECRET: ${GENIUSPAY_API_SECRET:-}
+  GENIUSPAY_WEBHOOK_SECRET: ${GENIUSPAY_WEBHOOK_SECRET:-}
+  GENIUSPAY_API_BASE: ${GENIUSPAY_API_BASE:-https://geniuspay.ci/api/v1/merchant}
+  GENIUSPAY_SANDBOX_API_KEY: ${GENIUSPAY_SANDBOX_API_KEY:-}
+  GENIUSPAY_SANDBOX_API_SECRET: ${GENIUSPAY_SANDBOX_API_SECRET:-}
+  GENIUSPAY_SANDBOX_WEBHOOK_SECRET: ${GENIUSPAY_SANDBOX_WEBHOOK_SECRET:-}
+  GENIUSPAY_SANDBOX_API_BASE: ${GENIUSPAY_SANDBOX_API_BASE:-}
   PAYMENT_CURRENCY: ${PAYMENT_CURRENCY:-MAD}
+  USE_S3: ${USE_S3:-False}
+  REQUIRE_REMOTE_MEDIA: ${REQUIRE_REMOTE_MEDIA:-False}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+  AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-}
+  AWS_S3_REGION_NAME: ${AWS_S3_REGION_NAME:-}
+  AWS_S3_ENDPOINT_URL: ${AWS_S3_ENDPOINT_URL:-}
+  AWS_S3_CUSTOM_DOMAIN: ${AWS_S3_CUSTOM_DOMAIN:-}
   PLATFORM_COMMISSION_PERCENT: ${PLATFORM_COMMISSION_PERCENT:-15}
   MINIMUM_PAYOUT_AMOUNT: ${MINIMUM_PAYOUT_AMOUNT:-100}
   EMAIL_HOST: ${EMAIL_HOST:-}
@@ -78,7 +100,8 @@ services:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health/ || exit 1"]
       interval: 15s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 60s
 
   celery_worker:
     build:
@@ -92,7 +115,7 @@ services:
     volumes:
       - media_data:/app/media
     depends_on:
-      db:
+      backend:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -125,11 +148,18 @@ services:
       # de Docker. Ne pas mettre "localhost" ici : depuis CE conteneur, localhost = lui-même.
       INTERNAL_API_URL: http://backend:8000/api
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - learneas_net
     expose:
       - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   nginx:
     image: nginx:1.27-alpine
@@ -141,8 +171,10 @@ services:
       - static_data:/app/staticfiles:ro
       - media_data:/app/media:ro
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
     networks:
       - learneas_net
 

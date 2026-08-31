@@ -108,12 +108,38 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+USE_S3 = config("USE_S3", default=False, cast=bool)
+REQUIRE_REMOTE_MEDIA = config("REQUIRE_REMOTE_MEDIA", default=False, cast=bool)
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# Railway utilise un disque éphémère par défaut : activez USE_S3 avec un bucket S3-compatible
+# (AWS, Cloudflare R2, Backblaze, MinIO, etc.) pour conserver durablement les médias.
+if USE_S3:
+    AWS_ACCESS_KEY_ID = config("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY = config("AWS_SECRET_ACCESS_KEY")
+    AWS_STORAGE_BUCKET_NAME = config("AWS_STORAGE_BUCKET_NAME")
+    AWS_S3_REGION_NAME = config("AWS_S3_REGION_NAME", default=None)
+    AWS_S3_ENDPOINT_URL = config("AWS_S3_ENDPOINT_URL", default=None)
+    AWS_S3_CUSTOM_DOMAIN = config("AWS_S3_CUSTOM_DOMAIN", default=None)
+    AWS_DEFAULT_ACL = None
+    AWS_QUERYSTRING_AUTH = True
+    AWS_QUERYSTRING_EXPIRE = 300
+    AWS_S3_FILE_OVERWRITE = False
+    AWS_S3_OBJECT_PARAMETERS = {"CacheControl": "private, no-store"}
+    STORAGES["default"] = {"BACKEND": "storages.backends.s3.S3Storage"}
+    if AWS_S3_CUSTOM_DOMAIN:
+        MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN.rstrip('/')}/"
+    elif AWS_S3_ENDPOINT_URL:
+        MEDIA_URL = f"{AWS_S3_ENDPOINT_URL.rstrip('/')}/{AWS_STORAGE_BUCKET_NAME}/"
+    else:
+        MEDIA_URL = f"https://{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com/"
+elif not DEBUG and REQUIRE_REMOTE_MEDIA:
+    raise RuntimeError("Stockage média distant requis : configurez USE_S3=True et les variables AWS/S3.")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -127,7 +153,7 @@ REST_FRAMEWORK = {
     # /api/auth/login/ et /api/auth/register/, alors que le frontend Next.js utilise JWT.
     # L’admin Django conserve sa propre authentification par session et sa protection CSRF.
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.accounts.authentication.PasswordBoundJWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticatedOrReadOnly",
@@ -151,6 +177,9 @@ REST_FRAMEWORK = {
         "password_reset": "5/hour",
         "checkout": "20/hour",
         "media": "300/hour",
+        "live": "12000/hour",
+        "admin_test": "30/hour",
+        "webhook": "3000/hour",
     },
 }
 
@@ -175,8 +204,24 @@ SPECTACULAR_SETTINGS = {
 }
 
 STRIPE_SECRET_KEY = config("STRIPE_SECRET_KEY", default="")
+STRIPE_TEST_SECRET_KEY = config("STRIPE_TEST_SECRET_KEY", default="")
 STRIPE_PUBLISHABLE_KEY = config("STRIPE_PUBLISHABLE_KEY", default="")
 STRIPE_WEBHOOK_SECRET = config("STRIPE_WEBHOOK_SECRET", default="")
+STRIPE_TEST_WEBHOOK_SECRET = config("STRIPE_TEST_WEBHOOK_SECRET", default="")
+YOUCANPAY_ACCESS_TOKEN = config("YOUCANPAY_ACCESS_TOKEN", default="")
+YOUCANPAY_API_BASE = config("YOUCANPAY_API_BASE", default="https://youcanpay.com/api/v2")
+# Le sandbox YouCan Pay est entièrement configurable. Les jetons sandbox et production sont
+# volontairement séparés : une passerelle en mode test ne réutilise jamais un secret live.
+YOUCANPAY_SANDBOX_ACCESS_TOKEN = config("YOUCANPAY_SANDBOX_ACCESS_TOKEN", default="")
+YOUCANPAY_SANDBOX_API_BASE = config("YOUCANPAY_SANDBOX_API_BASE", default="")
+GENIUSPAY_API_KEY = config("GENIUSPAY_API_KEY", default="")
+GENIUSPAY_API_SECRET = config("GENIUSPAY_API_SECRET", default="")
+GENIUSPAY_WEBHOOK_SECRET = config("GENIUSPAY_WEBHOOK_SECRET", default="")
+GENIUSPAY_API_BASE = config("GENIUSPAY_API_BASE", default="https://geniuspay.ci/api/v1/merchant")
+GENIUSPAY_SANDBOX_API_KEY = config("GENIUSPAY_SANDBOX_API_KEY", default="")
+GENIUSPAY_SANDBOX_API_SECRET = config("GENIUSPAY_SANDBOX_API_SECRET", default="")
+GENIUSPAY_SANDBOX_WEBHOOK_SECRET = config("GENIUSPAY_SANDBOX_WEBHOOK_SECRET", default="")
+GENIUSPAY_SANDBOX_API_BASE = config("GENIUSPAY_SANDBOX_API_BASE", default="")
 PAYMENT_CURRENCY = config("PAYMENT_CURRENCY", default="MAD")
 
 # Répartition des ventes instructeurs / plateforme
@@ -230,7 +275,12 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = USE_HTTPS
     SESSION_COOKIE_SECURE = USE_HTTPS
     CSRF_COOKIE_SECURE = USE_HTTPS
+    SESSION_COOKIE_HTTPONLY = True
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    if USE_HTTPS:
+        SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=31536000, cast=int)
+        SECURE_HSTS_INCLUDE_SUBDOMAINS = config("SECURE_HSTS_INCLUDE_SUBDOMAINS", default=False, cast=bool)
+        SECURE_HSTS_PRELOAD = config("SECURE_HSTS_PRELOAD", default=False, cast=bool)
     CSRF_TRUSTED_ORIGINS = config(
         "CSRF_TRUSTED_ORIGINS",
         default="http://localhost,http://127.0.0.1",

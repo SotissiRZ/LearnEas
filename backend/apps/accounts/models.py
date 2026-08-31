@@ -117,5 +117,5 @@ class InstructorApplication(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.user.email} — {self.get_status_display()}"
+        return f"{self.user.email} · {self.get_status_display()}"
 

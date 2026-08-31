@@ -24,7 +24,18 @@ export default function LoginPage() {
     try {
       const user = await login(email, password);
       const next = searchParams.get("next");
-      if (next) router.push(next);
+      let safeNext: string | null = null;
+      if (next && next.startsWith("/") && !next.startsWith("//")) {
+        try {
+          const target = new URL(next, window.location.origin);
+          if (target.origin === window.location.origin) {
+            safeNext = `${target.pathname}${target.search}${target.hash}`;
+          }
+        } catch {
+          safeNext = null;
+        }
+      }
+      if (safeNext) router.push(safeNext);
       else if (user.role === "admin") router.push("/dashboard/admin");
       else if (user.role === "instructor") router.push("/dashboard/instructor");
       else router.push("/dashboard/student");

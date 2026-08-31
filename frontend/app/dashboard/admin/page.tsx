@@ -26,6 +26,10 @@ import {
   WalletCards,
   Award,
   XCircle,
+  FlaskConical,
+  Trash2,
+  Plus,
+  Mail,
 } from "lucide-react";
 import { api, ApiError, formatPrice } from "@/lib/api";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
@@ -192,6 +196,9 @@ type InstructorApplication = {
   reviewed_at: string | null;
   created_at: string;
 };
+
+type AdminCurrency = { id: number; code: string; name: string; symbol: string; exchange_rate: string; decimal_places: number; is_active: boolean; is_default: boolean; sort_order: number };
+type AdminGateway = { id: number; code: string; name: string; description: string; is_active: boolean; sandbox: boolean; supported_currencies: string[]; sort_order: number; configured: boolean };
 
 type Category = { id: number; name: string; slug: string; icon: string; description: string; courses_count: number };
 
@@ -976,8 +983,94 @@ function SettingsTab() {
         <section className="card p-5"><h2 className="flex items-center gap-2 font-bold"><WalletCards size={17} /> Finance</h2><p className="mt-1 text-xs text-gray-500">Les nouvelles ventes utilisent immédiatement ces paramètres. Les anciennes ventes conservent leur ventilation enregistrée.</p><div className="mt-4 grid gap-4 md:grid-cols-2"><label className="label-admin">Commission plateforme (%)<input type="number" min="0" max="100" className="input-admin w-full" value={form.platform_commission_percent} onChange={(e) => setForm({ ...form, platform_commission_percent: Number(e.target.value) })} /></label><label className="label-admin">Retrait instructeur minimum (MAD)<input type="number" min="0" step="0.01" className="input-admin w-full" value={form.minimum_payout_amount} onChange={(e) => setForm({ ...form, minimum_payout_amount: e.target.value })} /></label></div></section>
         <div className="flex items-center justify-between"><p className="text-xs text-gray-400">Dernière modification : {settings?.updated_at ? new Date(settings.updated_at).toLocaleString("fr-FR") : "-"}</p><button disabled={saving} className="btn-primary" type="submit">{saving ? <><Loader2 className="animate-spin" size={15} /> Enregistrement...</> : "Enregistrer les paramètres"}</button></div>
       </form>
+      <PaymentSystemAdmin supportEmail={form.support_email} />
     </>
   );
+}
+
+function PaymentSystemAdmin({ supportEmail }: { supportEmail: string }) {
+  const [currencies, setCurrencies] = useState<AdminCurrency[]>([]);
+  const [gateways, setGateways] = useState<AdminGateway[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [testEmail, setTestEmail] = useState(supportEmail);
+  const [newCurrency, setNewCurrency] = useState({ code: "", name: "", symbol: "", exchange_rate: "1" });
+  const gatewayPresets = [
+    { code: "stripe", name: "Stripe", description: "Cartes bancaires via Stripe Checkout", supported_currencies: ["MAD", "EUR", "USD"], sort_order: 0 },
+    { code: "youcanpay", name: "YouCan Pay", description: "Paiement marocain via facture hébergée YouCan Pay", supported_currencies: ["MAD"], sort_order: 10 },
+    { code: "geniuspay", name: "GeniusPay", description: "Mobile Money et cartes en Afrique", supported_currencies: ["XOF", "EUR", "USD"], sort_order: 20 },
+    { code: "manual", name: "Paiement manuel", description: "Validation manuelle par un administrateur", supported_currencies: ["MAD"], sort_order: 90 },
+  ] as const;
+  const [newGatewayCode, setNewGatewayCode] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const [c, g] = await Promise.all([api.get<Paginated<AdminCurrency> | AdminCurrency[]>("/payments/admin/currencies/?page_size=100"), api.get<Paginated<AdminGateway> | AdminGateway[]>("/payments/admin/gateways/?page_size=100")]);
+      setCurrencies(Array.isArray(c) ? c : c.results);
+      setGateways(Array.isArray(g) ? g : g.results);
+    } catch (e) { setError(toError(e)); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function patchCurrency(item: AdminCurrency, patch: Partial<AdminCurrency>) {
+    setBusy(true); setError("");
+    try { await api.patch(`/payments/admin/currencies/${item.id}/`, patch); await load(); } catch (e) { setError(toError(e)); } finally { setBusy(false); }
+  }
+  async function addCurrency() {
+    if (!newCurrency.code || !newCurrency.name) return;
+    setBusy(true); setError("");
+    try { await api.post("/payments/admin/currencies/", { ...newCurrency, is_active: true, decimal_places: 2 }); setNewCurrency({ code: "", name: "", symbol: "", exchange_rate: "1" }); await load(); } catch (e) { setError(toError(e)); } finally { setBusy(false); }
+  }
+  async function removeCurrency(item: AdminCurrency) {
+    if (!confirm(`Supprimer la devise ${item.code} ?`)) return;
+    try { await api.del(`/payments/admin/currencies/${item.id}/`); await load(); } catch (e) { setError(toError(e)); }
+  }
+  async function patchGateway(item: AdminGateway, patch: Partial<AdminGateway>) {
+    setBusy(true); setError("");
+    try { await api.patch(`/payments/admin/gateways/${item.id}/`, patch); await load(); } catch (e) { setError(toError(e)); } finally { setBusy(false); }
+  }
+  async function testGateway(item: AdminGateway) {
+    setBusy(true); setMessage(""); setError("");
+    try { const result = await api.post<{ detail: string }>(`/payments/admin/gateways/${item.id}/test/`); setMessage(result.detail); } catch (e) { setError(toError(e)); } finally { setBusy(false); }
+  }
+  async function addGateway() {
+    const preset = gatewayPresets.find((item) => item.code === newGatewayCode);
+    if (!preset) return;
+    setBusy(true); setMessage(""); setError("");
+    try {
+      await api.post("/payments/admin/gateways/", { ...preset, is_active: false, sandbox: true });
+      setNewGatewayCode("");
+      await load();
+    } catch (e) { setError(toError(e)); } finally { setBusy(false); }
+  }
+  async function removeGateway(item: AdminGateway) {
+    if (!confirm(`Retirer ${item.name} de la configuration ?`)) return;
+    setBusy(true); setMessage(""); setError("");
+    try { await api.del(`/payments/admin/gateways/${item.id}/`); await load(); } catch (e) { setError(toError(e)); } finally { setBusy(false); }
+  }
+  async function sendTestEmail() {
+    setBusy(true); setMessage(""); setError("");
+    try { const result = await api.post<{ detail: string }>("/payments/admin/test-email/", { email: testEmail }); setMessage(result.detail); } catch (e) { setError(toError(e)); } finally { setBusy(false); }
+  }
+
+  return <div className="mt-6 space-y-5">
+    <div className="border-t border-gray-200 pt-6"><PageHeader title="Paiements & diagnostics" description="Activez les devises et passerelles. Les secrets restent exclusivement dans les variables d'environnement du backend." /></div>
+    {error && <Alert text={error} tone="error" />}{message && <Alert text={message} />}
+    <section className="card p-5">
+      <h2 className="flex items-center gap-2 font-bold"><DollarSign size={17}/> Devises</h2>
+      <p className="mt-1 text-xs text-gray-500">MAD reste la devise comptable de base des prix et revenus. Les autres taux indiquent la valeur de 1 MAD dans la devise sélectionnée.</p><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead className="table-head"><tr><th>Code</th><th>Nom</th><th>Symbole</th><th>Taux / MAD</th><th>Active</th><th>Défaut checkout</th><th></th></tr></thead><tbody className="divide-y divide-gray-100">{currencies.map(item => <tr key={item.id}><td className="px-3 py-2 font-semibold">{item.code}{item.code === "MAD" && <span className="ml-2 rounded-full bg-brand-50 px-2 py-0.5 text-[10px] text-brand-700">BASE</span>}</td><td className="px-3 py-2">{item.name}</td><td className="px-3 py-2">{item.symbol}</td><td className="px-3 py-2"><input type="number" min="0.00000001" step="0.00000001" disabled={item.code === "MAD"} className="input-admin w-32 !py-1.5 disabled:bg-gray-100" defaultValue={item.exchange_rate} onBlur={e => item.code !== "MAD" && patchCurrency(item, { exchange_rate: e.target.value } as any)} /></td><td className="px-3 py-2"><input type="checkbox" checked={item.is_active} disabled={item.code === "MAD"} onChange={e => patchCurrency(item,{is_active:e.target.checked})}/></td><td className="px-3 py-2"><input type="radio" name="default-currency" checked={item.is_default} onChange={() => patchCurrency(item,{is_default:true,is_active:true})}/></td><td className="px-3 py-2 text-right"><button disabled={item.is_default || item.code === "MAD"} onClick={() => removeCurrency(item)} className="text-red-600 disabled:opacity-30" title={item.code === "MAD" ? "MAD est la devise comptable de base" : "Supprimer"}><Trash2 size={15}/></button></td></tr>)}</tbody></table></div>
+      <div className="mt-4 grid gap-2 md:grid-cols-[100px_1fr_100px_150px_auto]"><input className="input-admin" maxLength={3} placeholder="MAD" value={newCurrency.code} onChange={e=>setNewCurrency({...newCurrency,code:e.target.value.toUpperCase()})}/><input className="input-admin" placeholder="Nom de la devise" value={newCurrency.name} onChange={e=>setNewCurrency({...newCurrency,name:e.target.value})}/><input className="input-admin" placeholder="Symbole" value={newCurrency.symbol} onChange={e=>setNewCurrency({...newCurrency,symbol:e.target.value})}/><input className="input-admin" type="number" min="0.00000001" step="0.00000001" value={newCurrency.exchange_rate} onChange={e=>setNewCurrency({...newCurrency,exchange_rate:e.target.value})}/><button type="button" disabled={busy} onClick={addCurrency} className="btn-primary"><Plus size={14}/> Ajouter</button></div>
+    </section>
+    <section className="card p-5">
+      <h2 className="flex items-center gap-2 font-bold"><WalletCards size={17}/> Moyens de paiement</h2>
+      <p className="mt-1 text-xs text-gray-500">Drivers intégrés : Stripe, YouCan Pay, GeniusPay et validation manuelle. L'activation ne suffit pas : les clés correspondantes doivent être présentes côté serveur.</p>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">{gateways.map(item => <article key={item.id} className="rounded-xl border border-gray-100 p-4"><div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><strong>{item.name}</strong><span className={`badge ${item.configured ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{item.configured ? "Configuré" : "Clés absentes"}</span></div><p className="mt-1 text-xs text-gray-500">{item.description}</p><p className="mt-2 text-[11px] text-gray-400">Devises : {item.supported_currencies.join(", ") || "toutes"}</p></div><div className="flex items-center gap-3"><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={item.is_active} onChange={e=>patchGateway(item,{is_active:e.target.checked})}/> Actif</label><button type="button" onClick={()=>removeGateway(item)} disabled={busy} className="text-gray-400 hover:text-red-600 disabled:opacity-40" title="Retirer ce moyen de paiement"><Trash2 size={15}/></button></div></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busy || (!item.configured && item.code !== "manual")} onClick={()=>testGateway(item)} className="btn-outline !py-1.5 !text-xs"><FlaskConical size={13}/> Tester la connexion</button><label className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-1.5 text-xs"><input type="checkbox" checked={item.sandbox} onChange={e=>patchGateway(item,{sandbox:e.target.checked})}/> Mode test</label></div></article>)}</div>
+      <div className="mt-4 flex max-w-xl flex-wrap gap-2 border-t border-gray-100 pt-4"><select className="input-admin min-w-[240px] flex-1" value={newGatewayCode} onChange={e=>setNewGatewayCode(e.target.value)}><option value="">Ajouter un driver intégré...</option>{gatewayPresets.filter(preset=>!gateways.some(item=>item.code===preset.code)).map(preset=><option key={preset.code} value={preset.code}>{preset.name}</option>)}</select><button type="button" disabled={busy || !newGatewayCode} onClick={addGateway} className="btn-primary"><Plus size={14}/> Ajouter</button></div>
+      <p className="mt-2 text-[11px] text-gray-400">Le mode test est un paramètre d'exploitation. Utilisez des clés sandbox/test correspondantes dans les variables d'environnement ; LearnEas n'enregistre jamais les secrets de paiement en base.</p>
+    </section>
+    <section className="card p-5"><h2 className="flex items-center gap-2 font-bold"><Mail size={17}/> Test email</h2><p className="mt-1 text-xs text-gray-500">Envoie un vrai email de diagnostic avec la configuration SMTP actuelle. En développement avec backend console, le message apparaît dans les logs backend.</p><div className="mt-4 flex max-w-xl gap-2"><input type="email" className="input-admin flex-1" value={testEmail} onChange={e=>setTestEmail(e.target.value)}/><button type="button" onClick={sendTestEmail} disabled={busy} className="btn-primary"><FlaskConical size={14}/> Tester l'email</button></div></section>
+  </div>;
 }
 
 function SessionReportModal({ sessionId, onClose }: { sessionId: number | null; onClose: () => void }) {
