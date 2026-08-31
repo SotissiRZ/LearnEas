@@ -3,6 +3,9 @@ x-backend-env: &backend-env
   # définir explicitement DEBUG=False et une SECRET_KEY forte dans les variables d’environnement.
   SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-me}
   DEBUG: ${DEBUG:-True}
+  TEST_PAYMENTS_ENABLED: ${TEST_PAYMENTS_ENABLED:-True}
+  ANON_THROTTLE_RATE: ${ANON_THROTTLE_RATE:-10000/hour}
+  USER_THROTTLE_RATE: ${USER_THROTTLE_RATE:-30000/hour}
   ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
   DATABASE_URL: postgres://${POSTGRES_USER:-learneas}:${POSTGRES_PASSWORD:-learneas}@db:5432/${POSTGRES_DB:-learneas}
   REDIS_URL: redis://redis:6379/0
@@ -161,7 +164,9 @@ services:
     expose:
       - "3000"
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      # Ne jamais sonder `/` : la page d'accueil est un Server Component qui charge
+      # catégories/cours/PDF et consommerait le quota DRF à chaque healthcheck.
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s
       timeout: 5s
       retries: 10

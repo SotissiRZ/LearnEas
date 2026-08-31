@@ -46,6 +46,9 @@ services:
     environment:
       SECRET_KEY: dev-secret-key
       DEBUG: "True"
+      TEST_PAYMENTS_ENABLED: "True"
+      ANON_THROTTLE_RATE: "10000/hour"
+      USER_THROTTLE_RATE: "30000/hour"
       ALLOWED_HOSTS: "*"
       DATABASE_URL: postgres://learneas:learneas@db:5432/learneas
       REDIS_URL: redis://redis:6379/0

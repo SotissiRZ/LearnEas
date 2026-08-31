@@ -151,6 +151,8 @@ type Course = {
   featured: boolean;
   price: string;
   students_count: number;
+  total_lessons?: number;
+  thumbnail?: string | null;
   created_at: string;
   instructor: { full_name: string };
 };
@@ -164,6 +166,7 @@ type PdfProduct = {
   price: string;
   downloads_count: number;
   page_count: number;
+  cover_image?: string | null;
   created_at: string;
   instructor: { full_name: string };
 };
@@ -177,6 +180,7 @@ type Formation = {
   price: string;
   students_count: number;
   start_date: string;
+  thumbnail?: string | null;
   created_at: string;
   instructor: { full_name: string };
 };
@@ -624,46 +628,84 @@ function ContentTab() {
     } catch (e) { setError(toError(e)); }
   }
 
+  const typeLabel = type === "course" ? "Cours" : type === "pdf" ? "PDF" : "Formations";
+  const publishedCount = items.filter((item) => item.published).length;
+
   return (
     <>
-      <PageHeader title="Contenus" description="Supervisez la publication des cours, PDF et formations interactives." actions={<Link href={newHref} className="btn-primary !py-2 !text-xs">Créer un contenu</Link>} />
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="flex rounded-xl border border-gray-200 bg-white p-1">
-          {(["course", "pdf", "formation"] as const).map((value) => (
-            <button key={value} onClick={() => { setType(value); setPage(1); }} className={`rounded-lg px-3 py-2 text-xs font-semibold ${type === value ? "bg-brand-50 text-brand-700" : "text-gray-500"}`}>
-              {value === "course" ? "Cours" : value === "pdf" ? "PDF" : "Formations"}
-            </button>
-          ))}
+      <div className="mb-6 overflow-hidden rounded-3xl border border-gray-200 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 p-6 text-white shadow-soft sm:p-7">
+        <div className="flex flex-wrap items-end justify-between gap-5">
+          <div className="max-w-2xl">
+            <span className="inline-flex items-center gap-2 rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200"><ShieldCheck size={14} /> Centre de contrôle éditorial</span>
+            <h1 className="mt-3 text-2xl font-extrabold sm:text-3xl">Contenus</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-300">Contrôlez le contenu réel avant publication : vidéos, PDF, séances, statut, mise en avant et suppression.</p>
+          </div>
+          <Link href={newHref} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-slate-950 shadow-lg transition hover:bg-emerald-50"><Plus size={16} /> Créer un contenu</Link>
         </div>
-        <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Rechercher un contenu..." />
+        <div className="mt-6 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4"><p className="text-xs text-slate-400">Type affiché</p><p className="mt-1 text-lg font-extrabold">{typeLabel}</p></div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4"><p className="text-xs text-slate-400">Résultats</p><p className="mt-1 text-lg font-extrabold">{count}</p></div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4"><p className="text-xs text-slate-400">Publiés sur cette page</p><p className="mt-1 text-lg font-extrabold">{publishedCount}/{items.length}</p></div>
+        </div>
       </div>
+
+      <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-gray-100 bg-white p-3 shadow-card sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex overflow-x-auto rounded-xl bg-gray-100 p-1">
+          {(["course", "pdf", "formation"] as const).map((value) => {
+            const Icon = value === "course" ? BookOpen : value === "pdf" ? FileText : Video;
+            return <button key={value} onClick={() => { setType(value); setPage(1); }} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition ${type === value ? "bg-white text-brand-700 shadow-sm" : "text-gray-500 hover:text-gray-800"}`}><Icon size={14} />{value === "course" ? "Cours" : value === "pdf" ? "PDF" : "Formations"}</button>;
+          })}
+        </div>
+        <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Rechercher titre, description..." />
+      </div>
+
       {error && <Alert text={error} tone="error" />}
-      <div className="card overflow-x-auto">
-        <table className="w-full min-w-[800px] text-sm">
-          <thead className="table-head"><tr><th>Contenu</th><th>Instructeur</th><th>Prix</th><th>Indicateur</th><th>Publié</th>{type !== "formation" && <th>Mis en avant</th>}<th>Actions</th></tr></thead>
-          <tbody className="divide-y divide-gray-100">
-            {items.map((item) => {
-              const isCourse = type === "course";
-              const isPdf = type === "pdf";
-              const indicator = isCourse ? `${(item as Course).students_count} étudiant(s)` : isPdf ? `${(item as PdfProduct).page_count} pages · ${(item as PdfProduct).downloads_count} achat(s)` : `${(item as Formation).students_count} inscrit(s) · ${(item as Formation).status}`;
-              const publicHref = isCourse ? `/courses/${item.slug}` : isPdf ? `/pdfs/${item.slug}` : `/formations/${item.slug}`;
-              return (
-                <tr key={`${type}-${item.id}`}>
-                  <td className="px-4 py-3"><p className="font-semibold">{item.title}</p><p className="text-xs text-gray-400">Créé le {new Date(item.created_at).toLocaleDateString("fr-FR")}</p></td>
-                  <td className="px-4 py-3 text-gray-600">{item.instructor?.full_name || "-"}</td>
-                  <td className="px-4 py-3 font-semibold">{formatPrice(item.price)}</td>
-                  <td className="px-4 py-3 text-xs text-gray-500">{indicator}</td>
-                  <td className="px-4 py-3"><Toggle checked={item.published} onChange={(v) => patchItem(item, { published: v })} label={item.published ? "Oui" : "Non"} /></td>
-                  {type !== "formation" && <td className="px-4 py-3"><Toggle checked={(item as Course | PdfProduct).featured} onChange={(v) => patchItem(item, { featured: v })} label={(item as Course | PdfProduct).featured ? "Oui" : "Non"} /></td>}
-                  <td className="px-4 py-3"><div className="flex items-center gap-3"><Link href={publicHref} className="text-xs font-semibold text-brand-700">Ouvrir</Link><button onClick={() => deleteItem(item)} className="text-xs font-semibold text-red-600">Supprimer</button></div></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {loading && <LoadingBlock compact />}
-        {!loading && items.length === 0 && <Empty text="Aucun contenu trouvé." />}
-      </div>
+      {loading ? <div className="rounded-2xl border border-gray-100 bg-white shadow-card"><LoadingBlock /></div> : items.length === 0 ? <div className="rounded-2xl border border-dashed border-gray-200 bg-white"><Empty text="Aucun contenu trouvé." /></div> : (
+        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          {items.map((item) => {
+            const isCourse = type === "course";
+            const isPdf = type === "pdf";
+            const image = isCourse ? (item as Course).thumbnail : isPdf ? (item as PdfProduct).cover_image : (item as Formation).thumbnail;
+            const indicator = isCourse
+              ? `${(item as Course).students_count} étudiant(s) · ${(item as Course).total_lessons || 0} leçon(s)`
+              : isPdf
+                ? `${(item as PdfProduct).page_count} pages · ${(item as PdfProduct).downloads_count} achat(s)`
+                : `${(item as Formation).students_count} inscrit(s) · ${(item as Formation).status}`;
+            const publicHref = isCourse ? `/courses/${item.slug}` : isPdf ? `/pdfs/${item.slug}` : `/formations/${item.slug}`;
+            const reviewHref = `/dashboard/admin/review/${type}/${item.slug}`;
+            return (
+              <article key={`${type}-${item.id}`} className="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-card transition hover:-translate-y-0.5 hover:shadow-soft">
+                <div className="relative h-36 overflow-hidden bg-gradient-to-br from-slate-100 to-emerald-50">
+                  {image ? <img src={image} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" /> : <div className="grid h-full place-items-center text-gray-300">{isCourse ? <BookOpen size={42} /> : isPdf ? <FileText size={42} /> : <Video size={42} />}</div>}
+                  <div className="absolute inset-x-0 top-0 flex items-center justify-between p-3">
+                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide shadow-sm ${item.published ? "bg-emerald-600 text-white" : "bg-amber-100 text-amber-800"}`}>{item.published ? "Publié" : "Brouillon"}</span>
+                    {type !== "formation" && (item as Course | PdfProduct).featured && <span className="rounded-full bg-slate-950/80 px-2.5 py-1 text-[10px] font-semibold text-white backdrop-blur">Mis en avant</span>}
+                  </div>
+                </div>
+                <div className="p-5">
+                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[11px] font-semibold uppercase tracking-wide text-brand-700">{typeLabel}</p><h2 className="mt-1 line-clamp-2 text-lg font-extrabold leading-snug text-ink">{item.title}</h2></div><span className="shrink-0 text-sm font-extrabold text-ink">{formatPrice(item.price)}</span></div>
+                  <p className="mt-3 text-xs text-gray-500">Par <span className="font-semibold text-gray-700">{item.instructor?.full_name || "-"}</span></p>
+                  <p className="mt-1 text-xs text-gray-400">{indicator}</p>
+                  <p className="mt-1 text-[11px] text-gray-400">Créé le {new Date(item.created_at).toLocaleDateString("fr-FR")}</p>
+
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <Link href={reviewHref} className="btn-primary !px-3 !py-2 text-xs"><ShieldCheck size={14} /> Vérifier</Link>
+                    {item.published ? <Link href={publicHref} className="btn-outline !px-3 !py-2 text-xs"><ExternalLink size={14} /> Fiche publique</Link> : <span className="inline-flex items-center justify-center rounded-xl border border-dashed border-gray-200 px-3 py-2 text-xs font-medium text-gray-400">Non public</span>}
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
+                    <div className="flex items-center gap-4">
+                      <Toggle checked={item.published} onChange={(v) => patchItem(item, { published: v })} label="Publié" />
+                      {type !== "formation" && <Toggle checked={(item as Course | PdfProduct).featured} onChange={(v) => patchItem(item, { featured: v })} label="Vedette" />}
+                    </div>
+                    <button onClick={() => deleteItem(item)} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50"><Trash2 size={13} /> Supprimer</button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
       <Pagination page={page} count={count} onPage={setPage} />
     </>
   );

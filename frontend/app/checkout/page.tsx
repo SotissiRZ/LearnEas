@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CreditCard, Loader2, ShieldCheck, Smartphone, WalletCards } from "lucide-react";
+import { CreditCard, FlaskConical, Loader2, ShieldCheck, Smartphone, WalletCards } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { useAuth } from "@/hooks/useAuth";
 import { api, formatPrice, ApiError } from "@/lib/api";
 
 type Currency = { id: number; code: string; name: string; symbol: string; exchange_rate: string; decimal_places: number; is_default: boolean };
 type Gateway = { id: number; code: string; name: string; description: string; supported_currencies: string[]; configured: boolean; sandbox: boolean };
-type PaymentConfig = { currencies: Currency[]; gateways: Gateway[]; default_currency: string };
+type PaymentConfig = { currencies: Currency[]; gateways: Gateway[]; default_currency: string; test_payments_enabled?: boolean };
 
 function GatewayIcon({ code }: { code: string }) {
   if (code === "geniuspay") return <Smartphone size={20} />;
@@ -34,7 +34,7 @@ export default function CheckoutPage() {
         setConfig(data);
         setCurrency(data.default_currency || data.currencies[0]?.code || "MAD");
         const first = data.gateways.find((g) => g.configured && (!g.supported_currencies.length || g.supported_currencies.includes(data.default_currency))) || data.gateways[0];
-        setProvider(first?.code || "");
+        setProvider(first?.code || (data.test_payments_enabled ? "__test__" : ""));
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : "Impossible de charger les moyens de paiement."))
       .finally(() => setConfigLoading(false));
@@ -46,10 +46,11 @@ export default function CheckoutPage() {
   const isFreeCart = total() <= 0;
 
   useEffect(() => {
+    if (provider === "__test__" && config?.test_payments_enabled) return;
     if (!availableGateways.some((gateway) => gateway.code === provider)) {
-      setProvider(availableGateways.find((g) => g.configured)?.code || availableGateways[0]?.code || "");
+      setProvider(availableGateways.find((g) => g.configured)?.code || availableGateways[0]?.code || (config?.test_payments_enabled ? "__test__" : ""));
     }
-  }, [availableGateways, provider]);
+  }, [availableGateways, provider, config?.test_payments_enabled]);
 
   async function handlePay() {
     if (!isFreeCart && !provider) { setError("Aucun moyen de paiement n'est disponible pour cette devise."); return; }
@@ -59,9 +60,10 @@ export default function CheckoutPage() {
       const course_ids = items.filter((i) => i.type === "course").map((i) => i.id);
       const pdf_ids = items.filter((i) => i.type === "pdf").map((i) => i.id);
       const formation_ids = items.filter((i) => i.type === "formation").map((i) => i.id);
-      const res = await api.post<{ order: { id: number }; requires_payment: boolean; checkout_url?: string | null; manual_review?: boolean }>(
+      const isTestPayment = provider === "__test__";
+      const res = await api.post<{ order: { id: number }; requires_payment: boolean; checkout_url?: string | null; manual_review?: boolean; test_payment?: boolean }>(
         "/payments/checkout/",
-        { course_ids, pdf_ids, formation_ids, provider: provider || "manual", currency }
+        { course_ids, pdf_ids, formation_ids, provider: isTestPayment ? "manual" : (provider || "manual"), currency, test_payment: isTestPayment }
       );
       if (res.requires_payment && res.checkout_url) {
         window.location.assign(res.checkout_url);
@@ -100,6 +102,20 @@ export default function CheckoutPage() {
 
           {!isFreeCart && (configLoading ? <div className="py-8 text-center text-sm text-gray-400"><Loader2 className="mx-auto mb-2 animate-spin" />Chargement...</div> : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {config?.test_payments_enabled && (
+                <button
+                  type="button"
+                  onClick={() => setProvider("__test__")}
+                  className={`relative overflow-hidden rounded-xl border p-4 text-left transition ${provider === "__test__" ? "border-violet-500 bg-violet-50 ring-2 ring-violet-100" : "border-violet-200 bg-white hover:border-violet-400"}`}
+                >
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="grid h-9 w-9 place-items-center rounded-lg bg-violet-100 text-violet-700"><FlaskConical size={19} /></span>
+                    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700">Sandbox local</span>
+                  </div>
+                  <p className="font-semibold text-violet-950">Paiement test LearnEas</p>
+                  <p className="mt-1 text-xs leading-5 text-violet-700">Simule immédiatement un paiement réussi, sans carte et sans contacter de prestataire.</p>
+                </button>
+              )}
               {availableGateways.map((gateway) => (
                 <button key={gateway.code} type="button" disabled={!gateway.configured && gateway.code !== "manual"} onClick={() => setProvider(gateway.code)} className={`rounded-xl border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-45 ${provider === gateway.code ? "border-brand-600 bg-brand-50" : "border-gray-200 hover:border-brand-200"}`}>
                   <div className="mb-2 flex items-center justify-between"><span className="text-brand-700"><GatewayIcon code={gateway.code} /></span>{gateway.sandbox && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">TEST</span>}</div>
@@ -108,19 +124,23 @@ export default function CheckoutPage() {
                   {!gateway.configured && gateway.code !== "manual" && <p className="mt-2 text-[11px] font-semibold text-red-600">Clés serveur non configurées</p>}
                 </button>
               ))}
-              {availableGateways.length === 0 && <p className="col-span-full rounded-xl bg-amber-50 p-4 text-sm text-amber-800">Aucun moyen de paiement actif pour {currency}.</p>}
+              {availableGateways.length === 0 && !config?.test_payments_enabled && <p className="col-span-full rounded-xl bg-amber-50 p-4 text-sm text-amber-800">Aucun moyen de paiement actif pour {currency}.</p>}
             </div>
           ))}
 
           {isFreeCart ? (
             <p className="rounded-xl bg-emerald-50 p-4 text-sm font-medium text-emerald-800">Ce panier est gratuit. Aucun moyen de paiement externe n’est requis.</p>
           ) : (
-            <p className="mt-5 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">LearnEas ne stocke jamais les numéros de carte. Les paiements externes sont finalisés sur la page sécurisée du prestataire activé.</p>
+            provider === "__test__" ? (
+              <p className="mt-5 rounded-lg border border-violet-100 bg-violet-50 p-3 text-sm text-violet-800"><strong>Mode test :</strong> aucune transaction bancaire ne sera créée. L'accès au contenu sera accordé comme après un paiement réussi.</p>
+            ) : (
+              <p className="mt-5 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">LearnEas ne stocke jamais les numéros de carte. Les paiements externes sont finalisés sur la page sécurisée du prestataire activé.</p>
+            )
           )}
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
           <button onClick={handlePay} disabled={loading || (!isFreeCart && (configLoading || !provider))} className="btn-primary mt-5 w-full">
             {loading ? <Loader2 className="animate-spin" size={18} /> : <ShieldCheck size={18} />}
-            {isFreeCart ? "Obtenir gratuitement" : <>Payer {selectedCurrency ? `${convertedTotal.toLocaleString("fr-FR", { maximumFractionDigits: selectedCurrency.decimal_places })} ${selectedCurrency.symbol || selectedCurrency.code}` : formatPrice(total())}</>}
+            {isFreeCart ? "Obtenir gratuitement" : provider === "__test__" ? <>Simuler le paiement · {selectedCurrency ? `${convertedTotal.toLocaleString("fr-FR", { maximumFractionDigits: selectedCurrency.decimal_places })} ${selectedCurrency.symbol || selectedCurrency.code}` : formatPrice(total())}</> : <>Payer {selectedCurrency ? `${convertedTotal.toLocaleString("fr-FR", { maximumFractionDigits: selectedCurrency.decimal_places })} ${selectedCurrency.symbol || selectedCurrency.code}` : formatPrice(total())}</>}
           </button>
           <p className="mt-2 text-center text-xs text-gray-400">Paiement chiffré et sécurisé.</p>
         </div>

@@ -10,6 +10,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = config("SECRET_KEY", default="dev-secret-key-change-me")
 DEBUG = config("DEBUG", default=True, cast=bool)
+TEST_PAYMENTS_ENABLED = config("TEST_PAYMENTS_ENABLED", default=DEBUG, cast=bool)
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="*", cast=Csv())
 
 INSTALLED_APPS = [
@@ -180,8 +181,18 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.UserRateThrottle",
     ),
     "DEFAULT_THROTTLE_RATES": {
-        "anon": "120/hour",
-        "user": "1200/hour",
+        # Les endpoints publics du catalogue chargent plusieurs ressources par page.
+        # En développement on garde une protection élevée sans gêner les tests manuels ;
+        # en production les valeurs restent bornées et peuvent être ajustées par variables
+        # d'environnement. Les opérations sensibles conservent leurs throttles dédiés.
+        "anon": config(
+            "ANON_THROTTLE_RATE",
+            default="10000/hour" if DEBUG else "1200/hour",
+        ),
+        "user": config(
+            "USER_THROTTLE_RATE",
+            default="30000/hour" if DEBUG else "6000/hour",
+        ),
         "auth": "10/min",
         "password_reset": "5/hour",
         "checkout": "20/hour",

@@ -1,3 +1,27 @@
+# v31 — Lecteurs, paiement test, panier et contrôle admin
+
+- Correction du lecteur PDF privé : le backend renvoie désormais le vrai `Content-Type` (`application/pdf`) et un `Content-Disposition: inline`, ce qui empêche l'affichage des octets PDF sous forme de texte illisible (`%PDF`, `endstream`, caractères corrompus).
+- Les leçons marquées **Aperçu gratuit** sont maintenant réellement cliquables depuis la fiche du cours et s'ouvrent dans un lecteur vidéo intégré.
+- Le programme du cours est réhydraté avec la session JWT : un administrateur voit et peut lire toutes les leçons et ressources PDF, même verrouillées pour le public.
+- Ajout d'un espace de **vérification administrateur** dédié pour les cours, PDF et formations, y compris les contenus non publiés.
+- Refonte visuelle de l'onglet admin **Contenus** : cartes éditoriales, états, indicateurs, accès de vérification, fiche publique, publication, mise en avant et suppression.
+- Ajout d'un **paiement test LearnEas** local : simulation d'un paiement réussi sans carte ni API externe lorsque `TEST_PAYMENTS_ENABLED=True`. Le mode est désactivable et doit rester désactivé en production.
+- Le panier est vidé immédiatement à la déconnexion pour éviter qu'un nouveau compte retrouve les articles du compte précédent.
+- Tests de régression ajoutés pour le MIME PDF, l'accès admin complet et le paiement test.
+
+---
+
+# v30 — Correctif 429 / healthcheck frontend
+
+- Correction de la cause des `429 Too Many Requests` observés sur les endpoints catalogue : le healthcheck Docker du frontend sondait `/` toutes les 15 secondes, ce qui exécutait la page d'accueil Next.js côté serveur et déclenchait trois appels API (`categories`, `featured`, `pdfs`) à chaque sonde.
+- Ajout d'un endpoint frontend dédié et sans dépendance backend, `GET /healthz`, puis bascule du healthcheck Docker vers cet endpoint léger.
+- Throttling global DRF rendu configurable par `ANON_THROTTLE_RATE` et `USER_THROTTLE_RATE`, avec des valeurs de développement suffisamment hautes pour les tests locaux tout en conservant des valeurs de production bornées par défaut.
+- Les quotas sensibles existants (`auth`, `password_reset`, `checkout`, `media`, `live`, `admin_test`, `webhook`) restent inchangés.
+- Le frontend distingue désormais un HTTP 429 d'une panne réseau : le bandeau indique un chargement temporairement limité au lieu de prétendre que le serveur est injoignable.
+- Documentation des variables de throttling dans les exemples d'environnement Docker/backend.
+
+---
+
 # v29 — Upload vidéo volumineux & lecteur PDF débloqué
 
 - Correction de l'erreur HTTP **413** lors de l'ajout de vidéos de cours : limite Nginx portée à 2 Go, timeouts d'upload/proxy étendus et timeout Gunicorn adapté aux traitements longs.

@@ -1,9 +1,12 @@
 from pathlib import Path
+import mimetypes
 from django.conf import settings
 from django.core import signing
 from django.core.files.storage import default_storage
+from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.utils.decorators import method_decorator
+from django.utils.http import content_disposition_header
 from django.views.decorators.clickjacking import xframe_options_exempt
 from urllib.parse import urlparse
 from rest_framework.views import APIView
@@ -63,6 +66,13 @@ class PrivateMediaView(APIView):
             return Response({"detail": "Chemin média invalide."}, status=403)
         if not candidate.is_file():
             return Response({"detail": "Fichier introuvable."}, status=404)
-        response = Response(status=200)
+        # Important : utiliser une HttpResponse Django et non une Response DRF.
+        # Une réponse DRF sans corps est soumise au renderer négocié (JSON par défaut),
+        # ce qui peut transformer le Content-Type du fichier servi par X-Accel-Redirect.
+        # Le navigateur recevait alors les octets du PDF comme du texte brut (`%PDF`,
+        # `endstream`, caractères illisibles) au lieu d'ouvrir son lecteur PDF natif.
+        content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        response = HttpResponse(status=200, content_type=content_type)
+        response["Content-Disposition"] = content_disposition_header(False, Path(name).name)
         response["X-Accel-Redirect"] = f"/_protected_media/{name}"
         return allow_embedding(response)

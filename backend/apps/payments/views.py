@@ -136,6 +136,9 @@ class CheckoutView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         user = request.user
+        test_payment = bool(data.get("test_payment"))
+        if test_payment and not settings.TEST_PAYMENTS_ENABLED:
+            return Response({"detail": "Les paiements de test sont désactivés sur cet environnement."}, status=403)
 
         currency = Currency.objects.filter(code=data["currency"], is_active=True).first()
         if not currency:
@@ -169,14 +172,19 @@ class CheckoutView(APIView):
         payment_total = (base_total * Decimal(currency.exchange_rate)).quantize(quantum, rounding=ROUND_HALF_UP)
 
         if base_total > 0:
-            if not gateway or not gateway.is_active:
-                return Response({"provider": ["Ce moyen de paiement n'est pas actif."]}, status=400)
-            if gateway.supported_currencies and currency.code not in gateway.supported_currencies:
-                return Response({"provider": [f"{gateway.name} ne prend pas en charge {currency.code}."]}, status=400)
-            if gateway.code != Order.Provider.MANUAL and not is_configured(gateway.code, sandbox=gateway.sandbox):
-                mode = "test" if gateway.sandbox else "production"
-                return Response({"provider": [f"{gateway.name} est activé en mode {mode}, mais ses clés serveur correspondantes ne sont pas configurées."]}, status=503)
-            provider_code = gateway.code
+            if test_payment:
+                # Bac à sable interne : aucune API bancaire n'est appelée. Les commandes
+                # restent clairement marquées `manual` + `provider_sandbox=True`.
+                provider_code = Order.Provider.MANUAL
+            else:
+                if not gateway or not gateway.is_active:
+                    return Response({"provider": ["Ce moyen de paiement n'est pas actif."]}, status=400)
+                if gateway.supported_currencies and currency.code not in gateway.supported_currencies:
+                    return Response({"provider": [f"{gateway.name} ne prend pas en charge {currency.code}."]}, status=400)
+                if gateway.code != Order.Provider.MANUAL and not is_configured(gateway.code, sandbox=gateway.sandbox):
+                    mode = "test" if gateway.sandbox else "production"
+                    return Response({"provider": [f"{gateway.name} est activé en mode {mode}, mais ses clés serveur correspondantes ne sont pas configurées."]}, status=503)
+                provider_code = gateway.code
         else:
             # Aucune passerelle n'est contactée pour une acquisition gratuite.
             provider_code = Order.Provider.MANUAL
@@ -184,7 +192,7 @@ class CheckoutView(APIView):
         order = Order.objects.create(
             user=user,
             provider=provider_code,
-            provider_sandbox=bool(gateway.sandbox) if base_total > 0 and gateway else False,
+            provider_sandbox=bool(test_payment or (gateway.sandbox if base_total > 0 and gateway else False)),
             base_total_amount=base_total,
             total_amount=payment_total,
             currency=currency.code,
@@ -206,7 +214,7 @@ class CheckoutView(APIView):
             for formation in formations:
                 FormationSeatReservation.objects.create(order=order, formation=formation, user=user, expires_at=reservation_expiry)
 
-        if base_total == 0:
+        if base_total == 0 or test_payment:
             self._fulfill(order)
             checkout_url = None
         elif provider_code == Order.Provider.MANUAL:
@@ -224,7 +232,8 @@ class CheckoutView(APIView):
             "order": OrderSerializer(order).data,
             "requires_payment": base_total > 0,
             "checkout_url": checkout_url,
-            "manual_review": bool(base_total > 0 and provider_code == Order.Provider.MANUAL),
+            "manual_review": bool(base_total > 0 and provider_code == Order.Provider.MANUAL and not test_payment),
+            "test_payment": test_payment,
         }, status=201)
 
     def _fulfill(self, order):
@@ -551,6 +560,7 @@ class PublicPaymentConfigView(APIView):
             "currencies": CurrencySerializer(currencies, many=True).data,
             "gateways": PaymentGatewaySerializer(gateways, many=True).data,
             "default_currency": next((item.code for item in currencies if item.is_default), "MAD"),
+            "test_payments_enabled": bool(settings.TEST_PAYMENTS_ENABLED),
         })
 
 

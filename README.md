@@ -340,3 +340,17 @@ L’API LearnEas (`/api/...`) utilise JWT (`Authorization: Bearer ...`) et **pas
 ## Exécution de code dans les séances live
 
 La salle live peut exécuter JavaScript dans une iframe sandboxée et Python dans le navigateur via Pyodide/WebAssembly (version épinglée `0.27.7` chargée depuis jsDelivr). HTML et CSS disposent d'un aperçu direct. Java, C et C++ restent éditables et synchronisés mais ne sont pas exécutés côté serveur, afin de ne pas exposer le backend à l'exécution arbitraire de code. En environnement à accès Internet filtré, autoriser `https://cdn.jsdelivr.net` ou héberger les ressources Pyodide en interne.
+
+### Paiement test local
+
+En développement, `TEST_PAYMENTS_ENABLED=True` expose dans le checkout un moyen **Paiement test LearnEas**. Il simule un paiement réussi sans contacter Stripe, YouCan Pay ou GeniusPay et accorde les accès comme après une transaction confirmée.
+
+En production, imposez :
+
+```env
+DEBUG=False
+TEST_PAYMENTS_ENABLED=False
+```
+
+Le mode test interne ne doit jamais être activé sur un environnement public.
+

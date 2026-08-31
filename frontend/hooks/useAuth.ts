@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { api } from "@/lib/api";
 import { AuthUser } from "@/types";
+import { useCart } from "@/hooks/useCart";
 
 interface AuthState {
   user: AuthUser | null;
@@ -50,6 +51,9 @@ export const useAuth = create<AuthState>((set, get) => ({
 
   logout: async () => {
     const refresh = typeof window !== "undefined" ? localStorage.getItem("learneas_refresh") : null;
+    // Effacement immédiat du panier : le changement doit être visible dès le clic,
+    // sans attendre la réponse réseau de révocation du refresh token.
+    useCart.getState().clear();
     try {
       if (refresh) await api.post("/auth/logout/", { refresh });
     } catch {

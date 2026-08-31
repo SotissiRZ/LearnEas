@@ -82,6 +82,46 @@ class PaymentAccessRegressionTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertTrue(CourseEnrollment.objects.filter(user=self.student, course=self.course).exists())
 
+    @override_settings(TEST_PAYMENTS_ENABLED=True)
+    def test_internal_test_payment_fulfills_paid_course_without_gateway_keys(self):
+        PaymentGateway.objects.filter(code="manual").delete()
+        response = self.client.post(
+            "/api/payments/checkout/",
+            {
+                "course_ids": [self.course.id],
+                "pdf_ids": [],
+                "formation_ids": [],
+                "provider": "manual",
+                "currency": "MAD",
+                "test_payment": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertTrue(response.data["test_payment"])
+        self.assertFalse(response.data["manual_review"])
+        order = Order.objects.get(pk=response.data["order"]["id"])
+        self.assertEqual(order.status, Order.Status.PAID)
+        self.assertTrue(order.provider_sandbox)
+        self.assertTrue(CourseEnrollment.objects.filter(user=self.student, course=self.course).exists())
+
+    @override_settings(TEST_PAYMENTS_ENABLED=False)
+    def test_internal_test_payment_is_rejected_when_disabled(self):
+        response = self.client.post(
+            "/api/payments/checkout/",
+            {
+                "course_ids": [self.course.id],
+                "pdf_ids": [],
+                "formation_ids": [],
+                "provider": "manual",
+                "currency": "MAD",
+                "test_payment": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN, response.data)
+        self.assertFalse(CourseEnrollment.objects.filter(user=self.student, course=self.course).exists())
+
     def test_checkout_does_not_charge_owned_course_again(self):
         CourseEnrollment.objects.create(user=self.student, course=self.course)
         response = self.client.post(

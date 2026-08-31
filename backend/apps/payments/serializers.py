@@ -50,6 +50,7 @@ class CheckoutSerializer(serializers.Serializer):
     formation_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, default=list)
     provider = serializers.CharField(max_length=30, default=Order.Provider.STRIPE)
     currency = serializers.CharField(max_length=3, default="MAD")
+    test_payment = serializers.BooleanField(required=False, default=False)
 
     def validate(self, attrs):
         attrs["provider"] = attrs["provider"].strip().lower()

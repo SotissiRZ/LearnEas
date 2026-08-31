@@ -90,7 +90,7 @@ export default async function CourseDetailPage({ params }: { params: Promise<{ s
                 {course.sections?.length || 0} sections · {course.total_lessons} vidéos · {formatDuration(course.total_duration_minutes)}
               </span>
             </div>
-            <CourseCurriculum sections={course.sections || []} pdfResources={course.pdf_resources || []} />
+            <CourseCurriculum course={course} />
           </section>
 
           {course.requirements && course.requirements.length > 0 && (

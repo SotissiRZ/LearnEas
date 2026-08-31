@@ -92,6 +92,13 @@ export class ApiError extends Error {
 }
 
 function buildErrorMessage(status: number, data: unknown): ApiError {
+  // Un 429 prouve que le serveur EST joignable : ne jamais le présenter comme une panne
+  // réseau. DRF peut renvoyer un détail localisé avec un temps d'attente très long ; on
+  // garde un message stable et compréhensible côté interface.
+  if (status === 429) {
+    return new ApiError("Trop de requêtes ont été envoyées. Patientez un instant puis réessayez.");
+  }
+
   if (data && typeof data === "object") {
     const obj = data as Record<string, unknown>;
 

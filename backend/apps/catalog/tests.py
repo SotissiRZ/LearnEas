@@ -141,8 +141,24 @@ class CatalogAccessRegressionTests(APITestCase):
         media = self.client.get(protected_url)
         self.assertEqual(media.status_code, status.HTTP_200_OK)
         self.assertIn("/_protected_media/", media["X-Accel-Redirect"])
+        self.assertEqual(media["Content-Type"], "application/pdf")
+        self.assertIn("inline", media["Content-Disposition"])
         self.assertIn("frame-ancestors", media["Content-Security-Policy"])
         self.assertNotEqual(media.get("X-Frame-Options"), "DENY")
+
+
+    def test_admin_can_read_every_lesson_and_pdf_for_editorial_review(self):
+        self.course.published = False
+        self.course.save(update_fields=["published"])
+        self.client.force_authenticate(self.admin)
+        response = self.client.get(f"/api/catalog/courses/{self.course.slug}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data["is_enrolled"])
+        lesson = response.data["sections"][0]["lessons"][0]
+        self.assertFalse(lesson["locked"])
+        self.assertEqual(lesson["video_url"], "https://cdn.example.com/video.mp4")
+        self.assertFalse(response.data["pdf_resources"][0]["locked"])
+        self.assertIsNotNone(response.data["pdf_resources"][0]["file"])
 
     def test_category_write_uses_learneas_admin_role(self):
         self.client.force_authenticate(self.admin)
