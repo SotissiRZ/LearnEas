@@ -1,3 +1,18 @@
+# v41 — Vignette présentateur déplaçable pendant le partage d’écran
+
+- Le partage d’écran ne remplace plus visuellement le présentateur : LearnEas fabrique un **flux composite écran + caméra** envoyé aux autres participants.
+- La caméra du présentateur apparaît en **petite vignette Picture-in-Picture** au-dessus de la présentation.
+- La vignette est **déplaçable par glisser-déposer** ; sa position est intégrée au flux partagé et donc visible au même endroit pour les autres participants.
+- Le présentateur conserve localement une prévisualisation nette de l’écran, avec une vignette DOM indépendante afin que le déplacement reste fluide.
+- Si la caméra est coupée pendant la présentation, la vignette reste présente avec l’avatar/initiale ; elle reprend automatiquement la vidéo lorsque la caméra est rallumée.
+- Le bouton caméra reste utilisable pendant le partage d’écran : il masque/affiche la caméra du présentateur sans interrompre la présentation.
+- Le flux composite est produit en canvas jusqu’à **1280×720 à 30 i/s** pour limiter la charge CPU et rester compatible avec la piste WebRTC déjà négociée.
+- À l’arrêt du partage, la piste composite est libérée et la caméra classique est restaurée sur le sender WebRTC existant, sans second sender vidéo.
+- Nettoyage renforcé des pistes/canvas/animations lors d’une sortie de salle, d’une coupure de partage ou d’un échec de capture.
+- Aucune migration de base de données n’est requise.
+
+---
+
 # v40 — Extinction réelle de la caméra en réunion
 
 - Le bouton **Caméra** ne se contente plus de désactiver `track.enabled` : la piste vidéo est retirée du `MediaStream`, détachée des pairs WebRTC puis arrêtée avec `MediaStreamTrack.stop()`.

@@ -1,5 +1,8 @@
 # LearnEas
 
+> **v41 — Visioconférence :** pendant un partage d’écran, la caméra du présentateur est affichée en vignette déplaçable et intégrée au flux présenté.
+
+
 > **Mise à jour majeure** — voir [`CHANGELOG.md`](./CHANGELOG.md) pour le détail des corrections de
 > sécurité, du module Formation Interactive, de l'orientation Afrique (Mobile Money, pays africains)
 > et de toutes les vérifications effectuées.

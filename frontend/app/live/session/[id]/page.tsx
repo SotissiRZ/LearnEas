@@ -17,6 +17,7 @@ import {
   Mic,
   MicOff,
   Monitor,
+  Move,
   PanelRightClose,
   PanelRightOpen,
   ChevronUp,
@@ -212,6 +213,7 @@ export default function LiveSessionPage() {
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
   const [screenSharing, setScreenSharing] = useState(false);
+  const [presenterPipPosition, setPresenterPipPosition] = useState({ x: 0.745, y: 0.68 });
   const [recording, setRecording] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -247,6 +249,14 @@ export default function LiveSessionPage() {
   const localStreamRef = useRef<MediaStream | null>(null);
   const cameraTrackRef = useRef<MediaStreamTrack | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
+  const shareCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const shareScreenSourceRef = useRef<HTMLVideoElement | null>(null);
+  const shareCameraSourceRef = useRef<HTMLVideoElement | null>(null);
+  const shareCompositeStreamRef = useRef<MediaStream | null>(null);
+  const shareCompositeTrackRef = useRef<MediaStreamTrack | null>(null);
+  const shareAnimationRef = useRef<number | null>(null);
+  const presenterCameraRef = useRef<HTMLVideoElement | null>(null);
+  const presenterPipPositionRef = useRef({ x: 0.745, y: 0.68 });
   const peersRef = useRef<Map<number, RTCPeerConnection>>(new Map());
   const pendingIceRef = useRef<Map<number, RTCIceCandidateInit[]>>(new Map());
   const lastSignalIdRef = useRef(0);
@@ -267,6 +277,22 @@ export default function LiveSessionPage() {
   useEffect(() => {
     attendanceIdRef.current = attendanceId;
   }, [attendanceId]);
+
+  useEffect(() => {
+    presenterPipPositionRef.current = presenterPipPosition;
+  }, [presenterPipPosition]);
+
+  useEffect(() => {
+    const element = presenterCameraRef.current;
+    if (!element) return;
+    const track = cameraTrackRef.current;
+    if (screenSharing && cameraOn && track && track.readyState === "live") {
+      element.srcObject = new MediaStream([track]);
+      void element.play().catch(() => {});
+    } else {
+      element.srcObject = null;
+    }
+  }, [screenSharing, cameraOn]);
 
   useEffect(() => {
     if (!ready || !Number.isFinite(sessionId)) return;
@@ -426,10 +452,176 @@ export default function LiveSessionPage() {
   }, []);
 
   const syncLocalVideo = useCallback(() => {
-    if (localVideoRef.current && localStreamRef.current) {
+    if (!localVideoRef.current) return;
+    // Pendant une présentation, le présentateur voit la capture brute de son
+    // écran. La caméra est rendue au-dessus comme une vignette DOM déplaçable,
+    // tandis que les autres participants reçoivent le flux composite.
+    if (screenStreamRef.current) {
+      localVideoRef.current.srcObject = screenStreamRef.current;
+    } else if (localStreamRef.current) {
       localVideoRef.current.srcObject = localStreamRef.current;
+    } else {
+      localVideoRef.current.srcObject = null;
     }
   }, []);
+
+  const stopShareComposite = useCallback(() => {
+    if (shareAnimationRef.current !== null) {
+      cancelAnimationFrame(shareAnimationRef.current);
+      shareAnimationRef.current = null;
+    }
+    shareCompositeTrackRef.current?.stop();
+    shareCompositeStreamRef.current?.getTracks().forEach((track) => track.stop());
+    shareCompositeTrackRef.current = null;
+    shareCompositeStreamRef.current = null;
+    if (shareScreenSourceRef.current) {
+      shareScreenSourceRef.current.pause();
+      shareScreenSourceRef.current.srcObject = null;
+    }
+    if (shareCameraSourceRef.current) {
+      shareCameraSourceRef.current.pause();
+      shareCameraSourceRef.current.srcObject = null;
+    }
+    shareScreenSourceRef.current = null;
+    shareCameraSourceRef.current = null;
+    shareCanvasRef.current = null;
+  }, []);
+
+  const attachCameraToShareComposite = useCallback(async (track: MediaStreamTrack | null) => {
+    const source = shareCameraSourceRef.current;
+    if (!source) return;
+    if (track && track.readyState === "live") {
+      source.srcObject = new MediaStream([track]);
+      await source.play().catch(() => {});
+    } else {
+      source.pause();
+      source.srcObject = null;
+    }
+  }, []);
+
+  const startShareComposite = useCallback(async (displayStream: MediaStream) => {
+    stopShareComposite();
+    const displayTrack = displayStream.getVideoTracks()[0];
+    if (!displayTrack) throw new Error("Aucune piste d'écran");
+
+    const screenSource = document.createElement("video");
+    screenSource.autoplay = true;
+    screenSource.muted = true;
+    screenSource.playsInline = true;
+    screenSource.srcObject = displayStream;
+    await screenSource.play().catch(() => {});
+
+    const cameraSource = document.createElement("video");
+    cameraSource.autoplay = true;
+    cameraSource.muted = true;
+    cameraSource.playsInline = true;
+    const activeCamera = cameraTrackRef.current;
+    if (activeCamera && activeCamera.readyState === "live") {
+      cameraSource.srcObject = new MediaStream([activeCamera]);
+      await cameraSource.play().catch(() => {});
+    }
+
+    shareScreenSourceRef.current = screenSource;
+    shareCameraSourceRef.current = cameraSource;
+
+    const settings = displayTrack.getSettings();
+    const sourceWidth = Math.max(640, Number(settings.width) || screenSource.videoWidth || 1280);
+    const sourceHeight = Math.max(360, Number(settings.height) || screenSource.videoHeight || 720);
+    const scale = Math.min(1, 1280 / sourceWidth, 720 / sourceHeight);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(640, Math.round(sourceWidth * scale));
+    canvas.height = Math.max(360, Math.round(sourceHeight * scale));
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("Canvas indisponible");
+    shareCanvasRef.current = canvas;
+
+    const roundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) => {
+      const r = Math.min(radius, width / 2, height / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + width, y, x + width, y + height, r);
+      ctx.arcTo(x + width, y + height, x, y + height, r);
+      ctx.arcTo(x, y + height, x, y, r);
+      ctx.arcTo(x, y, x + width, y, r);
+      ctx.closePath();
+    };
+
+    let lastFrameAt = 0;
+    const draw = (now: number) => {
+      shareAnimationRef.current = requestAnimationFrame(draw);
+      if (now - lastFrameAt < 32) return;
+      lastFrameAt = now;
+
+      context.fillStyle = "#05070b";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      if (screenSource.readyState >= 2) {
+        context.drawImage(screenSource, 0, 0, canvas.width, canvas.height);
+      }
+
+      const pipWidth = Math.round(canvas.width * 0.22);
+      const cameraRatio = cameraSource.videoWidth > 0 && cameraSource.videoHeight > 0
+        ? cameraSource.videoWidth / cameraSource.videoHeight
+        : 16 / 9;
+      const pipHeight = Math.round(pipWidth / Math.max(1.15, Math.min(cameraRatio, 2)));
+      const pos = presenterPipPositionRef.current;
+      const pipX = Math.round(Math.max(8, Math.min(canvas.width - pipWidth - 8, pos.x * canvas.width)));
+      const pipY = Math.round(Math.max(8, Math.min(canvas.height - pipHeight - 8, pos.y * canvas.height)));
+      const radius = Math.max(10, Math.round(canvas.width * 0.008));
+
+      context.save();
+      context.shadowColor = "rgba(0,0,0,.45)";
+      context.shadowBlur = Math.max(10, Math.round(canvas.width * 0.01));
+      context.shadowOffsetY = Math.max(3, Math.round(canvas.height * 0.004));
+      roundedRect(context, pipX, pipY, pipWidth, pipHeight, radius);
+      context.fillStyle = "#111827";
+      context.fill();
+      context.clip();
+      if (cameraSource.srcObject && cameraSource.readyState >= 2 && cameraTrackRef.current?.readyState === "live") {
+        const vw = cameraSource.videoWidth || pipWidth;
+        const vh = cameraSource.videoHeight || pipHeight;
+        const videoRatio = vw / vh;
+        const boxRatio = pipWidth / pipHeight;
+        let sx = 0, sy = 0, sw = vw, sh = vh;
+        if (videoRatio > boxRatio) {
+          sw = vh * boxRatio;
+          sx = (vw - sw) / 2;
+        } else {
+          sh = vw / boxRatio;
+          sy = (vh - sh) / 2;
+        }
+        context.drawImage(cameraSource, sx, sy, sw, sh, pipX, pipY, pipWidth, pipHeight);
+      } else {
+        context.fillStyle = "#111827";
+        context.fillRect(pipX, pipY, pipWidth, pipHeight);
+        context.fillStyle = "#10b981";
+        context.beginPath();
+        context.arc(pipX + pipWidth / 2, pipY + pipHeight / 2 - pipHeight * 0.08, pipHeight * 0.19, 0, Math.PI * 2);
+        context.fill();
+        context.fillStyle = "#ffffff";
+        context.font = `600 ${Math.max(14, Math.round(pipHeight * 0.16))}px system-ui, sans-serif`;
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        const initial = room?.user.name?.trim().charAt(0).toUpperCase() || "U";
+        context.fillText(initial, pipX + pipWidth / 2, pipY + pipHeight / 2 - pipHeight * 0.08);
+      }
+      context.restore();
+      context.save();
+      roundedRect(context, pipX, pipY, pipWidth, pipHeight, radius);
+      context.strokeStyle = "rgba(255,255,255,.82)";
+      context.lineWidth = Math.max(2, Math.round(canvas.width * 0.0015));
+      context.stroke();
+      context.restore();
+    };
+    shareAnimationRef.current = requestAnimationFrame(draw);
+
+    const capture = canvas.captureStream(30);
+    const compositeTrack = capture.getVideoTracks()[0];
+    if (!compositeTrack) throw new Error("Flux composite indisponible");
+    compositeTrack.contentHint = "detail";
+    shareCompositeStreamRef.current = capture;
+    shareCompositeTrackRef.current = compositeTrack;
+    return compositeTrack;
+  }, [room?.user.name, stopShareComposite]);
 
   const replaceTrackOnPeers = useCallback(async (kind: "audio" | "video", track: MediaStreamTrack | null) => {
     const updates = Array.from(peersRef.current.values()).map(async (pc) => {
@@ -465,6 +657,10 @@ export default function LiveSessionPage() {
         track.stop();
       }
       setCameraOn(false);
+      if (shareCameraSourceRef.current) {
+        shareCameraSourceRef.current.pause();
+        shareCameraSourceRef.current.srcObject = null;
+      }
       syncLocalVideo();
 
       if (detachFromPeers) {
@@ -482,6 +678,7 @@ export default function LiveSessionPage() {
   }, []);
 
   const stopAllConferenceMedia = useCallback(() => {
+    stopShareComposite();
     screenStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     peersRef.current.forEach((pc) => pc.close());
@@ -490,7 +687,7 @@ export default function LiveSessionPage() {
     screenStreamRef.current = null;
     localStreamRef.current = null;
     cameraTrackRef.current = null;
-  }, []);
+  }, [stopShareComposite]);
 
   const handleForcedRemoval = useCallback(async () => {
     const activeAttendanceId = attendanceIdRef.current;
@@ -862,8 +1059,12 @@ export default function LiveSessionPage() {
   }
 
   async function toggleCamera() {
-    if (screenSharing) {
-      setNotice("Arrêtez le partage d'écran avant de modifier la caméra.");
+    // Comme dans les outils de visioconférence modernes, la caméra peut rester
+    // active pendant un partage d'écran : elle est alors intégrée comme une
+    // vignette présentateur dans le flux composite.
+    if (screenSharing && cameraOn) {
+      await releaseCamera(false);
+      await attachCameraToShareComposite(null);
       return;
     }
     let track = cameraTrackRef.current;
@@ -883,9 +1084,15 @@ export default function LiveSessionPage() {
           }
         };
         if (!localStreamRef.current) localStreamRef.current = new MediaStream();
-        localStreamRef.current.getVideoTracks().forEach((item) => localStreamRef.current?.removeTrack(item));
-        localStreamRef.current.addTrack(track);
-        await replaceTrackOnPeers("video", track);
+        if (screenSharing) {
+          // Le flux sortant reste le composite écran + vignette. La piste caméra
+          // sert uniquement de source au composite et à la vignette locale.
+          await attachCameraToShareComposite(track);
+        } else {
+          localStreamRef.current.getVideoTracks().forEach((item) => localStreamRef.current?.removeTrack(item));
+          localStreamRef.current.addTrack(track);
+          await replaceTrackOnPeers("video", track);
+        }
         setCameraOn(true);
         syncLocalVideo();
         await localVideoRef.current?.play().catch(() => {});
@@ -898,7 +1105,7 @@ export default function LiveSessionPage() {
     }
     // Couper la caméra doit libérer le matériel, pas seulement rendre la
     // piste muette. Au prochain clic, getUserMedia recréera une piste propre.
-    await releaseCamera(true);
+    await releaseCamera(!screenSharing);
   }
 
   async function switchAudioDevice(deviceId: string) {
@@ -967,50 +1174,87 @@ export default function LiveSessionPage() {
   async function startScreenShare() {
     if (!attendanceId || screenSharing || !localStreamRef.current || recording) return;
     try {
-      const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 30, max: 30 } },
+        audio: false,
+      });
       const displayTrack = displayStream.getVideoTracks()[0];
-      if (!displayTrack) return;
-      displayTrack.onended = () => {
-        stopScreenShare().catch(() => {});
-      };
-
-      const currentTrack = localStreamRef.current.getVideoTracks()[0] || null;
-      if (currentTrack && currentTrack.id !== displayTrack.id) {
-        localStreamRef.current.removeTrack(currentTrack);
+      if (!displayTrack) {
+        displayStream.getTracks().forEach((track) => track.stop());
+        return;
       }
-      localStreamRef.current.addTrack(displayTrack);
-      await replaceTrackOnPeers("video", displayTrack);
+
+      // Conserver la caméra physique en parallèle. Elle n'est plus envoyée
+      // directement : elle devient la vignette du présentateur dans le canvas.
+      const currentOutgoing = localStreamRef.current.getVideoTracks()[0] || null;
+      if (currentOutgoing) localStreamRef.current.removeTrack(currentOutgoing);
+
       screenStreamRef.current = displayStream;
+      const compositeTrack = await startShareComposite(displayStream);
+      localStreamRef.current.addTrack(compositeTrack);
+      await replaceTrackOnPeers("video", compositeTrack);
       setScreenSharing(true);
       syncLocalVideo();
+      await localVideoRef.current?.play().catch(() => {});
+
+      displayTrack.onended = () => {
+        void stopScreenShare();
+      };
     } catch {
+      stopShareComposite();
+      screenStreamRef.current?.getTracks().forEach((track) => track.stop());
+      screenStreamRef.current = null;
+      // Si la composition échoue après avoir détaché la caméra du MediaStream
+      // local, la remettre immédiatement afin de ne pas casser la visioconférence.
+      const cameraTrack = cameraTrackRef.current;
+      if (cameraTrack && cameraTrack.readyState === "live" && localStreamRef.current) {
+        if (!localStreamRef.current.getVideoTracks().some((track) => track.id === cameraTrack.id)) {
+          localStreamRef.current.addTrack(cameraTrack);
+        }
+        await replaceTrackOnPeers("video", cameraTrack);
+        setCameraOn(true);
+      }
+      setScreenSharing(false);
+      syncLocalVideo();
       setNotice("Le partage d'écran a été annulé ou n'est pas disponible dans ce navigateur.");
     }
   }
 
   async function stopScreenShare() {
-    if (!screenSharing || !localStreamRef.current) return;
-    const screenTrack = localStreamRef.current.getVideoTracks()[0] || null;
-    if (screenTrack && screenTrack !== cameraTrackRef.current) {
-      localStreamRef.current.removeTrack(screenTrack);
+    if (!screenStreamRef.current && !shareCompositeTrackRef.current) return;
+    const compositeTrack = shareCompositeTrackRef.current;
+    if (compositeTrack && localStreamRef.current) {
+      localStreamRef.current.getVideoTracks().forEach((track) => {
+        if (track.id === compositeTrack.id) localStreamRef.current?.removeTrack(track);
+      });
     }
 
+    // Couper d'abord l'animation/capture, puis rendre la caméra classique aux
+    // pairs. Cela évite un flash noir ou un second sender vidéo.
+    stopShareComposite();
+    screenStreamRef.current?.getTracks().forEach((track) => {
+      track.onended = null;
+      track.stop();
+    });
+    screenStreamRef.current = null;
+
     const cameraTrack = cameraTrackRef.current;
+    // cameraTrackRef est la source de vérité ici : le callback onended du partage
+    // peut avoir été créé avant un changement d'état React de la caméra.
     if (cameraTrack && cameraTrack.readyState !== "ended") {
-      if (!localStreamRef.current.getVideoTracks().some((track) => track.id === cameraTrack.id)) {
+      if (localStreamRef.current && !localStreamRef.current.getVideoTracks().some((track) => track.id === cameraTrack.id)) {
         localStreamRef.current.addTrack(cameraTrack);
       }
-      cameraTrack.enabled = cameraOn;
       await replaceTrackOnPeers("video", cameraTrack);
+      setCameraOn(true);
     } else {
       await replaceTrackOnPeers("video", null);
       setCameraOn(false);
     }
 
-    screenStreamRef.current?.getTracks().forEach((track) => track.stop());
-    screenStreamRef.current = null;
     setScreenSharing(false);
     syncLocalVideo();
+    await localVideoRef.current?.play().catch(() => {});
   }
 
   async function toggleHand() {
@@ -1666,14 +1910,29 @@ export default function LiveSessionPage() {
                     <div className={remoteFeeds.length === 0 ? "grid min-h-0 flex-1 grid-cols-1 gap-2.5 overflow-y-auto lg:grid-cols-[minmax(230px,340px)_minmax(0,1fr)]" : "grid min-h-0 flex-1 grid-cols-1 gap-2.5 overflow-y-auto lg:grid-cols-2 2xl:grid-cols-3"}>
                       <VideoTile
                         title="Vous"
-                        subtitle={screenSharing ? "Partage d'écran" : room.is_organizer ? "Organisateur" : "Participant"}
+                        subtitle={screenSharing ? (cameraOn ? "Écran + caméra" : "Partage d'écran") : room.is_organizer ? "Organisateur" : "Participant"}
                         videoRef={localVideoRef}
                         muted
                         footer={screenSharing ? "Écran partagé" : cameraOn ? "Caméra active" : "Caméra coupée"}
                         handRaised={myHandRaised}
                         avatar={room.user.avatar}
                         videoEnabled={screenSharing || cameraOn}
-                      />
+                        objectFit={screenSharing ? "contain" : "cover"}
+                      >
+                        {screenSharing && (
+                          <PresenterPip
+                            videoRef={presenterCameraRef}
+                            cameraOn={cameraOn}
+                            avatar={room.user.avatar}
+                            name={room.user.name}
+                            position={presenterPipPosition}
+                            onPositionChange={(position) => {
+                              presenterPipPositionRef.current = position;
+                              setPresenterPipPosition(position);
+                            }}
+                          />
+                        )}
+                      </VideoTile>
                       {remoteFeeds.map((feed) => (
                         <RemoteVideo
                           key={feed.userId}
@@ -1907,7 +2166,7 @@ export default function LiveSessionPage() {
             <div className={`fixed bottom-2 left-1/2 z-20 flex max-w-[calc(100%-1rem)] -translate-x-1/2 flex-nowrap items-center justify-center gap-1 overflow-x-auto whitespace-nowrap rounded-2xl border border-white/10 bg-gray-900/95 shadow-2xl backdrop-blur pointer-events-auto ${controlsCompact ? "px-1.5 py-1" : "w-auto lg:min-w-[980px] max-w-[1600px] px-2.5 py-1.5"}`}>
               <button type="button" onClick={() => setControlsCompact((value) => !value)} className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/10 text-gray-200 hover:bg-white/15" title={controlsCompact ? "Déployer les contrôles" : "Réduire les contrôles"}>{controlsCompact ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}</button>
               <ControlButton compact={controlsCompact} active={micOn} onClick={toggleMic} label={micOn ? "Micro" : "Micro coupé"}>{micOn ? <Mic size={15} /> : <MicOff size={15} />}</ControlButton>
-              <ControlButton compact={controlsCompact} active={cameraOn && !screenSharing} onClick={() => void toggleCamera()} disabled={screenSharing} label={screenSharing ? "Caméra verrouillée pendant le partage" : cameraOn ? "Caméra" : "Caméra coupée"}>{cameraOn ? <Video size={15} /> : <VideoOff size={15} />}</ControlButton>
+              <ControlButton compact={controlsCompact} active={cameraOn} onClick={() => void toggleCamera()} label={cameraOn ? (screenSharing ? "Masquer la caméra du présentateur" : "Caméra") : (screenSharing ? "Afficher la caméra du présentateur" : "Caméra coupée")}>{cameraOn ? <Video size={15} /> : <VideoOff size={15} />}</ControlButton>
               <ControlButton compact={controlsCompact} active={screenSharing} onClick={screenSharing ? () => stopScreenShare() : () => startScreenShare()} disabled={recording} label={screenSharing ? "Arrêter le partage" : "Partager l'écran"}>{screenSharing ? <ScreenShareOff size={15} /> : <ScreenShare size={15} />}</ControlButton>
               <ControlButton compact={controlsCompact} active={myHandRaised} onClick={toggleHand} label={myHandRaised ? "Baisser la main" : "Lever la main"}><Hand size={15} /></ControlButton>
               <ControlButton compact={controlsCompact} active={devicePanelOpen} onClick={() => { refreshDevices(); setDevicePanelOpen((value) => !value); }} label="Périphériques"><Settings size={15} /></ControlButton>
@@ -2140,11 +2399,11 @@ function ControlButton({ active, label, onClick, disabled, children, compact = f
   );
 }
 
-function VideoTile({ title, subtitle, footer, videoRef, muted, handRaised, avatar, videoEnabled = true }: { title: string; subtitle: string; footer: string; videoRef: React.RefObject<HTMLVideoElement>; muted?: boolean; handRaised?: boolean; avatar?: string | null; videoEnabled?: boolean }) {
+function VideoTile({ title, subtitle, footer, videoRef, muted, handRaised, avatar, videoEnabled = true, objectFit = "cover", children }: { title: string; subtitle: string; footer: string; videoRef: React.RefObject<HTMLVideoElement>; muted?: boolean; handRaised?: boolean; avatar?: string | null; videoEnabled?: boolean; objectFit?: "cover" | "contain"; children?: React.ReactNode }) {
   const initial = title.trim().charAt(0).toUpperCase() || "U";
   return (
     <div className={`relative min-h-[170px] overflow-hidden rounded-2xl border bg-black ${handRaised ? "border-amber-400/60" : "border-white/10"}`}>
-      <video ref={videoRef} autoPlay playsInline muted={muted} className={`h-full min-h-[170px] w-full object-cover transition-opacity ${videoEnabled ? "opacity-100" : "opacity-0"}`} />
+      <video ref={videoRef} autoPlay playsInline muted={muted} className={`h-full min-h-[170px] w-full ${objectFit === "contain" ? "object-contain" : "object-cover"} transition-opacity ${videoEnabled ? "opacity-100" : "opacity-0"}`} />
       {!videoEnabled && (
         <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-gray-900 to-gray-950">
           <div className="text-center">
@@ -2154,11 +2413,75 @@ function VideoTile({ title, subtitle, footer, videoRef, muted, handRaised, avata
           </div>
         </div>
       )}
-      <div className="absolute left-2 top-2 flex max-w-[75%] items-center gap-2 rounded-full bg-black/60 py-1 pl-1 pr-2.5 backdrop-blur">
+      {children}
+      <div className="pointer-events-none absolute left-2 top-2 flex max-w-[75%] items-center gap-2 rounded-full bg-black/60 py-1 pl-1 pr-2.5 backdrop-blur">
         {avatar ? <img loading="lazy" decoding="async" src={avatar} alt="" className="h-6 w-6 rounded-full object-cover" /> : <span className="grid h-6 w-6 place-items-center rounded-full bg-brand-500/20 text-[10px] font-bold text-brand-200">{initial}</span>}
         <div className="min-w-0 leading-tight"><div className="flex items-center gap-1"><p className="truncate text-[10px] font-semibold text-white">{title}</p>{handRaised && <Hand size={11} className="shrink-0 text-amber-300" />}</div><p className="truncate text-[8px] text-gray-400">{subtitle}</p></div>
       </div>
-      <span className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[8px] text-gray-300 backdrop-blur">{footer}</span>
+      <span className="pointer-events-none absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[8px] text-gray-300 backdrop-blur">{footer}</span>
+    </div>
+  );
+}
+
+function PresenterPip({ videoRef, cameraOn, avatar, name, position, onPositionChange }: { videoRef: React.RefObject<HTMLVideoElement>; cameraOn: boolean; avatar?: string | null; name: string; position: { x: number; y: number }; onPositionChange: (position: { x: number; y: number }) => void }) {
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const initial = name.trim().charAt(0).toUpperCase() || "U";
+
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: position.x,
+      originY: position.y,
+    };
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const element = event.currentTarget;
+    const parent = element.parentElement;
+    if (!parent) return;
+    const rect = parent.getBoundingClientRect();
+    const maxX = Math.max(0, 1 - element.offsetWidth / Math.max(1, rect.width) - 0.006);
+    const maxY = Math.max(0, 1 - element.offsetHeight / Math.max(1, rect.height) - 0.006);
+    const nextX = Math.min(maxX, Math.max(0.006, drag.originX + (event.clientX - drag.startX) / Math.max(1, rect.width)));
+    const nextY = Math.min(maxY, Math.max(0.006, drag.originY + (event.clientY - drag.startY) / Math.max(1, rect.height)));
+    onPositionChange({ x: nextX, y: nextY });
+  };
+
+  const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch {}
+  };
+
+  return (
+    <div
+      role="group"
+      aria-label="Vignette du présentateur, déplaçable"
+      title="Glissez pour déplacer votre vignette"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      className="absolute z-20 aspect-video w-[22%] min-w-[120px] max-w-[240px] cursor-grab touch-none select-none overflow-hidden rounded-xl border-2 border-white/90 bg-gray-900 shadow-2xl active:cursor-grabbing"
+      style={{ left: `${position.x * 100}%`, top: `${position.y * 100}%` }}
+    >
+      {cameraOn ? (
+        <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
+      ) : (
+        <div className="grid h-full w-full place-items-center bg-gradient-to-br from-gray-800 to-gray-950">
+          {avatar ? <img loading="lazy" decoding="async" src={avatar} alt="" className="h-14 w-14 rounded-full object-cover ring-2 ring-white/20" /> : <div className="grid h-14 w-14 place-items-center rounded-full bg-brand-600 text-lg font-bold text-white">{initial}</div>}
+        </div>
+      )}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/80 to-transparent px-2 pb-1.5 pt-5 text-[9px] font-medium text-white">
+        <span className="truncate">{name}</span>
+        <Move size={12} className="shrink-0 opacity-80" />
+      </div>
     </div>
   );
 }
