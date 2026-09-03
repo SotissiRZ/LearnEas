@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, ExternalLink, FileText, Maximize2, Minimize2, Printer, X } from "lucide-react";
+import { resolveMediaUrl } from "@/lib/media";
 
 export default function PdfViewer({ url, title = "Document PDF" }: { url: string; title?: string }) {
+  const resolvedUrl = useMemo(() => resolveMediaUrl(url), [url]);
   const [open, setOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const readerRef = useRef<HTMLDivElement | null>(null);
@@ -15,7 +17,7 @@ export default function PdfViewer({ url, title = "Document PDF" }: { url: string
   }, []);
 
   function printPdf() {
-    const win = window.open(url, "_blank");
+    const win = window.open(resolvedUrl, "_blank");
     if (win) {
       try { win.opener = null; } catch { /* noop */ }
       window.setTimeout(() => { try { win.print(); } catch { /* le lecteur natif garde son bouton Imprimer */ } }, 900);
@@ -35,10 +37,10 @@ export default function PdfViewer({ url, title = "Document PDF" }: { url: string
         <button onClick={() => setOpen(true)} className="btn-outline !py-1.5 !text-xs">
           <Maximize2 size={14} /> Lire
         </button>
-        <a href={url} target="_blank" rel="noreferrer" className="btn-outline !py-1.5 !text-xs" title="Ouvrir avec toutes les fonctions du lecteur PDF du navigateur">
+        <a href={resolvedUrl} target="_blank" rel="noreferrer" className="btn-outline !py-1.5 !text-xs" title="Ouvrir avec toutes les fonctions du lecteur PDF du navigateur">
           <ExternalLink size={14} /> Nouvel onglet
         </a>
-        <a href={url} download className="btn-outline !py-1.5 !text-xs"><Download size={14} /> Télécharger</a>
+        <a href={resolvedUrl} download className="btn-outline !py-1.5 !text-xs"><Download size={14} /> Télécharger</a>
       </div>
 
       {open && (
@@ -50,12 +52,12 @@ export default function PdfViewer({ url, title = "Document PDF" }: { url: string
                 <span className="hidden text-[11px] text-gray-400 md:inline">Recherche, pages, zoom et miniatures sont disponibles dans la barre native du lecteur.</span>
                 <button onClick={printPdf} className="btn-outline !py-1 !text-xs"><Printer size={14} /> Imprimer</button>
                 <button onClick={toggleFullscreen} className="btn-outline !py-1 !text-xs">{fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />} {fullscreen ? "Quitter plein écran" : "Plein écran"}</button>
-                <a href={url} target="_blank" rel="noreferrer" className="btn-outline !py-1 !text-xs"><ExternalLink size={14} /> Nouvel onglet</a>
-                <a href={url} download className="btn-outline !py-1 !text-xs"><Download size={14} /> Télécharger</a>
+                <a href={resolvedUrl} target="_blank" rel="noreferrer" className="btn-outline !py-1 !text-xs"><ExternalLink size={14} /> Nouvel onglet</a>
+                <a href={resolvedUrl} download className="btn-outline !py-1 !text-xs"><Download size={14} /> Télécharger</a>
                 <button onClick={() => setOpen(false)} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700" aria-label="Fermer le lecteur"><X size={18} /></button>
               </div>
             </div>
-            <iframe src={`${url}#toolbar=1&navpanes=1&scrollbar=1&view=FitH`} title={title} className="min-h-0 flex-1 bg-gray-100" />
+            <iframe src={`${resolvedUrl}#toolbar=1&navpanes=1&scrollbar=1&view=FitH`} title={title} className="min-h-0 flex-1 bg-gray-100" />
           </div>
         </div>
       )}

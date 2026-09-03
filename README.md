@@ -102,7 +102,7 @@ Admin Django : **http://localhost/admin**
 - Panier persisté localement et checkout à passerelles configurables côté administrateur.
 - Drivers intégrés : **Stripe**, **YouCan Pay**, **GeniusPay** et **paiement manuel**. Les secrets restent exclusivement dans les variables d’environnement serveur.
 - L’administrateur active/désactive les moyens de paiement, choisit leurs devises et leur mode test, et peut exécuter un diagnostic de connexion sans débiter un client.
-- Les devises (code ISO, symbole, taux, précision, devise de checkout par défaut) sont administrables sans redéploiement. **MAD reste la devise comptable de base** des prix et revenus ; son taux vaut toujours 1.
+- Les devises (code ISO, symbole, taux, précision, devise de checkout par défaut) sont administrables sans redéploiement. **EUR est la devise comptable de base** des prix et revenus ; son taux vaut toujours 1.
 - Chaque commande mémorise l’environnement `sandbox/live` utilisé afin qu’un changement ultérieur de configuration ne fasse pas vérifier une transaction avec les mauvaises clés.
 - Une commande peut contenir plusieurs cours, PDF et formations live en même temps.
 - **Le contenu vidéo/PDF est verrouillé côté API tant que l'achat n'est pas confirmé** (pas juste côté
@@ -158,7 +158,7 @@ redéploiement :
 - l'autorisation des demandes pour devenir instructeur ;
 - le pourcentage de commission de la plateforme sur les nouvelles ventes ;
 - le montant minimum autorisé pour une demande de versement instructeur.
-- les devises actives, leur taux par rapport au MAD et la devise de checkout par défaut ;
+- les devises actives, leur taux par rapport à l’EUR et la devise de checkout par défaut ;
 - les passerelles Stripe / YouCan Pay / GeniusPay / paiement manuel, leurs devises compatibles et leur mode test ;
 - un diagnostic d’envoi email et un diagnostic non transactionnel de chaque passerelle de paiement.
 
@@ -353,4 +353,21 @@ TEST_PAYMENTS_ENABLED=False
 ```
 
 Le mode test interne ne doit jamais être activé sur un environnement public.
+
+
+## Compatibilité vidéo
+
+LearnEas ne se fie plus uniquement à l'extension du fichier. Lors d'un upload MP4/WebM/MOV/M4V, le backend inspecte les pistes avec `ffprobe`. Un MP4 déjà encodé en **H.264/AAC yuv420p** est conservé sans réencodage ; un fichier utilisant HEVC/H.265, H.264 10-bit ou un autre codec moins compatible est automatiquement normalisé par `ffmpeg` vers **MP4 H.264/AAC + faststart**. Les médias privés conservent le support HTTP Range. Les URLs HTTPS directes ainsi que YouTube/Vimeo restent prises en charge.
+
+Pour réparer les vidéos uploadées avant cette version :
+
+```bash
+# Voir ce qui doit être converti, sans modification
+docker compose exec backend python manage.py normalize_course_videos --dry-run
+
+# Convertir toutes les anciennes vidéos incompatibles
+docker compose exec backend python manage.py normalize_course_videos
+```
+
+L'administrateur et l'instructeur propriétaire disposent aussi d'un bouton **Réparer cette vidéo** dans le lecteur. La conversion est envoyée au worker Celery et le lecteur se recharge automatiquement quand le fichier H.264/AAC est prêt.
 

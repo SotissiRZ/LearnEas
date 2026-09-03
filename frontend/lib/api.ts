@@ -251,7 +251,7 @@ export async function safeGet<T>(
 export function formatPrice(value: number | string): string {
   const n = typeof value === "string" ? parseFloat(value) : value;
   if (n === 0) return "Gratuit";
-  return `${n.toLocaleString("fr-FR", { minimumFractionDigits: 0 })} MAD`;
+  return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 }
 
 export function formatDuration(minutes: number): string {

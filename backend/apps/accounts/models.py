@@ -43,7 +43,7 @@ class PlatformSettings(models.Model):
     registration_enabled = models.BooleanField(default=True)
     instructor_applications_enabled = models.BooleanField(default=True)
     platform_commission_percent = models.PositiveSmallIntegerField(default=15)
-    minimum_payout_amount = models.DecimalField(max_digits=10, decimal_places=2, default=100)
+    minimum_payout_amount = models.DecimalField(max_digits=10, decimal_places=2, default=10)
 
     # Identité juridique / conformité
     legal_company_name = models.CharField(max_length=180, blank=True, default="LearnEas")
@@ -85,7 +85,7 @@ class PlatformSettings(models.Model):
         from django.conf import settings
         defaults = {
             "platform_commission_percent": getattr(settings, "PLATFORM_COMMISSION_PERCENT", 15),
-            "minimum_payout_amount": getattr(settings, "MINIMUM_PAYOUT_AMOUNT", 100),
+            "minimum_payout_amount": getattr(settings, "MINIMUM_PAYOUT_AMOUNT", 10),
         }
         obj, _ = cls.objects.get_or_create(pk=1, defaults=defaults)
         return obj

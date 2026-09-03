@@ -102,7 +102,7 @@ export default function NewPdfPage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium">Prix (MAD)</label>
+            <label className="mb-1 block text-sm font-medium">Prix (EUR)</label>
             <input type="number" min={0} value={form.price} onChange={(e) => set("price", e.target.value)}
               disabled={form.is_free} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-50" />
           </div>

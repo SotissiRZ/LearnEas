@@ -23,7 +23,7 @@ export default function CheckoutPage() {
   const router = useRouter();
   const [config, setConfig] = useState<PaymentConfig | null>(null);
   const [provider, setProvider] = useState("");
-  const [currency, setCurrency] = useState("MAD");
+  const [currency, setCurrency] = useState("EUR");
   const [loading, setLoading] = useState(false);
   const [configLoading, setConfigLoading] = useState(true);
   const [error, setError] = useState("");
@@ -32,7 +32,7 @@ export default function CheckoutPage() {
     api.get<PaymentConfig>("/payments/config/")
       .then((data) => {
         setConfig(data);
-        setCurrency(data.default_currency || data.currencies[0]?.code || "MAD");
+        setCurrency(data.default_currency || data.currencies[0]?.code || "EUR");
         const first = data.gateways.find((g) => g.configured && (!g.supported_currencies.length || g.supported_currencies.includes(data.default_currency))) || data.gateways[0];
         setProvider(first?.code || (data.test_payments_enabled ? "__test__" : ""));
       })

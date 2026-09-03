@@ -49,7 +49,7 @@ class CheckoutSerializer(serializers.Serializer):
     pdf_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, default=list)
     formation_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, default=list)
     provider = serializers.CharField(max_length=30, default=Order.Provider.STRIPE)
-    currency = serializers.CharField(max_length=3, default="MAD")
+    currency = serializers.CharField(max_length=3, default="EUR")
     test_payment = serializers.BooleanField(required=False, default=False)
 
     def validate(self, attrs):
@@ -85,11 +85,11 @@ class CurrencySerializer(serializers.ModelSerializer):
         if self.instance and "code" in attrs and attrs["code"] != self.instance.code:
             raise serializers.ValidationError({"code": "Le code d'une devise existante ne peut pas être modifié. Créez une nouvelle devise."})
         code = attrs.get("code", getattr(self.instance, "code", ""))
-        if code == "MAD":
+        if code == "EUR":
             if "is_active" in attrs and not attrs["is_active"]:
-                raise serializers.ValidationError({"is_active": "MAD est la devise comptable de base et doit rester active."})
+                raise serializers.ValidationError({"is_active": "EUR est la devise comptable de base et doit rester active."})
             if "exchange_rate" in attrs and attrs["exchange_rate"] != 1:
-                raise serializers.ValidationError({"exchange_rate": "Le taux de la devise comptable MAD doit rester égal à 1."})
+                raise serializers.ValidationError({"exchange_rate": "Le taux de la devise comptable EUR doit rester égal à 1."})
             attrs["is_active"] = True
             attrs["exchange_rate"] = 1
         return attrs

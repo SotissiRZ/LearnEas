@@ -127,6 +127,15 @@ MAX_IMAGE_UPLOAD_MB = config("MAX_IMAGE_UPLOAD_MB", default=15, cast=int)
 FILE_UPLOAD_MAX_MEMORY_SIZE = config("FILE_UPLOAD_MAX_MEMORY_SIZE", default=2 * 1024 * 1024, cast=int)
 PRIVATE_MEDIA_TOKEN_MAX_AGE = config("PRIVATE_MEDIA_TOKEN_MAX_AGE", default=12 * 60 * 60, cast=int)
 
+# Normalisation vidéo navigateur : évite les MP4/MOV techniquement valides mais illisibles
+# côté HTML5 (HEVC/H.265, H.264 10-bit, audio incompatible, etc.). ffmpeg est déjà
+# installé dans l'image backend. Les uploads compatibles H.264/AAC ne sont pas réencodés.
+VIDEO_NORMALIZATION_ENABLED = config("VIDEO_NORMALIZATION_ENABLED", default=True, cast=bool)
+VIDEO_PROBE_TIMEOUT_SECONDS = config("VIDEO_PROBE_TIMEOUT_SECONDS", default=120, cast=int)
+VIDEO_TRANSCODE_TIMEOUT_SECONDS = config("VIDEO_TRANSCODE_TIMEOUT_SECONDS", default=3600, cast=int)
+VIDEO_TRANSCODE_PRESET = config("VIDEO_TRANSCODE_PRESET", default="veryfast")
+VIDEO_TRANSCODE_CRF = config("VIDEO_TRANSCODE_CRF", default=22, cast=int)
+
 # Railway utilise un disque éphémère par défaut : activez USE_S3 avec un bucket S3-compatible
 # (AWS, Cloudflare R2, Backblaze, MinIO, etc.) pour conserver durablement les médias.
 if USE_S3:
@@ -196,7 +205,7 @@ REST_FRAMEWORK = {
         "auth": "10/min",
         "password_reset": "5/hour",
         "checkout": "20/hour",
-        "media": "300/hour",
+        "media": config("MEDIA_THROTTLE_RATE", default="5000/hour" if DEBUG else "2000/hour"),
         "live": "12000/hour",
         "admin_test": "30/hour",
         "webhook": "3000/hour",
@@ -242,11 +251,11 @@ GENIUSPAY_SANDBOX_API_KEY = config("GENIUSPAY_SANDBOX_API_KEY", default="")
 GENIUSPAY_SANDBOX_API_SECRET = config("GENIUSPAY_SANDBOX_API_SECRET", default="")
 GENIUSPAY_SANDBOX_WEBHOOK_SECRET = config("GENIUSPAY_SANDBOX_WEBHOOK_SECRET", default="")
 GENIUSPAY_SANDBOX_API_BASE = config("GENIUSPAY_SANDBOX_API_BASE", default="")
-PAYMENT_CURRENCY = config("PAYMENT_CURRENCY", default="MAD")
+PAYMENT_CURRENCY = config("PAYMENT_CURRENCY", default="EUR")
 
 # Répartition des ventes instructeurs / plateforme
 PLATFORM_COMMISSION_PERCENT = config("PLATFORM_COMMISSION_PERCENT", default=15, cast=int)
-MINIMUM_PAYOUT_AMOUNT = config("MINIMUM_PAYOUT_AMOUNT", default=100, cast=int)
+MINIMUM_PAYOUT_AMOUNT = config("MINIMUM_PAYOUT_AMOUNT", default=10, cast=int)
 FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:3000")
 
 # ---------------------------------------------------------------------------

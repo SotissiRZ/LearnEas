@@ -1,3 +1,39 @@
+# v34 — Euro comme devise comptable de base
+
+- La devise comptable de base de LearnEas passe de **MAD à EUR** : prix catalogue, revenus instructeurs, commissions, retraits et total de base sont désormais exprimés en euros.
+- **EUR est forcé actif avec un taux égal à 1** et devient la devise de checkout par défaut après migration. MAD reste disponible comme devise secondaire et son taux devient le nombre de MAD pour 1 EUR.
+- Migration de données prudente : les montants existants en MAD sont convertis en EUR avec le taux EUR/MAD déjà configuré dans la table des devises, afin d'éviter de transformer par erreur un prix de 300 MAD en 300 EUR. Les montants réellement facturés des commandes historiques (`total_amount` + `currency`) restent inchangés.
+- Tous les autres taux sont automatiquement rebasés de « devise par 1 MAD » vers « devise par 1 EUR ».
+- Interface, checkout, formulaires instructeur, revenus et seuil de retrait affichent désormais l'euro comme unité comptable.
+- Le seuil de retrait par défaut passe de 100 MAD à **10 EUR** pour les nouvelles configurations.
+- Les données de démonstration ont été réétalonnées en EUR avec une valeur proche de leur ancien équivalent en MAD.
+
+---
+
+# v33 — Compatibilité vidéo réelle et réparation automatique
+
+- Correction de l'erreur navigateur **MEDIA_ERR_SRC_NOT_SUPPORTED / Source vidéo non prise en charge** sur les fichiers MP4/MOV techniquement valides mais encodés avec un codec non universel (HEVC/H.265, H.264 10-bit, audio incompatible, etc.).
+- Les nouveaux uploads vidéo sont inspectés avec `ffprobe` puis, seulement si nécessaire, convertis automatiquement par `ffmpeg` vers **MP4 H.264/AAC yuv420p + faststart**, format compatible avec les navigateurs desktop et mobiles.
+- Ajout d'une réparation asynchrone des anciennes vidéos via Celery : un administrateur ou l'instructeur propriétaire voit désormais **Réparer cette vidéo** directement dans le lecteur lorsqu'une vidéo uploadée échoue.
+- Ajout des endpoints `repair-video` / `repair-video-status` et d'un suivi de conversion côté lecteur sans bloquer Gunicorn.
+- Ajout de la commande `python manage.py normalize_course_videos` pour auditer/réparer en masse les vidéos déjà stockées.
+- Correction de `X-Accel-Redirect` pour les noms de fichiers contenant espaces/accents : l'URI interne nginx est maintenant percent-encodée.
+- Timeouts d'upload/transcodage alignés à 3600 s pour les vidéos longues.
+- Variables `VIDEO_NORMALIZATION_ENABLED`, `VIDEO_PROBE_TIMEOUT_SECONDS`, `VIDEO_TRANSCODE_TIMEOUT_SECONDS`, `VIDEO_TRANSCODE_PRESET` et `VIDEO_TRANSCODE_CRF` documentées.
+
+---
+
+# v32 — Correctif lecteur vidéo et streaming
+
+- Correction du lecteur vidéo HTML5 : vrais contrôles Lecture/Pause, seek, durée, volume, vitesse, boucle, Picture-in-Picture, plein écran, raccourcis clavier, état de chargement et message d'erreur exploitable.
+- Les URLs vidéo externes HTTPS ne sont plus bloquées par la CSP Nginx ; les liens YouTube et Vimeo déjà présents sont rendus dans leurs lecteurs intégrés.
+- Les URLs privées `/api/media/private/` sont résolues vers l'origine publique du backend lorsque frontend et API sont déployés sur deux domaines différents (cas Vercel + Railway).
+- Streaming privé durci : `Accept-Ranges: bytes`, buffering proxy désactivé et `proxy_force_ranges` afin de permettre chargement des métadonnées, lecture et déplacement dans une vidéo.
+- Quota média rendu configurable par `MEDIA_THROTTLE_RATE` et relevé en développement pour éviter les 429 provoqués par les requêtes Range d'un lecteur vidéo.
+- Ajout d'un test de régression vérifiant MIME vidéo, `Accept-Ranges`, `X-Accel-Buffering` et `X-Accel-Redirect`.
+
+---
+
 # v31 — Lecteurs, paiement test, panier et contrôle admin
 
 - Correction du lecteur PDF privé : le backend renvoie désormais le vrai `Content-Type` (`application/pdf`) et un `Content-Disposition: inline`, ce qui empêche l'affichage des octets PDF sous forme de texte illisible (`%PDF`, `endstream`, caractères corrompus).

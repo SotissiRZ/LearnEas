@@ -12,7 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { Course, Lesson } from "@/types";
-import { formatDuration } from "@/lib/api";
+import { api, formatDuration } from "@/lib/api";
 import { useAuthenticatedResource } from "@/hooks/useAuthenticatedResource";
 import { useAuth } from "@/hooks/useAuth";
 import PdfViewer from "@/components/ui/PdfViewer";
@@ -34,6 +34,37 @@ export default function CourseCurriculum({ course: initialCourse }: { course: Co
 
   function playableSource(lesson: Lesson) {
     return lesson.video_url || lesson.video_file || null;
+  }
+
+  const canRepairActiveVideo = Boolean(
+    activeLesson?.video_file && user &&
+    (user.role === "admin" || (user.role === "instructor" && user.id === course.instructor.id))
+  );
+
+  async function repairActiveVideo() {
+    const lesson = activeLesson;
+    if (!lesson?.video_file || !canRepairActiveVideo) throw new Error("Cette vidéo ne peut pas être réparée depuis ce compte.");
+    const queued = await api.post<{ task_id: string }>(`/catalog/lessons/${lesson.id}/repair-video/`, {});
+    if (!queued.task_id) throw new Error("La tâche de réparation n'a pas pu être lancée.");
+
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 30 * 60 * 1000) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
+      const result = await api.get<{ state: string; video_file?: string | null; duration_minutes?: number; detail?: string }>(
+        `/catalog/lessons/${lesson.id}/repair-video-status/${queued.task_id}/`
+      );
+      if (result.state === "FAILURE") throw new Error(result.detail || "La conversion de la vidéo a échoué.");
+      if (result.state === "SUCCESS") {
+        if (!result.video_file) throw new Error(result.detail || "La vidéo réparée n'a pas pu être récupérée.");
+        setActiveLesson((current) => current && current.id === lesson.id ? {
+          ...current,
+          video_file: result.video_file || current.video_file,
+          duration_minutes: result.duration_minutes || current.duration_minutes,
+        } : current);
+        return;
+      }
+    }
+    throw new Error("La conversion prend plus de 30 minutes. Elle continue en arrière-plan ; réessayez plus tard.");
   }
 
   return (
@@ -154,6 +185,7 @@ export default function CourseCurriculum({ course: initialCourse }: { course: Co
                 poster={course.thumbnail}
                 title={activeLesson.title}
                 subtitlesUrl={activeLesson.subtitles_file}
+                onRepair={canRepairActiveVideo ? repairActiveVideo : undefined}
               />
             </div>
             {activeLesson.description && <p className="border-t border-gray-100 px-5 py-3 text-sm text-gray-600">{activeLesson.description}</p>}

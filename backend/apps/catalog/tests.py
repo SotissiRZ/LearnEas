@@ -131,6 +131,36 @@ class CatalogAccessRegressionTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
         self.assertIn("1 Mo", str(response.data))
 
+    def test_private_video_media_endpoint_exposes_streaming_headers(self):
+        self.lesson.video_url = ""
+        self.lesson.video_file = SimpleUploadedFile("intro.mp4", b"fake-mp4-bytes", content_type="video/mp4")
+        self.lesson.save(update_fields=["video_url", "video_file"])
+        self.client.force_authenticate(self.instructor)
+        detail = self.client.get(f"/api/catalog/courses/{self.course.slug}/")
+        self.assertEqual(detail.status_code, status.HTTP_200_OK)
+        protected_url = detail.data["sections"][0]["lessons"][0]["video_file"]
+        self.assertTrue(protected_url.startswith("/api/media/private/?token="))
+
+        media = self.client.get(protected_url, HTTP_RANGE="bytes=0-1023")
+        self.assertEqual(media.status_code, status.HTTP_200_OK)
+        self.assertEqual(media["Content-Type"], "video/mp4")
+        self.assertEqual(media["Accept-Ranges"], "bytes")
+        self.assertEqual(media["X-Accel-Buffering"], "no")
+        self.assertIn("/_protected_media/", media["X-Accel-Redirect"])
+
+    def test_private_media_x_accel_redirect_encodes_unicode_filename(self):
+        self.lesson.video_url = ""
+        self.lesson.video_file = SimpleUploadedFile("vidéo été.mp4", b"fake-mp4-bytes", content_type="video/mp4")
+        self.lesson.save(update_fields=["video_url", "video_file"])
+        self.client.force_authenticate(self.instructor)
+        detail = self.client.get(f"/api/catalog/courses/{self.course.slug}/")
+        protected_url = detail.data["sections"][0]["lessons"][0]["video_file"]
+        media = self.client.get(protected_url)
+        self.assertEqual(media.status_code, status.HTTP_200_OK)
+        redirect_uri = media["X-Accel-Redirect"]
+        self.assertNotIn(" ", redirect_uri)
+        self.assertIn("%", redirect_uri)
+
     def test_private_pdf_media_endpoint_can_be_embedded_by_learneas(self):
         self.client.force_authenticate(self.instructor)
         detail = self.client.get(f"/api/catalog/courses/{self.course.slug}/")

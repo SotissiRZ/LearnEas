@@ -53,6 +53,44 @@ export default function LearnClient({ course }: { course: Course }) {
     }
   }
 
+  const canRepairActiveVideo = Boolean(
+    activeLesson?.video_file && user &&
+    (user.role === "admin" || (user.role === "instructor" && user.id === course.instructor.id))
+  );
+
+  async function repairActiveVideo() {
+    const lesson = activeLesson;
+    if (!lesson?.video_file || !canRepairActiveVideo) throw new Error("Cette vidéo ne peut pas être réparée depuis ce compte.");
+
+    const queued = await api.post<{ task_id: string }>(`/catalog/lessons/${lesson.id}/repair-video/`, {});
+    if (!queued.task_id) throw new Error("La tâche de réparation n'a pas pu être lancée.");
+
+    const startedAt = Date.now();
+    const maxWaitMs = 30 * 60 * 1000;
+    while (Date.now() - startedAt < maxWaitMs) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
+      const status = await api.get<{
+        state: string;
+        status?: string;
+        video_file?: string | null;
+        duration_minutes?: number;
+        detail?: string;
+      }>(`/catalog/lessons/${lesson.id}/repair-video-status/${queued.task_id}/`);
+
+      if (status.state === "FAILURE") throw new Error(status.detail || "La conversion de la vidéo a échoué.");
+      if (status.state === "SUCCESS") {
+        if (!status.video_file) throw new Error(status.detail || "La vidéo réparée n'a pas pu être récupérée.");
+        setActiveLesson((current) => current && current.id === lesson.id ? {
+          ...current,
+          video_file: status.video_file || current.video_file,
+          duration_minutes: status.duration_minutes || current.duration_minutes,
+        } : current);
+        return;
+      }
+    }
+    throw new Error("La conversion prend plus de 30 minutes. Elle continue en arrière-plan ; réessayez plus tard.");
+  }
+
   if (!course.is_enrolled) {
     return (
       <div className="container-app flex min-h-[60vh] flex-col items-center justify-center gap-4 py-20 text-center">
@@ -131,6 +169,7 @@ export default function LearnClient({ course }: { course: Course }) {
               title={activeLesson.title}
               subtitlesUrl={activeLesson.subtitles_file}
               onEnded={() => activeLesson && markComplete(activeLesson)}
+              onRepair={canRepairActiveVideo ? repairActiveVideo : undefined}
             />
           ) : (
             <div className="grid h-full place-items-center text-white/50">

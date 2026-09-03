@@ -425,7 +425,7 @@ class InstructorPayoutViewSet(viewsets.ModelViewSet):
         minimum = _platform_finance_settings()[1]
         available = _finance_totals(request.user)["available_balance"]
         if amount < minimum:
-            return Response({"amount": [f"Le retrait minimum est de {minimum} MAD."]}, status=400)
+            return Response({"amount": [f"Le retrait minimum est de {minimum} EUR."]}, status=400)
         if amount > available:
             return Response({"amount": ["Le montant dépasse votre solde disponible."]}, status=400)
         payout = InstructorPayout.objects.create(
@@ -518,8 +518,8 @@ class CurrencyViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
-        if obj.code == "MAD":
-            return Response({"detail": "MAD est la devise comptable de base et ne peut pas être supprimée."}, status=409)
+        if obj.code == "EUR":
+            return Response({"detail": "EUR est la devise comptable de base et ne peut pas être supprimée."}, status=409)
         if obj.is_default:
             return Response({"detail": "La devise par défaut ne peut pas être supprimée."}, status=409)
         if Order.objects.filter(currency=obj.code).exists():
@@ -559,7 +559,7 @@ class PublicPaymentConfigView(APIView):
         return Response({
             "currencies": CurrencySerializer(currencies, many=True).data,
             "gateways": PaymentGatewaySerializer(gateways, many=True).data,
-            "default_currency": next((item.code for item in currencies if item.is_default), "MAD"),
+            "default_currency": next((item.code for item in currencies if item.is_default), "EUR"),
             "test_payments_enabled": bool(settings.TEST_PAYMENTS_ENABLED),
         })
 

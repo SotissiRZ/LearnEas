@@ -314,13 +314,14 @@ function AddLessonForm({
           <label className="mb-0.5 block text-xs font-medium text-gray-500">Fichier vidéo</label>
           <input key={fileInputKey} type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.m4v" onChange={(e) => setFile(e.target.files?.[0] || null)}
             className="w-full rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm" />
-          <p className="mt-1 text-xs text-gray-400">MP4, WebM, MOV ou M4V · jusqu’à {MAX_VIDEO_UPLOAD_MB >= 1024 ? `${(MAX_VIDEO_UPLOAD_MB / 1024).toFixed(MAX_VIDEO_UPLOAD_MB % 1024 ? 1 : 0)} Go` : `${MAX_VIDEO_UPLOAD_MB} Mo`}.</p>
+          <p className="mt-1 text-xs text-gray-400">MP4, WebM, MOV ou M4V · jusqu’à {MAX_VIDEO_UPLOAD_MB >= 1024 ? `${(MAX_VIDEO_UPLOAD_MB / 1024).toFixed(MAX_VIDEO_UPLOAD_MB % 1024 ? 1 : 0)} Go` : `${MAX_VIDEO_UPLOAD_MB} Mo`}. LearnEas convertit automatiquement les codecs incompatibles en MP4 H.264/AAC.</p>
         </div>
       ) : (
         <div>
           <label className="mb-0.5 block text-xs font-medium text-gray-500">Lien vidéo</label>
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://... (mp4 ou flux vidéo)"
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://... (MP4/WebM direct, YouTube ou Vimeo)"
             className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+          <p className="mt-1 text-xs text-gray-400">Pour une lecture immédiate, utilisez un fichier MP4/WebM direct. Les liens YouTube/Vimeo déjà enregistrés sont lus dans leur lecteur intégré.</p>
         </div>
       )}
 
@@ -337,7 +338,7 @@ function AddLessonForm({
         Aperçu gratuit (consultable sans achat)
       </label>
 
-      {uploading && mode === "file" && <UploadProgressBar percent={progress} label="Envoi de la vidéo..." />}
+      {uploading && mode === "file" && <UploadProgressBar percent={progress} label={progress >= 100 ? "Envoi terminé · vérification et conversion web si nécessaire…" : "Envoi de la vidéo…"} />}
 
       {error && (
         <p className="flex items-center gap-1 text-xs text-red-600"><AlertCircle size={12} /> {error}</p>

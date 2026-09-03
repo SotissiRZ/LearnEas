@@ -8,7 +8,7 @@ from django.shortcuts import redirect
 from django.utils.decorators import method_decorator
 from django.utils.http import content_disposition_header
 from django.views.decorators.clickjacking import xframe_options_exempt
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -50,6 +50,7 @@ class PrivateMediaView(APIView):
                     continue
             response["Content-Security-Policy"] = "frame-ancestors " + " ".join(sorted(origins))
             response["Cache-Control"] = "private, no-store"
+            response["Accept-Ranges"] = "bytes"
             response["Referrer-Policy"] = "no-referrer"
             return response
 
@@ -74,5 +75,8 @@ class PrivateMediaView(APIView):
         content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
         response = HttpResponse(status=200, content_type=content_type)
         response["Content-Disposition"] = content_disposition_header(False, Path(name).name)
-        response["X-Accel-Redirect"] = f"/_protected_media/{name}"
+        # X-Accel-Redirect est une URI, pas un chemin système : les accents/espaces doivent être
+        # percent-encodés, sinon nginx peut retourner un contenu invalide/404 alors que le fichier existe.
+        response["X-Accel-Redirect"] = f"/_protected_media/{quote(name, safe='/')}"
+        response["X-Accel-Buffering"] = "no"
         return allow_embedding(response)

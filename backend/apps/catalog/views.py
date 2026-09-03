@@ -1,4 +1,5 @@
 from django.db.models import Q
+from celery.result import AsyncResult
 from rest_framework import viewsets, permissions, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -7,6 +8,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from apps.enrollments.models import CourseEnrollment, PDFPurchase
 from .models import Category, Course, Section, Lesson, PDFResource, PDFProduct
 from .permissions import IsInstructorOrAdmin, IsInstructorOrAdminOnly, IsAdminRoleOrReadOnly
+from .tasks import normalize_lesson_video
 from .serializers import (
     CategorySerializer, CourseListSerializer, CourseDetailSerializer, CourseWriteSerializer,
     SectionWriteSerializer, LessonWriteSerializer, PDFResourceWriteSerializer,
@@ -105,6 +107,30 @@ class LessonViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = Lesson.objects.select_related("section__course__instructor")
         return qs if self.request.user.role == "admin" else qs.filter(section__course__instructor=self.request.user)
+
+    @action(detail=True, methods=["post"], url_path="repair-video")
+    def repair_video(self, request, pk=None):
+        """Lance en arrière-plan la conversion d'une vidéo existante vers H.264/AAC."""
+        lesson = self.get_object()
+        if not lesson.video_file:
+            return Response({"detail": "Cette leçon n'a pas de fichier vidéo uploadé à réparer."}, status=status.HTTP_400_BAD_REQUEST)
+        task = normalize_lesson_video.delay(lesson.id)
+        return Response({"task_id": task.id, "status": "queued"}, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["get"], url_path=r"repair-video-status/(?P<task_id>[^/.]+)")
+    def repair_video_status(self, request, pk=None, task_id=None):
+        """Retourne l'état d'une conversion lancée pour cette leçon."""
+        lesson = self.get_object()
+        task = AsyncResult(task_id)
+        state = task.state
+        if state == "SUCCESS":
+            result = task.result if isinstance(task.result, dict) else {"detail": str(task.result)}
+            if result.get("lesson_id") != lesson.id:
+                return Response({"detail": "Tâche de réparation invalide pour cette leçon."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"state": state, **result})
+        if state == "FAILURE":
+            return Response({"state": state, "detail": "La conversion vidéo a échoué. Vérifiez les logs du worker Celery."})
+        return Response({"state": state})
 
 
 class PDFResourceViewSet(viewsets.ModelViewSet):

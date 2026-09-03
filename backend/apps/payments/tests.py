@@ -34,12 +34,16 @@ class PaymentAccessRegressionTests(APITestCase):
         )
         self.client.force_authenticate(self.student)
         Currency.objects.update_or_create(
+            code="EUR",
+            defaults={"name": "Euro", "symbol": "€", "exchange_rate": Decimal("1"), "decimal_places": 2, "is_active": True, "is_default": True},
+        )
+        Currency.objects.update_or_create(
             code="MAD",
-            defaults={"name": "Dirham marocain", "symbol": "MAD", "exchange_rate": Decimal("1"), "decimal_places": 2, "is_active": True, "is_default": True},
+            defaults={"name": "Dirham marocain", "symbol": "MAD", "exchange_rate": Decimal("10.87"), "decimal_places": 2, "is_active": True, "is_default": False},
         )
         PaymentGateway.objects.update_or_create(
             code="stripe",
-            defaults={"name": "Stripe", "is_active": True, "supported_currencies": ["MAD"], "sandbox": True},
+            defaults={"name": "Stripe", "is_active": True, "supported_currencies": ["EUR", "MAD"], "sandbox": True},
         )
 
     @override_settings(STRIPE_SECRET_KEY="sk_test_fake")
@@ -47,7 +51,7 @@ class PaymentAccessRegressionTests(APITestCase):
     @patch("apps.payments.views.create_checkout")
     def test_confirmed_purchase_creates_access_and_finance_snapshot(self, create_checkout_mock, verify_payment_mock):
         create_checkout_mock.return_value = ("https://checkout.stripe.test/session", "cs_test_123")
-        verify_payment_mock.return_value = {"paid": True, "amount": Decimal("100.00"), "currency": "MAD"}
+        verify_payment_mock.return_value = {"paid": True, "amount": Decimal("100.00"), "currency": "EUR"}
         checkout = self.client.post(
             "/api/payments/checkout/",
             {"course_ids": [self.course.id], "pdf_ids": [], "formation_ids": [], "provider": "stripe"},
@@ -92,7 +96,7 @@ class PaymentAccessRegressionTests(APITestCase):
                 "pdf_ids": [],
                 "formation_ids": [],
                 "provider": "manual",
-                "currency": "MAD",
+                "currency": "EUR",
                 "test_payment": True,
             },
             format="json",
@@ -114,7 +118,7 @@ class PaymentAccessRegressionTests(APITestCase):
                 "pdf_ids": [],
                 "formation_ids": [],
                 "provider": "manual",
-                "currency": "MAD",
+                "currency": "EUR",
                 "test_payment": True,
             },
             format="json",
@@ -196,8 +200,12 @@ class PaymentConfigurationTests(APITestCase):
         )
         self.client.force_authenticate(self.admin)
         Currency.objects.update_or_create(
+            code="EUR",
+            defaults={"name": "Euro", "symbol": "€", "exchange_rate": Decimal("1"), "decimal_places": 2, "is_active": True, "is_default": True},
+        )
+        Currency.objects.update_or_create(
             code="MAD",
-            defaults={"name": "Dirham marocain", "symbol": "MAD", "exchange_rate": Decimal("1"), "decimal_places": 2, "is_active": True, "is_default": True},
+            defaults={"name": "Dirham marocain", "symbol": "MAD", "exchange_rate": Decimal("10.87"), "decimal_places": 2, "is_active": True, "is_default": False},
         )
 
     def test_admin_can_add_and_remove_unused_supported_gateway(self):
@@ -245,13 +253,13 @@ class PaymentConfigurationTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertTrue(response.data["ok"])
 
-    def test_mad_accounting_base_cannot_be_disabled_or_rerated(self):
-        mad = Currency.objects.get(code="MAD")
-        disabled = self.client.patch(f"/api/payments/admin/currencies/{mad.id}/", {"is_active": False}, format="json")
+    def test_eur_accounting_base_cannot_be_disabled_or_rerated(self):
+        eur = Currency.objects.get(code="EUR")
+        disabled = self.client.patch(f"/api/payments/admin/currencies/{eur.id}/", {"is_active": False}, format="json")
         self.assertEqual(disabled.status_code, status.HTTP_400_BAD_REQUEST, disabled.data)
-        rerated = self.client.patch(f"/api/payments/admin/currencies/{mad.id}/", {"exchange_rate": "2"}, format="json")
+        rerated = self.client.patch(f"/api/payments/admin/currencies/{eur.id}/", {"exchange_rate": "2"}, format="json")
         self.assertEqual(rerated.status_code, status.HTTP_400_BAD_REQUEST, rerated.data)
-        deleted = self.client.delete(f"/api/payments/admin/currencies/{mad.id}/")
+        deleted = self.client.delete(f"/api/payments/admin/currencies/{eur.id}/")
         self.assertEqual(deleted.status_code, status.HTTP_409_CONFLICT, deleted.data)
 
     def test_minor_unit_conversion_respects_currency_precision(self):

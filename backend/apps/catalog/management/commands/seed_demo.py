@@ -66,7 +66,7 @@ class Command(BaseCommand):
             "l'authentification JWT, avec déploiement en production.",
             ["Modéliser une base de données", "Créer des API REST", "Authentification JWT",
              "Déployer en production"],
-            ["Bases de Python", "Notions HTML/CSS"], "intermediate", 299, featured=True,
+            ["Bases de Python", "Notions HTML/CSS"], "intermediate", 27.51, featured=True,
             sections=[
                 ("Introduction", [
                     ("Bienvenue dans le cours", 5, True),
@@ -91,7 +91,7 @@ class Command(BaseCommand):
             "Maîtrisez Next.js 14, l'App Router, le rendu serveur et TypeScript pour construire "
             "des applications web professionnelles.",
             ["App Router de Next.js", "Server Components", "TypeScript avancé", "Déploiement"],
-            ["Bases de React", "JavaScript ES6+"], "intermediate", 349,
+            ["Bases de React", "JavaScript ES6+"], "intermediate", 32.11,
             sections=[
                 ("Les fondamentaux", [
                     ("Pourquoi Next.js ?", 8, True),
@@ -110,7 +110,7 @@ class Command(BaseCommand):
             "carrière en Data Science.",
             ["Manipulation de données avec Pandas", "Visualisation avec Matplotlib",
              "Statistiques descriptives", "Premiers modèles de Machine Learning"],
-            ["Aucun prérequis"], "beginner", 249, featured=True,
+            ["Aucun prérequis"], "beginner", 22.91, featured=True,
             sections=[
                 ("Bases de Python", [
                     ("Introduction à Python", 15, True),
@@ -130,7 +130,7 @@ class Command(BaseCommand):
             "Construisez vos premiers modèles prédictifs",
             "Cours pratique sur les algorithmes de Machine Learning les plus utilisés en entreprise.",
             ["Régression et classification", "Arbres de décision", "Évaluation de modèles"],
-            ["Python pour la Data Science (recommandé)"], "expert", 399,
+            ["Python pour la Data Science (recommandé)"], "expert", 36.71,
             sections=[("Modèles supervisés", [("Régression linéaire", 20, True), ("Classification", 25, False)])],
         )
         c5 = self._course(
@@ -147,7 +147,7 @@ class Command(BaseCommand):
             "Concevez des interfaces modernes et intuitives",
             "Apprenez à concevoir des maquettes professionnelles avec Figma, du wireframe au prototype interactif.",
             ["Wireframing", "Design system", "Prototypage interactif"],
-            ["Aucun prérequis"], "intermediate", 279, featured=True,
+            ["Aucun prérequis"], "intermediate", 25.67, featured=True,
             sections=[("Les fondamentaux du design", [("Principes UI/UX", 15, True), ("Prise en main de Figma", 20, False)])],
         )
         c7 = self._course(
@@ -155,7 +155,7 @@ class Command(BaseCommand):
             "Pilotez vos projets comme un chef de projet certifié",
             "Découvrez les méthodologies Agile et Scrum pour gérer efficacement vos projets informatiques.",
             ["Framework Scrum", "Rédiger un backlog", "Animer des sprints"],
-            ["Aucun prérequis"], "beginner", 199,
+            ["Aucun prérequis"], "beginner", 18.31,
             sections=[("Introduction à l'Agilité", [("Les principes Agile", 12, True), ("Le rôle du Scrum Master", 15, False)])],
         )
         c8 = self._course(
@@ -163,19 +163,19 @@ class Command(BaseCommand):
             "Les bases indispensables de l'administration système",
             "Ligne de commande, gestion des utilisateurs, réseaux : tout pour administrer un serveur Linux.",
             ["Ligne de commande avancée", "Gestion des utilisateurs et permissions", "Bases réseau"],
-            ["Notions d'informatique générales"], "beginner", 189,
+            ["Notions d'informatique générales"], "beginner", 17.39,
             sections=[("Prise en main", [("Introduction au terminal", 10, True), ("Gestion des fichiers", 15, False)])],
         )
 
         self.stdout.write("Création des PDF vendus seuls...")
         self._pdf(sarah, cat_gestion, "Guide complet UML pour projets de fin d'études",
                   "Modélisation UML pas à pas : diagrammes de cas d'utilisation, de séquence, "
-                  "de classes... Idéal pour vos projets académiques.", "beginner", 49, 42, featured=True)
+                  "de classes... Idéal pour vos projets académiques.", "beginner", 4.51, 42, featured=True)
         self._pdf(koffi, cat_data, "100 exercices corrigés de Python",
                   "Une collection d'exercices pratiques avec corrections détaillées pour progresser en Python.",
-                  "beginner", 39, 60, featured=True)
+                  "beginner", 3.59, 60, featured=True)
         self._pdf(amina, cat_design, "Charte graphique : le guide complet",
-                  "Comment construire une charte graphique professionnelle de A à Z.", "intermediate", 59, 35)
+                  "Comment construire une charte graphique professionnelle de A à Z.", "intermediate", 5.43, 35)
         self._pdf(sarah, cat_web, "Aide-mémoire Git & GitHub", "Toutes les commandes Git essentielles "
                   "réunies dans un seul document.", "beginner", 0, 10, is_free=True)
 
@@ -188,7 +188,7 @@ class Command(BaseCommand):
                 instructor=sarah, category=cat_web,
                 description="Sessions live de mentoring pour maîtriser les hooks avancés, "
                              "la gestion d'état et les bonnes pratiques React en petit groupe.",
-                level="intermediate", price=150, num_sessions=4, session_duration_minutes=90,
+                level="intermediate", price=13.80, num_sessions=4, session_duration_minutes=90,
                 max_students=6, status="scheduled", published=True,
                 start_date=(now + timedelta(days=7)).date(),
                 end_date=(now + timedelta(days=28)).date(),
@@ -210,7 +210,7 @@ class Command(BaseCommand):
                 instructor=koffi, category=cat_data,
                 description="Un atelier intensif en 3 séances pour appliquer vos connaissances en "
                              "Data Science sur un vrai projet, avec correction personnalisée.",
-                level="intermediate", price=220, num_sessions=3, session_duration_minutes=120,
+                level="intermediate", price=20.24, num_sessions=3, session_duration_minutes=120,
                 max_students=8, status="scheduled", published=True,
                 start_date=(now + timedelta(days=10)).date(),
                 end_date=(now + timedelta(days=24)).date(),
@@ -232,7 +232,7 @@ class Command(BaseCommand):
                 instructor=amina, category=cat_design,
                 description="Formation en direct pour apprendre à structurer une démarche de "
                              "Design Thinking et concevoir un premier prototype de votre idée.",
-                level="beginner", price=90, num_sessions=2, session_duration_minutes=60,
+                level="beginner", price=8.28, num_sessions=2, session_duration_minutes=60,
                 max_students=10, status="scheduled", published=True,
                 start_date=(now + timedelta(days=5)).date(),
                 end_date=(now + timedelta(days=12)).date(),

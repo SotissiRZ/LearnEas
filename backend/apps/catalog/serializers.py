@@ -2,7 +2,7 @@ from django.conf import settings
 from rest_framework import serializers
 from apps.accounts.serializers import UserPublicSerializer
 from apps.common.fields import RelativeImageField, RelativeFileField, ProtectedFileField
-from apps.common.media_metadata import extract_pdf_page_count, extract_video_duration_minutes, validate_upload_limits
+from apps.common.media_metadata import extract_pdf_page_count, extract_video_duration_minutes, normalize_video_upload, validate_upload_limits
 from .models import Category, Course, Section, Lesson, PDFResource, PDFProduct
 
 
@@ -245,6 +245,10 @@ class LessonWriteSerializer(serializers.ModelSerializer):
         video_file = attrs.get("video_file")
         if video_file:
             validate_upload_limits(video_file, max_bytes=settings.MAX_VIDEO_UPLOAD_MB * 1024 * 1024, extensions={".mp4", ".webm", ".mov", ".m4v"}, field="video_file")
+            # Une extension .mp4 ne garantit pas un codec lisible par le navigateur (HEVC,
+            # H.264 10-bit, etc.). Normaliser l'upload avant sauvegarde évite MEDIA_ERR_SRC_NOT_SUPPORTED.
+            attrs["video_file"] = normalize_video_upload(video_file)
+            video_file = attrs["video_file"]
         video_url = attrs.get("video_url")
         if self.instance:
             video_file = video_file or self.instance.video_file

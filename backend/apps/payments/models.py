@@ -8,7 +8,7 @@ class Currency(models.Model):
     code = models.CharField(max_length=3, unique=True)
     name = models.CharField(max_length=80)
     symbol = models.CharField(max_length=12, blank=True)
-    exchange_rate = models.DecimalField(max_digits=18, decimal_places=8, default=1, help_text="Valeur de 1 MAD exprimée dans cette devise (MAD est la devise comptable de base).")
+    exchange_rate = models.DecimalField(max_digits=18, decimal_places=8, default=1, help_text="Valeur de 1 EUR exprimée dans cette devise (EUR est la devise comptable de base).")
     decimal_places = models.PositiveSmallIntegerField(default=2)
     is_active = models.BooleanField(default=True)
     is_default = models.BooleanField(default=False)
@@ -22,8 +22,8 @@ class Currency(models.Model):
             models.CheckConstraint(condition=models.Q(decimal_places__lte=2), name="curr_dec_places_lte2"),
             models.CheckConstraint(condition=models.Q(is_default=False) | models.Q(is_active=True), name="curr_default_active"),
             models.CheckConstraint(
-                condition=~models.Q(code="MAD") | (models.Q(exchange_rate=1) & models.Q(is_active=True)),
-                name="curr_mad_base_fixed",
+                condition=~models.Q(code="EUR") | (models.Q(exchange_rate=1) & models.Q(is_active=True)),
+                name="curr_eur_base_fixed",
             ),
         ]
 
@@ -36,7 +36,7 @@ class Currency(models.Model):
             raise ValidationError({"exchange_rate": "Le taux doit être strictement positif."})
         if self.decimal_places is None or not 0 <= int(self.decimal_places) <= 2:
             raise ValidationError({"decimal_places": "Le nombre de décimales doit être compris entre 0 et 2."})
-        if self.code == "MAD":
+        if self.code == "EUR":
             self.exchange_rate = 1
             self.is_active = True
         if self.is_default:
@@ -44,7 +44,7 @@ class Currency(models.Model):
 
     def save(self, *args, **kwargs):
         self.code = self.code.upper().strip()
-        if self.code == "MAD":
+        if self.code == "EUR":
             self.exchange_rate = 1
             self.is_active = True
         # L'unicité de la devise d'affichage par défaut implique une mise à jour de deux
@@ -122,7 +122,7 @@ class Order(models.Model):
     provider_sandbox = models.BooleanField(default=False, help_text="Environnement de paiement utilisé lors de la création de la commande.")
     base_total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    currency = models.CharField(max_length=3, default="MAD")
+    currency = models.CharField(max_length=3, default="EUR")
     provider_reference = models.CharField(max_length=255, blank=True)
     invoice_number = models.CharField(max_length=50, unique=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -249,4 +249,4 @@ class InstructorPayout(models.Model):
         ordering = ["-requested_at"]
 
     def __str__(self):
-        return f"{self.instructor} · {self.amount} MAD · {self.status}"
+        return f"{self.instructor} · {self.amount} EUR · {self.status}"
