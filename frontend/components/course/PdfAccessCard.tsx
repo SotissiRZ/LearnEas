@@ -2,7 +2,7 @@
 
 import { CheckCircle2, FileText } from "lucide-react";
 import { PDFProduct } from "@/types";
-import { formatPrice } from "@/lib/api";
+import CurrencyPrice from "@/components/ui/CurrencyPrice";
 import { useAuthenticatedResource } from "@/hooks/useAuthenticatedResource";
 import { AddPdfToCartButton } from "@/components/course/AddToCartButtons";
 import PdfViewer from "@/components/ui/PdfViewer";
@@ -22,7 +22,7 @@ export default function PdfAccessCard({ initialPdf }: { initialPdf: PDFProduct }
         )}
       </div>
       <div className="p-5">
-        <span className="text-3xl font-extrabold">{formatPrice(pdf.price)}</span>
+        <span className="text-3xl font-extrabold"><CurrencyPrice value={pdf.price} /></span>
         <div className="mt-4">
           {unlocked ? (
             pdf.file ? <PdfViewer url={pdf.file} title={pdf.title} /> : <p className="text-sm text-gray-500">Fichier indisponible.</p>

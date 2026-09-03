@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { Award, Clock, FileText, PlayCircle } from "lucide-react";
 import { Course } from "@/types";
-import { formatDuration, formatPrice } from "@/lib/api";
+import { formatDuration } from "@/lib/api";
+import CurrencyPrice from "@/components/ui/CurrencyPrice";
 import { useAuthenticatedResource } from "@/hooks/useAuthenticatedResource";
 import { AddCourseToCartButton } from "@/components/course/AddToCartButtons";
 
@@ -24,11 +25,11 @@ export default function CoursePurchaseCard({ initialCourse }: { initialCourse: C
         <div className="mb-4 flex items-baseline gap-2">
           {course.discount_price ? (
             <>
-              <span className="text-3xl font-extrabold">{formatPrice(course.discount_price)}</span>
-              <span className="text-base text-gray-400 line-through">{formatPrice(course.price)}</span>
+              <span className="text-3xl font-extrabold"><CurrencyPrice value={course.discount_price} /></span>
+              <span className="text-base text-gray-400 line-through"><CurrencyPrice value={course.price} /></span>
             </>
           ) : (
-            <span className="text-3xl font-extrabold">{formatPrice(course.effective_price)}</span>
+            <span className="text-3xl font-extrabold"><CurrencyPrice value={course.effective_price} /></span>
           )}
         </div>
 

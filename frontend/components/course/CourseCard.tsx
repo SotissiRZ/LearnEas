@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Clock, PlayCircle, Users } from "lucide-react";
 import { Course } from "@/types";
-import { formatDuration, formatPrice } from "@/lib/api";
+import { formatDuration } from "@/lib/api";
+import CurrencyPrice from "@/components/ui/CurrencyPrice";
 import RatingStars from "@/components/ui/RatingStars";
 import LevelBadge from "@/components/ui/LevelBadge";
 import QuickAddButton from "@/components/course/QuickAddButton";
@@ -56,11 +57,11 @@ export default function CourseCard({ course }: { course: Course }) {
           <div className="flex items-center gap-2">
             {course.discount_price ? (
               <>
-                <span className="text-lg font-extrabold text-ink">{formatPrice(course.discount_price)}</span>
-                <span className="text-sm text-gray-400 line-through">{formatPrice(course.price)}</span>
+                <span className="text-lg font-extrabold text-ink"><CurrencyPrice value={course.discount_price} /></span>
+                <span className="text-sm text-gray-400 line-through"><CurrencyPrice value={course.price} /></span>
               </>
             ) : (
-              <span className="text-lg font-extrabold text-ink">{formatPrice(course.effective_price)}</span>
+              <span className="text-lg font-extrabold text-ink"><CurrencyPrice value={course.effective_price} /></span>
             )}
           </div>
           <QuickAddButton item={{ kind: "course", data: course }} />

@@ -31,7 +31,8 @@ import {
   Plus,
   Mail,
 } from "lucide-react";
-import { api, ApiError, formatPrice } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import CurrencyPrice, { CurrencyValue } from "@/components/ui/CurrencyPrice";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import GuardScreen from "@/components/ui/GuardScreen";
 import AdminSidebar, { AdminTab } from "@/components/admin/AdminSidebar";
@@ -45,6 +46,7 @@ type Order = {
   status: string;
   provider: string;
   total_amount: string;
+  currency: string;
   invoice_number: string;
   created_at: string;
   paid_at: string | null;
@@ -368,9 +370,9 @@ function OverviewTab() {
       {loading && !overview ? <LoadingBlock /> : (
         <>
           <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            <Kpi href="/dashboard/admin?tab=orders&status=paid" icon={<DollarSign size={19} />} label="Chiffre d'affaires" value={formatPrice(overview?.total_revenue || 0)} />
-            <Kpi href="/dashboard/admin?tab=orders&status=paid" icon={<BadgeDollarSign size={19} />} label="Commission plateforme" value={formatPrice(overview?.platform_fees || 0)} />
-            <Kpi href="/dashboard/admin?tab=payouts" icon={<WalletCards size={19} />} label="Gains instructeurs" value={formatPrice(overview?.instructor_earnings || 0)} />
+            <Kpi href="/dashboard/admin?tab=orders&status=paid" icon={<DollarSign size={19} />} label="Chiffre d'affaires" value={<CurrencyPrice value={overview?.total_revenue || 0} />} />
+            <Kpi href="/dashboard/admin?tab=orders&status=paid" icon={<BadgeDollarSign size={19} />} label="Commission plateforme" value={<CurrencyPrice value={overview?.platform_fees || 0} />} />
+            <Kpi href="/dashboard/admin?tab=payouts" icon={<WalletCards size={19} />} label="Gains instructeurs" value={<CurrencyPrice value={overview?.instructor_earnings || 0} />} />
             <Kpi href="/dashboard/admin?tab=users" icon={<Users size={19} />} label="Utilisateurs" value={overview?.users || 0} />
             <Kpi href="/dashboard/admin?tab=users&role=instructor" icon={<Users size={19} />} label="Instructeurs" value={overview?.instructors || 0} />
             <Kpi href="/dashboard/admin?tab=content&type=course" icon={<BookOpen size={19} />} label="Cours" value={overview?.courses || 0} />
@@ -381,7 +383,7 @@ function OverviewTab() {
           <div className="mb-6 grid grid-cols-1 gap-5 xl:grid-cols-2">
             <CompactCard
               title="Versements instructeurs"
-              subtitle={`En attente : ${overview?.pending_payout_count || 0} · ${formatPrice(overview?.pending_payout_amount || 0)}`}
+              subtitle={<>En attente : {overview?.pending_payout_count || 0} · <CurrencyPrice value={overview?.pending_payout_amount || 0} /></>}
               footer={<Link href="/dashboard/admin?tab=payouts" className="text-xs font-semibold text-brand-700">Voir tous les versements <ArrowRight className="inline" size={13} /></Link>}
             >
               {payouts.filter((p) => p.status === "pending").slice(0, 8).map((p) => (
@@ -390,7 +392,7 @@ function OverviewTab() {
                     <p className="truncate text-sm font-semibold">{p.instructor_name}</p>
                     <p className="truncate text-[11px] text-gray-400">{p.method} · {p.instructor_email}</p>
                   </div>
-                  <strong className="whitespace-nowrap text-sm">{formatPrice(p.amount)}</strong>
+                  <strong className="whitespace-nowrap text-sm"><CurrencyPrice value={p.amount} /></strong>
                   <button onClick={() => markPaid(p.id)} className="rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-semibold hover:bg-gray-50">Payer</button>
                 </div>
               ))}
@@ -425,7 +427,7 @@ function OverviewTab() {
             <InfoCard label="Utilisateurs actifs" value={`${overview?.active_users || 0}`} note={`${overview?.inactive_users || 0} compte(s) désactivé(s)`} href="/dashboard/admin?tab=users&active=true" />
             <InfoCard label="Demandes instructeur" value={`${overview?.pending_instructor_applications || 0}`} note="En attente de validation" href="/dashboard/admin?tab=applications&status=pending" />
             <InfoCard label="Commandes payées" value={`${overview?.paid_orders || 0}`} note={`${overview?.orders || 0} commande(s) au total`} href="/dashboard/admin?tab=orders&status=paid" />
-            <InfoCard label="Politique de versement" value={`${overview?.platform_commission_percent || 0}%`} note={`Retrait minimum : ${formatPrice(overview?.minimum_payout_amount || 0)}`} href="/dashboard/admin?tab=settings" />
+            <InfoCard label="Politique de versement" value={`${overview?.platform_commission_percent || 0}%`} note={<>Retrait minimum : <CurrencyPrice value={overview?.minimum_payout_amount || 0} /></>} href="/dashboard/admin?tab=settings" />
           </div>
         </>
       )}
@@ -683,7 +685,7 @@ function ContentTab() {
                   </div>
                 </div>
                 <div className="p-5">
-                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[11px] font-semibold uppercase tracking-wide text-brand-700">{typeLabel}</p><h2 className="mt-1 line-clamp-2 text-lg font-extrabold leading-snug text-ink">{item.title}</h2></div><span className="shrink-0 text-sm font-extrabold text-ink">{formatPrice(item.price)}</span></div>
+                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[11px] font-semibold uppercase tracking-wide text-brand-700">{typeLabel}</p><h2 className="mt-1 line-clamp-2 text-lg font-extrabold leading-snug text-ink">{item.title}</h2></div><span className="shrink-0 text-sm font-extrabold text-ink"><CurrencyPrice value={item.price} /></span></div>
                   <p className="mt-3 text-xs text-gray-500">Par <span className="font-semibold text-gray-700">{item.instructor?.full_name || "-"}</span></p>
                   <p className="mt-1 text-xs text-gray-400">{indicator}</p>
                   <p className="mt-1 text-[11px] text-gray-400">Créé le {new Date(item.created_at).toLocaleDateString("fr-FR")}</p>
@@ -758,7 +760,7 @@ function OrdersTab() {
       {error && <Alert text={error} tone="error" />}
       <div className="card overflow-x-auto">
         <table className="w-full min-w-[900px] text-sm"><thead className="table-head"><tr><th>Facture</th><th>Client</th><th>Montant</th><th>Moyen</th><th>Statut</th><th>Date</th><th></th></tr></thead>
-          <tbody className="divide-y divide-gray-100">{orders.map((o) => <tr key={o.id}><td className="px-4 py-3 font-mono text-xs">{o.invoice_number}</td><td className="px-4 py-3"><p className="font-medium">{o.customer_name}</p><p className="text-xs text-gray-400">{o.customer_email}</p></td><td className="px-4 py-3 font-semibold">{formatPrice(o.total_amount)}</td><td className="px-4 py-3 text-gray-500">{o.provider}</td><td className="px-4 py-3"><StatusBadge status={o.status} /></td><td className="px-4 py-3 text-gray-500">{new Date(o.created_at).toLocaleDateString("fr-FR")}</td><td className="px-4 py-3"><button onClick={() => setSelected(o)} className="text-xs font-semibold text-brand-700">Détails</button></td></tr>)}</tbody>
+          <tbody className="divide-y divide-gray-100">{orders.map((o) => <tr key={o.id}><td className="px-4 py-3 font-mono text-xs">{o.invoice_number}</td><td className="px-4 py-3"><p className="font-medium">{o.customer_name}</p><p className="text-xs text-gray-400">{o.customer_email}</p></td><td className="px-4 py-3 font-semibold"><CurrencyValue value={o.total_amount} code={o.currency} /></td><td className="px-4 py-3 text-gray-500">{o.provider}</td><td className="px-4 py-3"><StatusBadge status={o.status} /></td><td className="px-4 py-3 text-gray-500">{new Date(o.created_at).toLocaleDateString("fr-FR")}</td><td className="px-4 py-3"><button onClick={() => setSelected(o)} className="text-xs font-semibold text-brand-700">Détails</button></td></tr>)}</tbody>
         </table>
         {loading && <LoadingBlock compact />}{!loading && orders.length === 0 && <Empty text="Aucune commande trouvée." />}
       </div>
@@ -801,7 +803,7 @@ function PayoutsTab() {
       <PageHeader title="Versements instructeurs" description="Traitez les demandes de retrait et conservez une référence de paiement." />
       <div className="card mb-4 flex flex-wrap gap-3 p-4"><SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Instructeur, référence..." /><select className="input-admin" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">Tous les statuts</option><option value="pending">Demandés</option><option value="paid">Payés</option><option value="failed">Échoués</option><option value="cancelled">Annulés</option></select></div>
       {error && <Alert text={error} tone="error" />}
-      <div className="card overflow-x-auto"><table className="w-full min-w-[980px] text-sm"><thead className="table-head"><tr><th>Instructeur</th><th>Destination</th><th>Montant</th><th>Statut</th><th>Demandé le</th><th>Référence</th><th>Actions</th></tr></thead><tbody className="divide-y divide-gray-100">{payouts.map((p) => <tr key={p.id}><td className="px-4 py-3"><p className="font-semibold">{p.instructor_name}</p><p className="text-xs text-gray-400">{p.instructor_email}</p></td><td className="max-w-[240px] break-all px-4 py-3 text-xs text-gray-500"><b>{p.method}</b><br />{p.account_reference_snapshot || "Non renseignée"}</td><td className="px-4 py-3 font-semibold">{formatPrice(p.amount)}</td><td className="px-4 py-3"><StatusBadge status={p.status} /></td><td className="px-4 py-3 text-gray-500">{new Date(p.requested_at).toLocaleString("fr-FR")}</td><td className="px-4 py-3 text-xs text-gray-500">{p.reference || "-"}</td><td className="px-4 py-3">{p.status === "pending" ? <div className="flex gap-2"><button onClick={() => process(p.id, "mark_paid")} className="rounded-lg bg-brand-50 px-2 py-1.5 text-xs font-semibold text-brand-700">Payer</button><button onClick={() => process(p.id, "mark_failed")} className="rounded-lg bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-600">Échec</button></div> : "-"}</td></tr>)}</tbody></table>{loading && <LoadingBlock compact />}{!loading && payouts.length === 0 && <Empty text="Aucun versement trouvé." />}</div>
+      <div className="card overflow-x-auto"><table className="w-full min-w-[980px] text-sm"><thead className="table-head"><tr><th>Instructeur</th><th>Destination</th><th>Montant</th><th>Statut</th><th>Demandé le</th><th>Référence</th><th>Actions</th></tr></thead><tbody className="divide-y divide-gray-100">{payouts.map((p) => <tr key={p.id}><td className="px-4 py-3"><p className="font-semibold">{p.instructor_name}</p><p className="text-xs text-gray-400">{p.instructor_email}</p></td><td className="max-w-[240px] break-all px-4 py-3 text-xs text-gray-500"><b>{p.method}</b><br />{p.account_reference_snapshot || "Non renseignée"}</td><td className="px-4 py-3 font-semibold"><CurrencyPrice value={p.amount} /></td><td className="px-4 py-3"><StatusBadge status={p.status} /></td><td className="px-4 py-3 text-gray-500">{new Date(p.requested_at).toLocaleString("fr-FR")}</td><td className="px-4 py-3 text-xs text-gray-500">{p.reference || "-"}</td><td className="px-4 py-3">{p.status === "pending" ? <div className="flex gap-2"><button onClick={() => process(p.id, "mark_paid")} className="rounded-lg bg-brand-50 px-2 py-1.5 text-xs font-semibold text-brand-700">Payer</button><button onClick={() => process(p.id, "mark_failed")} className="rounded-lg bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-600">Échec</button></div> : "-"}</td></tr>)}</tbody></table>{loading && <LoadingBlock compact />}{!loading && payouts.length === 0 && <Empty text="Aucun versement trouvé." />}</div>
       <Pagination page={page} count={count} onPage={setPage} />
     </>
   );
@@ -1139,7 +1141,7 @@ function SessionReportModal({ sessionId, onClose }: { sessionId: number | null; 
   );
 }
 
-function Kpi({ href, icon, label, value }: { href: string; icon: React.ReactNode; label: string; value: number | string }) {
+function Kpi({ href, icon, label, value }: { href: string; icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
     <Link
       href={href}
@@ -1160,15 +1162,15 @@ function Kpi({ href, icon, label, value }: { href: string; icon: React.ReactNode
   );
 }
 
-function CompactCard({ title, subtitle, children, footer }: { title: string; subtitle: string; children: React.ReactNode; footer: React.ReactNode }) {
+function CompactCard({ title, subtitle, children, footer }: { title: string; subtitle: React.ReactNode; children: React.ReactNode; footer: React.ReactNode }) {
   return <section className="card flex h-[310px] min-h-0 flex-col overflow-hidden"><div className="shrink-0 border-b border-gray-100 px-5 py-3.5"><h2 className="font-bold">{title}</h2><p className="text-[11px] text-gray-400">{subtitle}</p></div><div className="min-h-0 flex-1 overflow-y-auto px-5">{children}</div><div className="shrink-0 border-t border-gray-100 px-5 py-3">{footer}</div></section>;
 }
 
-function InfoCard({ label, value, note, href }: { label: string; value: string; note: string; href: string }) {
+function InfoCard({ label, value, note, href }: { label: string; value: React.ReactNode; note: React.ReactNode; href: string }) {
   return <Link href={href} className="card flex items-center justify-between p-4 hover:border-brand-100"><div><p className="text-xs text-gray-500">{label}</p><p className="mt-1 text-xl font-bold">{value}</p><p className="mt-1 text-[11px] text-gray-400">{note}</p></div><ArrowRight size={18} className="text-gray-300" /></Link>;
 }
 
-function MiniMetric({ label, value }: { label: string; value: string }) {
+function MiniMetric({ label, value }: { label: string; value: React.ReactNode }) {
   return <div className="rounded-xl border border-gray-100 p-3"><p className="text-[11px] text-gray-400">{label}</p><p className="mt-1 font-bold">{value}</p></div>;
 }
 
@@ -1196,7 +1198,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function OrderDetails({ order, onStatus }: { order: Order; onStatus: (status: string) => void }) {
-  return <div className="space-y-5"><div className="grid gap-3 sm:grid-cols-2"><MiniMetric label="Client" value={order.customer_name} /><MiniMetric label="Montant" value={formatPrice(order.total_amount)} /><MiniMetric label="Moyen" value={order.provider} /><MiniMetric label="Statut" value={order.status} /></div><div><h3 className="mb-2 text-sm font-bold">Articles</h3><div className="divide-y divide-gray-100 rounded-xl border border-gray-100">{order.items.map((i) => <div key={i.id} className="flex items-center justify-between gap-3 p-3 text-sm"><div><p className="font-semibold">{i.title}</p><p className="text-xs text-gray-400">{i.item_type} · {i.instructor_name || "Sans instructeur"}</p></div><strong>{formatPrice(i.unit_price)}</strong></div>)}</div></div><div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800">Changer le statut ici met à jour l'état interne LearnEas. Un remboursement réel auprès d'un prestataire de paiement doit être traité via son intégration lorsque celle-ci sera connectée.</div><div className="flex flex-wrap gap-2"><button onClick={() => onStatus("paid")} className="btn-primary !py-2">Marquer payée / réparer l'accès</button><button onClick={() => onStatus("failed")} className="btn-outline !py-2">Marquer échouée</button><button onClick={() => onStatus("refunded")} className="btn-outline !py-2">Marquer remboursée</button></div></div>;
+  return <div className="space-y-5"><div className="grid gap-3 sm:grid-cols-2"><MiniMetric label="Client" value={order.customer_name} /><MiniMetric label="Montant" value={<CurrencyValue value={order.total_amount} code={order.currency} />} /><MiniMetric label="Moyen" value={order.provider} /><MiniMetric label="Statut" value={order.status} /></div><div><h3 className="mb-2 text-sm font-bold">Articles</h3><div className="divide-y divide-gray-100 rounded-xl border border-gray-100">{order.items.map((i) => <div key={i.id} className="flex items-center justify-between gap-3 p-3 text-sm"><div><p className="font-semibold">{i.title}</p><p className="text-xs text-gray-400">{i.item_type} · {i.instructor_name || "Sans instructeur"}</p></div><strong><CurrencyPrice value={i.unit_price} /></strong></div>)}</div></div><div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800">Changer le statut ici met à jour l'état interne LearnEas. Un remboursement réel auprès d'un prestataire de paiement doit être traité via son intégration lorsque celle-ci sera connectée.</div><div className="flex flex-wrap gap-2"><button onClick={() => onStatus("paid")} className="btn-primary !py-2">Marquer payée / réparer l'accès</button><button onClick={() => onStatus("failed")} className="btn-outline !py-2">Marquer échouée</button><button onClick={() => onStatus("refunded")} className="btn-outline !py-2">Marquer remboursée</button></div></div>;
 }
 
 function Alert({ text, tone = "success" }: { text: string; tone?: "success" | "error" }) {

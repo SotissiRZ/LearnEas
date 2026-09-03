@@ -103,6 +103,7 @@ Admin Django : **http://localhost/admin**
 - Drivers intégrés : **Stripe**, **YouCan Pay**, **GeniusPay** et **paiement manuel**. Les secrets restent exclusivement dans les variables d’environnement serveur.
 - L’administrateur active/désactive les moyens de paiement, choisit leurs devises et leur mode test, et peut exécuter un diagnostic de connexion sans débiter un client.
 - Les devises (code ISO, symbole, taux, précision, devise de checkout par défaut) sont administrables sans redéploiement. **EUR est la devise comptable de base** des prix et revenus ; son taux vaut toujours 1.
+- Un **sélecteur de devise dans la navbar** permet à chaque visiteur de choisir sa devise d'affichage. Les prix sont convertis depuis l'EUR avec le taux actif configuré par l'administrateur, la préférence est mémorisée et le checkout reprend automatiquement cette devise.
 - Chaque commande mémorise l’environnement `sandbox/live` utilisé afin qu’un changement ultérieur de configuration ne fasse pas vérifier une transaction avec les mauvaises clés.
 - Une commande peut contenir plusieurs cours, PDF et formations live en même temps.
 - **Le contenu vidéo/PDF est verrouillé côté API tant que l'achat n'est pas confirmé** (pas juste côté

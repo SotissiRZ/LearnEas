@@ -15,7 +15,8 @@ import {
   MessageSquareText,
   BarChart3,
 } from "lucide-react";
-import { api, ApiError, formatPrice } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import CurrencyPrice from "@/components/ui/CurrencyPrice";
 import { useAuth } from "@/hooks/useAuth";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import GuardScreen from "@/components/ui/GuardScreen";
@@ -89,7 +90,7 @@ export default function InstructorDashboard() {
         <Kpi href="/dashboard/instructor/students" icon={<Users size={19} />} label="Étudiants" value={overview?.unique_students || 0} />
         <Kpi href="/dashboard/instructor/reviews" icon={<Star size={19} />} label="Note moyenne" value={(overview?.rating_avg || 0).toFixed(1)} note={`${overview?.reviews_count || 0} avis`} />
         <Kpi href="/dashboard/instructor/reviews?view=questions" icon={<MessageSquareText size={19} />} label="Questions" value={overview?.questions_count || 0} />
-        <Kpi href="/dashboard/instructor/finance" icon={<WalletCards size={19} />} label="Solde disponible" value={formatPrice(finance?.available_balance || 0)} />
+        <Kpi href="/dashboard/instructor/finance" icon={<WalletCards size={19} />} label="Solde disponible" value={<CurrencyPrice value={finance?.available_balance || 0} />} />
         <Kpi href="/dashboard/instructor/analytics" icon={<BarChart3 size={19} />} label="Ventes" value={finance?.sales_count || 0} />
       </div>
 
@@ -126,9 +127,9 @@ export default function InstructorDashboard() {
             <Link href="/dashboard/instructor/finance" className="text-xs font-semibold text-brand-700">Gérer les versements</Link>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
-            <MiniStat label="Chiffre d'affaires" value={formatPrice(finance?.gross_revenue || 0)} />
-            <MiniStat label="Votre part" value={formatPrice(finance?.total_earnings || 0)} />
-            <MiniStat label="Déjà versé" value={formatPrice(finance?.paid_out || 0)} />
+            <MiniStat label="Chiffre d'affaires" value={<CurrencyPrice value={finance?.gross_revenue || 0} />} />
+            <MiniStat label="Votre part" value={<CurrencyPrice value={finance?.total_earnings || 0} />} />
+            <MiniStat label="Déjà versé" value={<CurrencyPrice value={finance?.paid_out || 0} />} />
           </div>
         </div>
 
@@ -144,11 +145,11 @@ export default function InstructorDashboard() {
   );
 }
 
-function Kpi({ href, icon, label, value, note }: { href: string; icon: React.ReactNode; label: string; value: string | number; note?: string }) {
+function Kpi({ href, icon, label, value, note }: { href: string; icon: React.ReactNode; label: string; value: React.ReactNode; note?: string }) {
   return <Link href={href} className="card group p-4 transition hover:-translate-y-0.5 hover:shadow-soft"><div className="mb-3 flex items-center justify-between"><span className="grid h-9 w-9 place-items-center rounded-xl bg-brand-50 text-brand-700">{icon}</span><ArrowRight size={14} className="text-gray-300 transition group-hover:text-brand-600" /></div><p className="text-lg font-extrabold leading-tight">{value}</p><p className="mt-1 text-xs text-gray-500">{label}</p>{note && <p className="mt-1 text-[10px] text-gray-400">{note}</p>}</Link>;
 }
 function CompactCard({ title, subtitle, footer, children }: { title: string; subtitle: string; footer: React.ReactNode; children: React.ReactNode }) { return <div className="card flex h-[310px] flex-col p-5"><div className="mb-3"><h2 className="font-bold">{title}</h2><p className="text-xs text-gray-500">{subtitle}</p></div><div className="min-h-0 flex-1 overflow-y-auto pr-1">{children}</div><div className="mt-3 border-t border-gray-100 pt-3">{footer}</div></div>; }
-function MiniStat({ label, value }: { label: string; value: string }) { return <div className="rounded-xl bg-gray-50 p-4"><p className="text-xs text-gray-500">{label}</p><p className="mt-1 text-lg font-extrabold">{value}</p></div>; }
+function MiniStat({ label, value }: { label: string; value: React.ReactNode }) { return <div className="rounded-xl bg-gray-50 p-4"><p className="text-xs text-gray-500">{label}</p><p className="mt-1 text-lg font-extrabold">{value}</p></div>; }
 function Empty({ text }: { text: string }) { return <div className="py-8 text-center text-xs text-gray-400">{text}</div>; }
 
 function BecomeInstructor() {

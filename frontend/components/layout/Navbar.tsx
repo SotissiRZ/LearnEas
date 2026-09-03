@@ -10,6 +10,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useCart } from "@/hooks/useCart";
 import { api } from "@/lib/api";
+import CurrencySelector from "@/components/layout/CurrencySelector";
 
 export default function Navbar() {
   const router = useRouter();
@@ -89,6 +90,8 @@ export default function Navbar() {
         </form>
 
         <div className="ml-auto flex items-center gap-2">
+          <CurrencySelector />
+
           <Link href="/cart" className="relative rounded-full p-2 hover:bg-gray-100">
             <ShoppingCart size={22} />
             {items.length > 0 && (
@@ -176,6 +179,7 @@ export default function Navbar() {
             />
           </form>
           <div className="flex flex-col gap-1">
+            <div className="mb-2"><CurrencySelector mobile /></div>
             <Link href="/courses" className="rounded-lg px-3 py-2 hover:bg-gray-50">Cours</Link>
             <Link href="/formations" className="rounded-lg px-3 py-2 hover:bg-gray-50">Formations interactives</Link>
             <Link href="/pdfs" className="rounded-lg px-3 py-2 hover:bg-gray-50">PDF & Guides</Link>

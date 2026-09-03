@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Users, CalendarDays, Video, Clock } from "lucide-react";
 import { InteractiveFormation } from "@/types";
-import { formatPrice } from "@/lib/api";
+import CurrencyPrice from "@/components/ui/CurrencyPrice";
 import LevelBadge from "@/components/ui/LevelBadge";
 import QuickAddButton from "@/components/course/QuickAddButton";
 
@@ -50,7 +50,7 @@ export default function FormationCard({ formation }: { formation: InteractiveFor
         )}
 
         <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-          <span className="text-lg font-extrabold text-ink">{formatPrice(formation.price)}</span>
+          <span className="text-lg font-extrabold text-ink"><CurrencyPrice value={formation.price} /></span>
           <QuickAddButton item={{ kind: "formation", data: formation }} />
         </div>
       </div>

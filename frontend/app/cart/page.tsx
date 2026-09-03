@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Trash2, ShoppingBag, FileText, PlayCircle, Video, ArrowRight } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { useAuth } from "@/hooks/useAuth";
-import { formatPrice } from "@/lib/api";
+import CurrencyPrice from "@/components/ui/CurrencyPrice";
 
 export default function CartPage() {
   const { items, remove, total } = useCart();
@@ -56,7 +56,7 @@ export default function CartPage() {
                 </span>
                 <p className="font-semibold">{item.title}</p>
               </div>
-              <span className="font-bold">{formatPrice(item.price)}</span>
+              <span className="font-bold"><CurrencyPrice value={item.price} /></span>
               <button onClick={() => remove(item.type, item.id)} className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600">
                 <Trash2 size={18} />
               </button>
@@ -70,7 +70,7 @@ export default function CartPage() {
           <h2 className="mb-4 text-lg font-bold">Résumé</h2>
           <div className="flex items-center justify-between border-t border-gray-100 pt-4 text-lg font-extrabold">
             <span>Total</span>
-            <span>{formatPrice(total())}</span>
+            <span><CurrencyPrice value={total()} /></span>
           </div>
           <button onClick={goToCheckout} className="btn-primary mt-5 w-full">
             Passer au paiement <ArrowRight size={18} />

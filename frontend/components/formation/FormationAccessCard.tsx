@@ -2,7 +2,7 @@
 
 import { CheckCircle2, Clock, Users, Video } from "lucide-react";
 import { InteractiveFormation } from "@/types";
-import { formatPrice } from "@/lib/api";
+import CurrencyPrice from "@/components/ui/CurrencyPrice";
 import { useAuthenticatedResource } from "@/hooks/useAuthenticatedResource";
 import { AddFormationToCartButton } from "@/components/formation/AddFormationToCartButton";
 
@@ -19,7 +19,7 @@ export default function FormationAccessCard({ initialFormation }: { initialForma
         )}
       </div>
       <div className="p-5">
-        <span className="text-3xl font-extrabold">{formatPrice(formation.price)}</span>
+        <span className="text-3xl font-extrabold"><CurrencyPrice value={formation.price} /></span>
         <div className="mt-4">
           {formation.is_enrolled ? (
             <div className="flex items-center gap-2 rounded-lg bg-brand-50 p-3 text-sm font-semibold text-brand-700">

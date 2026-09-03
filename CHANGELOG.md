@@ -1,3 +1,16 @@
+# v35 — Sélecteur de devise global dans la navbar
+
+- Ajout d'un **sélecteur de devise global** dans la barre de navigation, disponible sur desktop et dans le menu mobile.
+- La sélection est alimentée par les devises actives configurées dans **Admin → Paramètres → Paiements & devises** ; aucune liste de devises n'est codée en dur côté interface.
+- La préférence est conservée dans le navigateur (`localStorage` + cookie) et revient automatiquement lors des visites suivantes.
+- Tous les prix catalogue (cours, PDF, formations), le panier, le checkout et les montants de synthèse des dashboards sont convertis instantanément depuis la base comptable **EUR** avec le taux administré.
+- Le checkout reprend automatiquement la devise choisie dans la navbar ; changer la devise au checkout synchronise aussi la navbar et filtre les moyens de paiement compatibles.
+- Les commandes historiques restent affichées dans **leur devise réellement facturée** (`total_amount` + `currency`) afin de ne pas reconvertir un montant déjà payé.
+- Les formulaires de création de prix, commissions et demandes de retrait restent volontairement libellés en **EUR**, qui demeure l'unité comptable de référence.
+- Aucun changement de schéma de base de données : **aucune migration supplémentaire** n'est requise pour v35.
+
+---
+
 # v34 — Euro comme devise comptable de base
 
 - La devise comptable de base de LearnEas passe de **MAD à EUR** : prix catalogue, revenus instructeurs, commissions, retraits et total de base sont désormais exprimés en euros.

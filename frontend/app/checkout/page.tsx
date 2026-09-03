@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { CreditCard, FlaskConical, Loader2, ShieldCheck, Smartphone, WalletCards } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { useAuth } from "@/hooks/useAuth";
-import { api, formatPrice, ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import CurrencyPrice from "@/components/ui/CurrencyPrice";
+import { formatDisplayPrice, useCurrency } from "@/hooks/useCurrency";
 
 type Currency = { id: number; code: string; name: string; symbol: string; exchange_rate: string; decimal_places: number; is_default: boolean };
 type Gateway = { id: number; code: string; name: string; description: string; supported_currencies: string[]; configured: boolean; sandbox: boolean };
@@ -21,6 +23,8 @@ export default function CheckoutPage() {
   const { items, total, clear } = useCart();
   const { user } = useAuth();
   const router = useRouter();
+  const selectedDisplayCode = useCurrency((state) => state.selectedCode);
+  const selectDisplayCurrency = useCurrency((state) => state.selectCurrency);
   const [config, setConfig] = useState<PaymentConfig | null>(null);
   const [provider, setProvider] = useState("");
   const [currency, setCurrency] = useState("EUR");
@@ -32,17 +36,26 @@ export default function CheckoutPage() {
     api.get<PaymentConfig>("/payments/config/")
       .then((data) => {
         setConfig(data);
-        setCurrency(data.default_currency || data.currencies[0]?.code || "EUR");
-        const first = data.gateways.find((g) => g.configured && (!g.supported_currencies.length || g.supported_currencies.includes(data.default_currency))) || data.gateways[0];
+        const storedDisplayCode = useCurrency.getState().selectedCode;
+        const preferred = data.currencies.some((item) => item.code === storedDisplayCode)
+          ? storedDisplayCode
+          : (data.default_currency || data.currencies[0]?.code || "EUR");
+        setCurrency(preferred);
+        const first = data.gateways.find((g) => g.configured && (!g.supported_currencies.length || g.supported_currencies.includes(preferred))) || data.gateways[0];
         setProvider(first?.code || (data.test_payments_enabled ? "__test__" : ""));
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : "Impossible de charger les moyens de paiement."))
       .finally(() => setConfigLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (config?.currencies.some((item) => item.code === selectedDisplayCode) && selectedDisplayCode !== currency) {
+      setCurrency(selectedDisplayCode);
+    }
+  }, [config, selectedDisplayCode, currency]);
+
   const selectedCurrency = config?.currencies.find((item) => item.code === currency);
   const availableGateways = useMemo(() => (config?.gateways || []).filter((gateway) => !gateway.supported_currencies.length || gateway.supported_currencies.includes(currency)), [config, currency]);
-  const convertedTotal = selectedCurrency ? total() * Number(selectedCurrency.exchange_rate || 1) : total();
   const isFreeCart = total() <= 0;
 
   useEffect(() => {
@@ -94,7 +107,7 @@ export default function CheckoutPage() {
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div><h2 className="font-semibold">Mode de paiement</h2><p className="text-xs text-gray-500">Les moyens disponibles sont configurés par l'administrateur.</p></div>
             <label className="text-xs font-medium text-gray-600">Devise
-              <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="input-admin ml-2 !py-2">
+              <select value={currency} onChange={(e) => { setCurrency(e.target.value); selectDisplayCurrency(e.target.value); }} className="input-admin ml-2 !py-2">
                 {(config?.currencies || []).map((item) => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
               </select>
             </label>
@@ -140,7 +153,7 @@ export default function CheckoutPage() {
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
           <button onClick={handlePay} disabled={loading || (!isFreeCart && (configLoading || !provider))} className="btn-primary mt-5 w-full">
             {loading ? <Loader2 className="animate-spin" size={18} /> : <ShieldCheck size={18} />}
-            {isFreeCart ? "Obtenir gratuitement" : provider === "__test__" ? <>Simuler le paiement · {selectedCurrency ? `${convertedTotal.toLocaleString("fr-FR", { maximumFractionDigits: selectedCurrency.decimal_places })} ${selectedCurrency.symbol || selectedCurrency.code}` : formatPrice(total())}</> : <>Payer {selectedCurrency ? `${convertedTotal.toLocaleString("fr-FR", { maximumFractionDigits: selectedCurrency.decimal_places })} ${selectedCurrency.symbol || selectedCurrency.code}` : formatPrice(total())}</>}
+            {isFreeCart ? "Obtenir gratuitement" : provider === "__test__" ? <>Simuler le paiement · {selectedCurrency ? formatDisplayPrice(total(), selectedCurrency) : <CurrencyPrice value={total()} />}</> : <>Payer {selectedCurrency ? formatDisplayPrice(total(), selectedCurrency) : <CurrencyPrice value={total()} />}</>}
           </button>
           <p className="mt-2 text-center text-xs text-gray-400">Paiement chiffré et sécurisé.</p>
         </div>
@@ -148,8 +161,8 @@ export default function CheckoutPage() {
 
       <div className="card h-fit p-5">
         <h2 className="mb-4 font-bold">Récapitulatif</h2>
-        <div className="flex flex-col gap-2 text-sm">{items.map((item) => <div key={`${item.type}-${item.id}`} className="flex justify-between gap-3"><span className="line-clamp-1">{item.title}</span><span className="font-semibold">{formatPrice(item.price)}</span></div>)}</div>
-        <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4 text-lg font-extrabold"><span>Total de base</span><span>{formatPrice(total())}</span></div>
+        <div className="flex flex-col gap-2 text-sm">{items.map((item) => <div key={`${item.type}-${item.id}`} className="flex justify-between gap-3"><span className="line-clamp-1">{item.title}</span><span className="font-semibold"><CurrencyPrice value={item.price} /></span></div>)}</div>
+        <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4 text-lg font-extrabold"><span>Total</span><span><CurrencyPrice value={total()} /></span></div>
       </div>
     </div>
   );

@@ -15,7 +15,8 @@ import {
   Users,
   Video,
 } from "lucide-react";
-import { api, ApiError, formatDuration, formatPrice } from "@/lib/api";
+import { api, ApiError, formatDuration } from "@/lib/api";
+import CurrencyPrice from "@/components/ui/CurrencyPrice";
 import { Course, InteractiveFormation, PDFProduct } from "@/types";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import GuardScreen from "@/components/ui/GuardScreen";
@@ -95,7 +96,7 @@ function CourseReview({ course }: { course: Course }) {
       <ReviewMetric icon={<FileText size={17} />} label="Ressources PDF" value={`${course.pdf_resources?.length || 0}`} />
       <ReviewMetric icon={<Users size={17} />} label="Étudiants" value={`${course.students_count}`} />
       <ReviewMetric icon={<CheckCircle2 size={17} />} label="Durée" value={formatDuration(course.total_duration_minutes)} />
-      <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 text-sm"><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Instructeur</p><p className="mt-2 font-bold text-ink">{course.instructor.full_name}</p><p className="mt-1 text-gray-500">{formatPrice(course.effective_price)}</p></div>
+      <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 text-sm"><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Instructeur</p><p className="mt-2 font-bold text-ink">{course.instructor.full_name}</p><p className="mt-1 text-gray-500"><CurrencyPrice value={course.effective_price} /></p></div>
     </aside>
   </div>;
 }
@@ -111,7 +112,7 @@ function PdfReview({ pdf }: { pdf: PDFProduct }) {
     <aside className="space-y-4">
       <ReviewMetric icon={<FileText size={17} />} label="Pages" value={`${pdf.page_count}`} />
       <ReviewMetric icon={<Users size={17} />} label="Achats" value={`${pdf.downloads_count}`} />
-      <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 text-sm"><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Instructeur</p><p className="mt-2 font-bold text-ink">{pdf.instructor.full_name}</p><p className="mt-1 text-gray-500">{formatPrice(pdf.price)}</p></div>
+      <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 text-sm"><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Instructeur</p><p className="mt-2 font-bold text-ink">{pdf.instructor.full_name}</p><p className="mt-1 text-gray-500"><CurrencyPrice value={pdf.price} /></p></div>
     </aside>
   </div>;
 }
@@ -130,7 +131,7 @@ function FormationReview({ formation }: { formation: InteractiveFormation }) {
       <ReviewMetric icon={<Video size={17} />} label="Séances" value={`${formation.num_sessions}`} />
       <ReviewMetric icon={<Users size={17} />} label="Inscrits" value={`${formation.students_count}/${formation.max_students}`} />
       <ReviewMetric icon={<CheckCircle2 size={17} />} label="Statut" value={formation.status} />
-      <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 text-sm"><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Instructeur</p><p className="mt-2 font-bold text-ink">{formation.instructor.full_name}</p><p className="mt-1 text-gray-500">{formatPrice(formation.price)}</p></div>
+      <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 text-sm"><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Instructeur</p><p className="mt-2 font-bold text-ink">{formation.instructor.full_name}</p><p className="mt-1 text-gray-500"><CurrencyPrice value={formation.price} /></p></div>
     </aside>
   </div>;
 }
