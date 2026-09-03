@@ -61,7 +61,7 @@ export default function Navbar() {
   const djangoAdminHref = (process.env.NEXT_PUBLIC_API_URL || "/api").replace(/\/api\/?$/, "/admin/");
 
   return (
-    <header className="sticky top-0 z-40 border-b border-gray-100 bg-white/95 backdrop-blur">
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-gray-100 bg-white/95 shadow-sm backdrop-blur">
       <div className="container-app flex h-16 items-center gap-4">
         <Link href="/" className="flex items-center gap-2 shrink-0">
           <div className="grid h-9 w-9 place-items-center rounded-xl bg-brand-600 text-white">

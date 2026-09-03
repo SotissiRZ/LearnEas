@@ -1,3 +1,14 @@
+# v38 — Navbar fixe et viewport de lecture plus compact
+
+- La navbar principale est désormais **fixée en haut de l’écran** sur toute la plateforme, avec un espace de compensation de 64 px afin qu’aucun contenu ne passe dessous.
+- L’en-tête du workspace de cours reste collé juste sous la navbar pendant le défilement.
+- Sur desktop, la zone vidéo est plafonnée à une hauteur responsive (`clamp(430px, 58vh, 650px)`) au lieu d’occuper toute la largeur en ratio 16:9.
+- Cette hauteur plus compacte laisse apparaître dès l’ouverture les contrôles de navigation et un aperçu du titre/onglets pédagogiques situés sous la vidéo, tout en conservant le ratio natif sur mobile.
+- Le lecteur conserve ses fonctions v37 et la politique vidéo non téléchargeable de v36.
+- Aucune migration de base de données n’est requise.
+
+---
+
 # v37 — Expérience de lecture type plateforme premium
 
 - Refonte complète de l'espace de lecture des cours avec une ergonomie inspirée des grandes plateformes de formation : **sommaire repliable**, espace vidéo sombre, navigation précédent/suivant et zone pédagogique à onglets.
