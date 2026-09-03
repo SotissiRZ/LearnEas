@@ -22,11 +22,26 @@ def course_eligibility(enrollment):
     course = enrollment.course
     threshold = max(0, min(int(course.certificate_threshold_percent or 100), 100))
     percent = int(enrollment.progress_percent or 0)
+    progress_ok = percent >= threshold
+    from apps.projects.services import required_projects_status
+    project_status = required_projects_status(enrollment)
+    project_ok = project_status["complete"]
+    project_reason = ""
+    if not project_ok:
+        missing_titles = [p.title for p in project_status["missing"][:3]]
+        suffix = "…" if len(project_status["missing"]) > 3 else ""
+        project_reason = "Projet(s) pratique(s) requis : " + ", ".join(missing_titles) + suffix + "."
+    reason = ""
+    if not progress_ok:
+        reason = f"Progression requise : {threshold} %."
+    elif not project_ok:
+        reason = project_reason
     return {
-        "eligible": bool(course.certificate_enabled and percent >= threshold),
+        "eligible": bool(course.certificate_enabled and progress_ok and project_ok),
         "percent": percent,
         "threshold": threshold,
-        "reason": "" if percent >= threshold else f"Progression requise : {threshold} %.",
+        "projects_complete": project_ok,
+        "reason": reason,
     }
 
 

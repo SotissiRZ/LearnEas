@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { PlayCircle, Award, Clock, BookOpen, CreditCard, Loader2, RefreshCw } from "lucide-react";
+import { PlayCircle, Award, Clock, BookOpen, CreditCard, Loader2, RefreshCw, ClipboardCheck, BriefcaseBusiness, ArrowRight } from "lucide-react";
 import { api, formatDuration, ApiError } from "@/lib/api";
 import { CourseEnrollment } from "@/types";
 import ProgressBar from "@/components/ui/ProgressBar";
@@ -87,6 +87,11 @@ export default function StudentDashboard() {
       </div>
 
       {paymentMessage && <div className="mb-5 rounded-xl border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-800">{paymentMessage}</div>}
+
+      <div className="mb-8 grid gap-4 md:grid-cols-2">
+        <Link href="/dashboard/student/projects" className="card group flex items-center gap-4 p-5 transition hover:-translate-y-0.5 hover:shadow-soft"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-violet-50 text-violet-700"><ClipboardCheck size={20}/></span><div className="min-w-0 flex-1"><p className="font-bold">Projets pratiques</p><p className="mt-1 text-xs text-gray-500">Appliquez vos cours sur des livrables corrigés par vos instructeurs.</p></div><ArrowRight size={16} className="text-gray-300 transition group-hover:text-brand-600"/></Link>
+        <Link href="/dashboard/student/portfolio" className="card group flex items-center gap-4 p-5 transition hover:-translate-y-0.5 hover:shadow-soft"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700"><BriefcaseBusiness size={20}/></span><div className="min-w-0 flex-1"><p className="font-bold">Portfolio professionnel</p><p className="mt-1 text-xs text-gray-500">Présentez vos projets validés aux recruteurs et clients.</p></div><ArrowRight size={16} className="text-gray-300 transition group-hover:text-brand-600"/></Link>
+      </div>
 
       {orders.length > 0 && (
         <section className="card mb-8 overflow-hidden">

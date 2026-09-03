@@ -232,6 +232,12 @@ Une demande instructeur reste au statut **En attente** tant qu’un administrate
 
 ---
 
+## 🧩 Projets pratiques & portfolio professionnel
+
+LearnEas permet désormais à un instructeur d’ajouter des projets évalués aux cours. Un projet peut être requis pour l’obtention du certificat, conserver l’historique des remises et être corrigé avec note et feedback. Une réalisation approuvée peut ensuite être publiée dans un portfolio public avec un badge de vérification LearnEas ; les preuves de validation sont figées côté serveur et ne peuvent pas être altérées par l’apprenant. Les réalisations externes peuvent aussi être ajoutées, sans badge vérifié.
+
+La page publique du portfolio n’expose ni email ni téléphone, et les fichiers de remise restent privés. Voir `docs/PROJECTS_PORTFOLIO.md`.
+
 ## 🚀 Lancer le projet
 
 ### Option A — Docker (recommandé, tout est orchestré)

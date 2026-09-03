@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   Search, ShoppingCart, GraduationCap, ChevronDown, LayoutDashboard,
-  BookOpen, FileText, LogOut, User as UserIcon, Menu, X, MessageCircle, Wrench, ExternalLink,
+  BookOpen, FileText, LogOut, User as UserIcon, Menu, X, MessageCircle, Wrench, ExternalLink, ClipboardCheck, BriefcaseBusiness,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useCart } from "@/hooks/useCart";
@@ -133,6 +133,14 @@ export default function Navbar() {
                   <Link href="/dashboard/student/pdfs" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
                     <FileText size={16} /> Mes PDF
                   </Link>
+                  {user.role === "student" && <>
+                    <Link href="/dashboard/student/projects" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
+                      <ClipboardCheck size={16} /> Mes projets
+                    </Link>
+                    <Link href="/dashboard/student/portfolio" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
+                      <BriefcaseBusiness size={16} /> Mon portfolio
+                    </Link>
+                  </>}
                   <Link href="/dashboard/messages" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
                     <MessageCircle size={16} /> Messages
                   </Link>

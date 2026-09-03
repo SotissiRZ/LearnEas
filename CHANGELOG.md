@@ -1,3 +1,23 @@
+# v46 — Projets pratiques + portfolio professionnel
+
+- Nouvelle application `apps.projects` pour transformer les cours en preuves de compétence : briefs, objectifs, livrables, compétences, échéances, barèmes et ordre d’affichage.
+- Les instructeurs peuvent rendre un projet facultatif ou **obligatoire pour le certificat**, définir la note minimale et encadrer les nouvelles remises.
+- Remises apprenant avec résumé, URL de démonstration, dépôt Git, fichier privé, couverture et compétences ; chaque remise formelle conserve une **révision immuable**.
+- Workflow de correction : remis → approuvé / modifications demandées / rejeté, avec note et feedback instructeur.
+- Le certificat exige désormais la progression pédagogique **et** l’approbation de tous les projets obligatoires publiés ; les certificats déjà émis ne sont jamais invalidés rétroactivement.
+- Nouveau **portfolio professionnel** apprenant : slug public, bio, compétences, liens professionnels, statut ouvert aux opportunités et contrôles de confidentialité.
+- Publication d’un projet approuvé avec badge **Vérifié par LearnEas** et snapshot serveur immuable du cours, du projet, de l’instructeur, de la date, de la note et du barème.
+- Ajout possible de réalisations externes non vérifiées afin que le portfolio puisse également représenter le travail réalisé hors LearnEas.
+- Page publique `/portfolio/<slug>` sans email ni téléphone ; le pays et les notes ne sont affichés que si l’apprenant l’autorise.
+- Les fichiers de projet restent privés via les médias protégés/signés ; Nginx bloque l’accès direct aux remises et aux révisions.
+- Nouveaux espaces : `Mes projets`, `Mon portfolio`, `Projets & corrections`, ainsi qu’un onglet Projet dans le lecteur de cours.
+- Le catalogue de cours indique le nombre de projets pratiques et ceux requis pour la certification.
+- `seed_demo` prépare un projet approuvé et un portfolio public pour le compte Fatou afin de tester immédiatement le parcours.
+- Documentation : `docs/PROJECTS_PORTFOLIO.md`.
+- **Migration requise :** `projects.0001_initial`.
+
+---
+
 # v45 — Cohortes live + mentorat 1:1
 
 - Transformation des formations live en **cohortes** avec nom de cohorte, fuseau IANA, minimum/maximum de participants et date limite d'inscription.

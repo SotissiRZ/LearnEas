@@ -65,6 +65,8 @@ export interface Course {
   certificate_show_duration?: boolean;
   certificate_show_instructor?: boolean;
   certificate_show_completion_date?: boolean;
+  project_count?: number;
+  required_project_count?: number;
 }
 
 export interface Section {
@@ -326,4 +328,159 @@ export interface Certificate {
   metadata: Record<string, unknown>;
   course_enrollment: number | null;
   formation_enrollment: number | null;
+}
+
+export type ProjectSubmissionStatus = "draft" | "submitted" | "changes_requested" | "approved" | "rejected";
+
+export interface ProjectSubmissionSummary {
+  id: number;
+  assignment: number;
+  assignment_title: string;
+  course_title: string;
+  title: string;
+  summary: string;
+  external_url: string;
+  repository_url: string;
+  artifact_file: string | null;
+  cover_image: string | null;
+  skills: string[];
+  status: ProjectSubmissionStatus;
+  score: string | null;
+  instructor_feedback: string;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+  resubmission_count: number;
+  is_late: boolean;
+  can_resubmit: boolean;
+  updated_at: string;
+}
+
+export interface ProjectAssignment {
+  id: number;
+  course: number;
+  course_title: string;
+  course_slug: string;
+  instructor_name: string;
+  title: string;
+  slug: string;
+  brief: string;
+  instructions: string;
+  objectives: string[];
+  deliverables: string[];
+  skills: string[];
+  due_days_after_enrollment: number | null;
+  max_score: number;
+  passing_score: number;
+  required_for_certificate: boolean;
+  allow_resubmission: boolean;
+  max_resubmissions: number | null;
+  published: boolean;
+  order: number;
+  due_at: string | null;
+  submission: ProjectSubmissionSummary | null;
+  submissions_count?: number;
+  awaiting_review_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectSubmission extends ProjectSubmissionSummary {
+  student_name: string;
+  student_email: string;
+  course_slug: string;
+  passing_score: number;
+  max_score: number;
+  required_for_certificate: boolean;
+  enrollment: number;
+  student: number;
+  reviewed_by: number | null;
+  revisions: Array<{
+    id: number;
+    revision_number: number;
+    title: string;
+    summary: string;
+    external_url: string;
+    repository_url: string;
+    artifact_file: string | null;
+    cover_image: string | null;
+    skills: string[];
+    submitted_at: string;
+  }>;
+}
+
+export interface PortfolioProfile {
+  id: number;
+  slug: string;
+  is_public: boolean;
+  title: string;
+  about: string;
+  skills: string[];
+  website_url: string;
+  linkedin_url: string;
+  github_url: string;
+  open_to_work: boolean;
+  show_country: boolean;
+  show_project_scores: boolean;
+  full_name: string;
+  avatar: string | null;
+  country: string;
+  user_headline: string;
+  public_url: string;
+  updated_at: string;
+}
+
+export interface PortfolioItem {
+  id: number;
+  source_submission: number | null;
+  title: string;
+  description: string;
+  cover_image: string | null;
+  external_url: string;
+  repository_url: string;
+  skills: string[];
+  is_public: boolean;
+  featured: boolean;
+  order: number;
+  is_verified: boolean;
+  verified_course_title: string;
+  verified_assignment_title: string;
+  verified_instructor_name: string;
+  verified_at: string | null;
+  verified_score: string | null;
+  verified_max_score: number | null;
+  verified_score_display: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PublicPortfolio {
+  slug: string;
+  title: string;
+  about: string;
+  skills: string[];
+  website_url: string;
+  linkedin_url: string;
+  github_url: string;
+  open_to_work: boolean;
+  full_name: string;
+  avatar: string | null;
+  country: string;
+  user_headline: string;
+  updated_at: string;
+  items: Array<{
+    id: number;
+    title: string;
+    description: string;
+    cover_image: string | null;
+    external_url: string;
+    repository_url: string;
+    skills: string[];
+    featured: boolean;
+    is_verified: boolean;
+    verified_course_title: string;
+    verified_assignment_title: string;
+    verified_instructor_name: string;
+    verified_at: string | null;
+    score: { value: number; max: number | null } | null;
+  }>;
 }

@@ -33,6 +33,7 @@ urlpatterns = [
     path("api/faq/", include("apps.faq.urls")),
     path("api/chat/", include("apps.chat.urls")),
     path("api/notifications/", include("apps.notifications.urls")),
+    path("api/projects/", include("apps.projects.urls")),
     path("api/", include("apps.formations.urls")),
 
 ]

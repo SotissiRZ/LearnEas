@@ -10,6 +10,8 @@ from apps.reviews.models import Review
 from apps.enrollments.models import CourseEnrollment
 from apps.enrollments.certificates import issue_course_certificate
 from apps.faq.models import FAQ
+from apps.projects.models import ProjectAssignment, ProjectSubmission
+from apps.projects.services import ensure_portfolio_profile, publish_verified_submission
 
 User = get_user_model()
 
@@ -315,6 +317,39 @@ class Command(BaseCommand):
         fatou_enrollment.completed_at = fatou_enrollment.completed_at or timezone.now()
         fatou_enrollment.save(update_fields=["progress_percent", "completed", "completed_at"])
         issue_course_certificate(fatou_enrollment, issued_by=sarah, force=True)
+
+        self.stdout.write("Création d'un projet et portfolio de démonstration...")
+        demo_project, _ = ProjectAssignment.objects.get_or_create(
+            course=c1, title="API de gestion de bibliothèque",
+            defaults={
+                "brief": "Concevez une API REST pour gérer livres, auteurs, emprunts et authentification.",
+                "instructions": "Documentez les endpoints, ajoutez les permissions et expliquez vos choix techniques.",
+                "objectives": ["Modéliser les relations", "Sécuriser l'API", "Documenter les endpoints"],
+                "deliverables": ["Code source ou archive", "README", "Présentation de l'architecture"],
+                "skills": ["Django", "Django REST Framework", "API REST", "JWT"],
+                "max_score": 100, "passing_score": 60, "required_for_certificate": False,
+                "allow_resubmission": True, "published": True, "order": 1,
+            },
+        )
+        demo_submission, _ = ProjectSubmission.objects.get_or_create(
+            assignment=demo_project, student=students[0],
+            defaults={
+                "enrollment": fatou_enrollment, "title": "Bibliothèque API",
+                "summary": "API REST complète avec permissions par rôle, JWT et documentation des principaux endpoints.",
+                "skills": ["Django", "DRF", "JWT"], "status": ProjectSubmission.Status.APPROVED,
+                "score": 92, "instructor_feedback": "Architecture claire et permissions correctement appliquées.",
+                "submitted_at": timezone.now(), "reviewed_at": timezone.now(), "reviewed_by": sarah,
+            },
+        )
+        if demo_submission.status == ProjectSubmission.Status.APPROVED:
+            publish_verified_submission(demo_submission)
+        demo_profile = ensure_portfolio_profile(students[0])
+        demo_profile.is_public = True
+        demo_profile.title = "Développeuse backend junior · Django & API REST"
+        demo_profile.about = "Je construis des API web structurées et je développe mon portfolio à travers des projets pratiques LearnEas."
+        demo_profile.skills = ["Python", "Django", "Django REST Framework", "API REST"]
+        demo_profile.open_to_work = True
+        demo_profile.save()
 
         self.stdout.write("Création de la FAQ...")
         faq_items = [

@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "apps.chat",
     "apps.formations",
     "apps.notifications",
+    "apps.projects",
     "rest_framework_simplejwt.token_blacklist",
 ]
 
@@ -125,6 +126,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 MAX_VIDEO_UPLOAD_MB = config("MAX_VIDEO_UPLOAD_MB", default=2048, cast=int)
 MAX_PDF_UPLOAD_MB = config("MAX_PDF_UPLOAD_MB", default=100, cast=int)
 MAX_IMAGE_UPLOAD_MB = config("MAX_IMAGE_UPLOAD_MB", default=15, cast=int)
+MAX_PROJECT_UPLOAD_MB = config("MAX_PROJECT_UPLOAD_MB", default=50, cast=int)
 FILE_UPLOAD_MAX_MEMORY_SIZE = config("FILE_UPLOAD_MAX_MEMORY_SIZE", default=2 * 1024 * 1024, cast=int)
 PRIVATE_MEDIA_TOKEN_MAX_AGE = config("PRIVATE_MEDIA_TOKEN_MAX_AGE", default=12 * 60 * 60, cast=int)
 

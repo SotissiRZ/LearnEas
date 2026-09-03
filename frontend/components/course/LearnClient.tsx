@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BookOpen,
+  BriefcaseBusiness,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -24,14 +25,14 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Course, CourseEnrollment, Lesson, LessonNote, Paginated, Section } from "@/types";
+import { Course, CourseEnrollment, Lesson, LessonNote, Paginated, Section, ProjectAssignment } from "@/types";
 import { api, ApiError, formatDuration } from "@/lib/api";
 import ProgressBar from "@/components/ui/ProgressBar";
 import PdfViewer from "@/components/ui/PdfViewer";
 import VideoPlayer, { VideoPlayerHandle } from "@/components/ui/VideoPlayer";
 import { useAuth } from "@/hooks/useAuth";
 
-type LearningTab = "overview" | "transcript" | "notes" | "qna" | "resources";
+type LearningTab = "overview" | "transcript" | "notes" | "qna" | "resources" | "project";
 type TranscriptScope = "video" | "course";
 
 type LessonComment = {
@@ -110,6 +111,8 @@ export default function LearnClient({ course }: { course: Course }) {
   const [questionDraft, setQuestionDraft] = useState("");
   const [questionBusy, setQuestionBusy] = useState(false);
   const [questionError, setQuestionError] = useState("");
+  const [courseProjects, setCourseProjects] = useState<ProjectAssignment[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
 
   const allLessons = useMemo(
     () => (course.sections || []).flatMap((section) => section.lessons),
@@ -319,6 +322,15 @@ export default function LearnClient({ course }: { course: Course }) {
 
   useEffect(() => { if (tab === "qna") void loadComments(); }, [tab, loadComments]);
 
+  useEffect(() => {
+    if (tab !== "project" || !user || !course.is_enrolled) return;
+    setProjectsLoading(true);
+    api.get<ProjectAssignment[]>("/projects/assignments/")
+      .then((rows) => setCourseProjects(rows.filter((row) => row.course === course.id)))
+      .catch(() => setCourseProjects([]))
+      .finally(() => setProjectsLoading(false));
+  }, [tab, user, course.id, course.is_enrolled]);
+
   async function askQuestion() {
     if (!activeLesson || !questionDraft.trim() || questionBusy) return;
     setQuestionBusy(true);
@@ -514,6 +526,7 @@ export default function LearnClient({ course }: { course: Course }) {
                   ["notes", "Carnet"],
                   ["qna", "Q&R"],
                   ["resources", "Ressources"],
+                  ["project", "Projet"],
                 ] as [LearningTab, string][]).map(([value, label]) => (
                   <button
                     key={value}
@@ -579,6 +592,7 @@ export default function LearnClient({ course }: { course: Course }) {
               )}
 
               {tab === "resources" && <ResourcesPanel course={course} />}
+              {tab === "project" && <ProjectPanel course={course} projects={courseProjects} loading={projectsLoading} />}
             </div>
           </section>
         </main>
@@ -697,6 +711,25 @@ function OverviewPanel({ course, lesson }: { course: Course; lesson: Lesson | nu
           <p><span className="font-medium text-gray-900">Leçons :</span> {course.total_lessons}</p>
           <p><span className="font-medium text-gray-900">Langue :</span> {course.language}</p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectPanel({ course, projects, loading }: { course: Course; projects: ProjectAssignment[]; loading: boolean }) {
+  if (!course.is_enrolled) return <div className="rounded-2xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500">Inscrivez-vous au cours pour accéder aux projets pratiques.</div>;
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <div className="border-b border-gray-100 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><h2 className="flex items-center gap-2 font-bold"><BriefcaseBusiness size={18} className="text-emerald-700"/>Projets pratiques</h2><p className="mt-1 text-xs text-gray-400">Appliquez le cours sur un livrable concret et obtenez une validation de votre instructeur.</p></div>
+          <Link href="/dashboard/student/projects" className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700">Ouvrir mes projets</Link>
+        </div>
+      </div>
+      <div className="p-5">
+        {loading ? <p className="text-sm text-gray-400">Chargement...</p> : projects.length === 0 ? <p className="text-sm text-gray-500">Aucun projet n'est encore associé à ce cours.</p> : <div className="space-y-3">
+          {projects.map((project) => <div key={project.id} className="rounded-xl border border-gray-100 bg-gray-50 p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-semibold">{project.title}</p><p className="mt-1 line-clamp-2 text-xs leading-5 text-gray-500">{project.brief}</p></div>{project.required_for_certificate && <span className="rounded-full bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-700">Requis pour certificat</span>}</div><div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-gray-400"><span>Validation {project.passing_score}/{project.max_score}</span><span className="font-semibold text-emerald-700">{project.submission?.status === "approved" ? "Validé" : project.submission ? "En cours" : "À faire"}</span></div></div>)}
+        </div>}
       </div>
     </div>
   );

@@ -42,7 +42,9 @@ class CourseEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
         done = LessonProgress.objects.filter(enrollment=enrollment, completed=True).count()
         enrollment.progress_percent = int((done / total) * 100) if total else 0
         enrollment.last_accessed_lesson = lesson
-        if enrollment.progress_percent >= 100 and not enrollment.completed:
+        from apps.projects.services import required_projects_status
+        projects_complete = required_projects_status(enrollment)["complete"]
+        if enrollment.progress_percent >= 100 and projects_complete and not enrollment.completed:
             enrollment.completed = True
             enrollment.completed_at = timezone.now()
         enrollment.save()

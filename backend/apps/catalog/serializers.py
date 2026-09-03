@@ -151,6 +151,8 @@ class CourseDetailSerializer(CourseListSerializer):
     sections = SectionSerializer(many=True, read_only=True)
     pdf_resources = PDFResourceSerializer(many=True, read_only=True)
     is_enrolled = serializers.SerializerMethodField()
+    project_count = serializers.SerializerMethodField()
+    required_project_count = serializers.SerializerMethodField()
 
     class Meta(CourseListSerializer.Meta):
         fields = CourseListSerializer.Meta.fields + [
@@ -162,8 +164,14 @@ class CourseDetailSerializer(CourseListSerializer):
             "certificate_signatory_name", "certificate_signatory_title",
             "certificate_accent_color", "certificate_number_prefix",
             "certificate_show_duration", "certificate_show_instructor",
-            "certificate_show_completion_date",
+            "certificate_show_completion_date", "project_count", "required_project_count",
         ]
+
+    def get_project_count(self, obj):
+        return obj.project_assignments.filter(published=True).count()
+
+    def get_required_project_count(self, obj):
+        return obj.project_assignments.filter(published=True, required_for_certificate=True).count()
 
     def get_is_enrolled(self, obj):
         request = self.context.get("request")

@@ -16,6 +16,7 @@ import {
   GraduationCap,
   Award,
   CalendarCheck2,
+  ClipboardCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -32,6 +33,7 @@ const ITEMS: readonly InstructorNavItem[] = [
   { href: "/dashboard/instructor/pdfs", label: "Mes PDF", icon: FileText },
   { href: "/dashboard/instructor/formations", label: "Cohortes live", icon: Video },
   { href: "/dashboard/instructor/mentorship", label: "Mentorat 1:1", icon: CalendarCheck2 },
+  { href: "/dashboard/instructor/projects", label: "Projets & corrections", icon: ClipboardCheck },
   { href: "/dashboard/instructor/sessions", label: "Séances live", icon: GraduationCap },
   { href: "/dashboard/instructor/students", label: "Étudiants", icon: Users },
   { href: "/dashboard/instructor/analytics", label: "Statistiques", icon: BarChart3 },

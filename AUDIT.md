@@ -179,3 +179,13 @@ Ces points ne sont pas des bugs corrigibles uniquement dans le dépôt :
 - Le client synchronise la position environ toutes les 15 secondes et lors d'une pause, ce qui reste largement sous le quota authentifié courant.
 - Validation statique effectuée : 129 fichiers Python parsés sans erreur et 100 fichiers TypeScript/TSX transpilés sans erreur de syntaxe.
 - Les tests Django ajoutés doivent être exécutés dans l'environnement Docker du projet après migration, les dépendances Django n'étant pas installées dans l'environnement de génération de l'archive.
+
+## Validation v46 — Projets & portfolio
+
+- Compilation Python du backend : OK.
+- Analyse syntaxique TypeScript/TSX : 114 fichiers, 0 erreur.
+- `docker-compose.yml` : YAML valide.
+- `package.json` et `tsconfig.json` : JSON valides.
+- Préfixes de migrations : aucun doublon détecté.
+- Invariants vérifiés : `apps.projects` installé, routes `/api/projects/` présentes, migration `projects.0001_initial` présente, blocage Nginx des artefacts de remise privés présent.
+- Django n'étant pas installé dans l'environnement d'audit, `manage.py check`, les tests Django et le build Next.js complet doivent être exécutés dans les conteneurs du projet avant mise en production.

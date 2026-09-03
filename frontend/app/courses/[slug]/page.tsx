@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
-  Clock, PlayCircle, Users, Globe, BarChart3, CheckCircle2, FileText,
+  Clock, PlayCircle, Users, Globe, BarChart3, CheckCircle2, FileText, BriefcaseBusiness, ShieldCheck,
 } from "lucide-react";
 import { api, formatDuration, formatPrice } from "@/lib/api";
 import { Course } from "@/types";
@@ -56,6 +56,9 @@ export default async function CourseDetailPage({ params }: { params: Promise<{ s
               {course.pdf_resources && course.pdf_resources.length > 0 && (
                 <span className="flex items-center gap-1"><FileText size={16} /> {course.pdf_resources.length} PDF inclus</span>
               )}
+              {(course.project_count || 0) > 0 && (
+                <span className="flex items-center gap-1"><BriefcaseBusiness size={16} /> {course.project_count} projet(s) pratique(s)</span>
+              )}
             </div>
           </div>
         </div>
@@ -80,6 +83,12 @@ export default async function CourseDetailPage({ params }: { params: Promise<{ s
                   </div>
                 ))}
               </div>
+            </section>
+          )}
+
+          {(course.project_count || 0) > 0 && (
+            <section className="card border-emerald-100 bg-emerald-50/40 p-6">
+              <div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-700"><BriefcaseBusiness size={20}/></span><div><h2 className="text-lg font-bold">Apprendre en construisant</h2><p className="mt-1 text-sm leading-6 text-gray-600">Ce cours contient {course.project_count} projet(s) pratique(s) corrigé(s) par l'instructeur. Les projets validés peuvent être publiés dans votre portfolio LearnEas comme preuve de compétence.</p>{(course.required_project_count || 0) > 0 && <p className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-violet-700"><ShieldCheck size={14}/>{course.required_project_count} projet(s) requis pour l'obtention du certificat.</p>}</div></div>
             </section>
           )}
 
