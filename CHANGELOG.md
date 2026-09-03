@@ -1,3 +1,25 @@
+# v40 — Extinction réelle de la caméra en réunion
+
+- Le bouton **Caméra** ne se contente plus de désactiver `track.enabled` : la piste vidéo est retirée du `MediaStream`, détachée des pairs WebRTC puis arrêtée avec `MediaStreamTrack.stop()`.
+- La caméra matérielle est donc réellement libérée lorsque l’utilisateur la coupe ; l’indicateur caméra du navigateur/OS peut s’éteindre immédiatement.
+- Rallumer la caméra recrée une nouvelle piste via `getUserMedia()` puis la rattache au sender WebRTC existant.
+- Correction de `replaceTrackOnPeers()` pour retrouver un sender vidéo même après `replaceTrack(null)`, évitant la création de senders vidéo en double lors d’un OFF → ON.
+- La commande organisateur **Couper caméra** applique la même libération matérielle, y compris pendant un partage d’écran sans interrompre le partage.
+- Changer de périphérique caméra lorsque la caméra est coupée ne déclenche plus `getUserMedia()` : le choix est mémorisé et appliqué au prochain allumage.
+- Le sélecteur de caméra est verrouillé pendant le partage d’écran afin d’éviter des transitions de flux concurrentes.
+- Aucune migration de base de données n’est requise.
+
+---
+
+# v39 — Lecteur vidéo proportionnel + navbar fixe
+
+- Navbar principale conservée fixe en haut de l’écran.
+- En-tête du workspace de cours reste positionné sous la navbar fixe.
+- Retour au lecteur vidéo 16:9 pleine largeur de v37 : suppression de la hauteur forcée de v38.
+- Suppression du conteneur desktop qui déformait visuellement l’espace vidéo.
+- Le flux vidéo est désormais affiché intégralement avec son ratio naturel, sans recadrage ni agrandissement artificiel.
+- Fond de l’en-tête du workspace rendu opaque pour éviter le texte pâle/invisible.
+
 # v38 — Navbar fixe et viewport de lecture plus compact
 
 - La navbar principale est désormais **fixée en haut de l’écran** sur toute la plateforme, avec un espace de compensation de 64 px afin qu’aucun contenu ne passe dessous.

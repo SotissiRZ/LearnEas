@@ -433,7 +433,14 @@ export default function LiveSessionPage() {
 
   const replaceTrackOnPeers = useCallback(async (kind: "audio" | "video", track: MediaStreamTrack | null) => {
     const updates = Array.from(peersRef.current.values()).map(async (pc) => {
-      const sender = pc.getSenders().find((item) => item.track?.kind === kind);
+      // Après replaceTrack(null), sender.track devient null. On retrouve donc aussi
+      // le sender via son transceiver pour pouvoir rattacher une nouvelle caméra
+      // sans créer un second sender vidéo ni perdre le flux distant.
+      const sender =
+        pc.getSenders().find((item) => item.track?.kind === kind) ||
+        pc.getTransceivers().find(
+          (item) => item.sender.track?.kind === kind || item.receiver.track?.kind === kind
+        )?.sender;
       if (sender) {
         await sender.replaceTrack(track);
       } else if (track && localStreamRef.current) {
@@ -442,6 +449,30 @@ export default function LiveSessionPage() {
     });
     await Promise.allSettled(updates);
   }, []);
+
+  const releaseCamera = useCallback(
+    async (detachFromPeers = true) => {
+      const track = cameraTrackRef.current;
+      cameraTrackRef.current = null;
+
+      // Libérer le matériel immédiatement, sans attendre la signalisation WebRTC.
+      // C'est ce stop() qui éteint réellement le voyant caméra du navigateur/OS.
+      if (track) {
+        track.onended = null;
+        localStreamRef.current?.getVideoTracks().forEach((item) => {
+          if (item.id === track.id) localStreamRef.current?.removeTrack(item);
+        });
+        track.stop();
+      }
+      setCameraOn(false);
+      syncLocalVideo();
+
+      if (detachFromPeers) {
+        await replaceTrackOnPeers("video", null);
+      }
+    },
+    [replaceTrackOnPeers, syncLocalVideo]
+  );
 
   const addMessage = useCallback((message: ChatMessage) => {
     setMessages((prev) => {
@@ -600,13 +631,10 @@ export default function LiveSessionPage() {
           setMicOn(false);
           setNotice("L'organisateur a désactivé votre microphone.");
         } else if (action === "camera_off") {
-          cameraTrackRef.current && (cameraTrackRef.current.enabled = false);
-          if (!screenSharing) {
-            localStreamRef.current?.getVideoTracks().forEach((track) => {
-              track.enabled = false;
-            });
-          }
-          setCameraOn(false);
+          // Une piste simplement disabled garde le périphérique caméra réservé.
+          // On la détache et on la stoppe réellement afin que le voyant système
+          // et l'indicateur navigateur s'éteignent.
+          await releaseCamera(!screenStreamRef.current);
           setNotice("L'organisateur a désactivé votre caméra.");
         } else if (action === "remove") {
           await handleForcedRemoval();
@@ -635,7 +663,7 @@ export default function LiveSessionPage() {
         }
       }
     },
-    [addMessage, ensurePeer, flushIce, handleForcedRemoval, screenSharing, sendSignal]
+    [addMessage, ensurePeer, flushIce, handleForcedRemoval, releaseCamera, sendSignal]
   );
 
   const createOffer = useCallback(
@@ -688,8 +716,13 @@ export default function LiveSessionPage() {
       localStreamRef.current = stream;
       cameraTrackRef.current = stream.getVideoTracks()[0] || null;
       if (cameraTrackRef.current) {
-        cameraTrackRef.current.onended = () => setCameraOn(false);
-        setCameraOn(cameraTrackRef.current.enabled);
+        const initialTrack = cameraTrackRef.current;
+        initialTrack.onended = () => {
+          if (cameraTrackRef.current?.id === initialTrack.id) {
+            void releaseCamera(!screenStreamRef.current);
+          }
+        };
+        setCameraOn(initialTrack.enabled);
       }
       setMicOn(stream.getAudioTracks().some((track) => track.enabled));
       syncLocalVideo();
@@ -843,7 +876,12 @@ export default function LiveSessionPage() {
         track = stream.getVideoTracks()[0] || null;
         if (!track) throw new Error("Caméra indisponible");
         cameraTrackRef.current = track;
-        track.onended = () => setCameraOn(false);
+        const activatedTrack = track;
+        activatedTrack.onended = () => {
+          if (cameraTrackRef.current?.id === activatedTrack.id) {
+            void releaseCamera(!screenStreamRef.current);
+          }
+        };
         if (!localStreamRef.current) localStreamRef.current = new MediaStream();
         localStreamRef.current.getVideoTracks().forEach((item) => localStreamRef.current?.removeTrack(item));
         localStreamRef.current.addTrack(track);
@@ -858,16 +896,9 @@ export default function LiveSessionPage() {
         return;
       }
     }
-    const next = !cameraOn;
-    track.enabled = next;
-    localStreamRef.current?.getVideoTracks().forEach((item) => {
-      if (item.id === track?.id) item.enabled = next;
-    });
-    setCameraOn(next);
-    if (next) {
-      syncLocalVideo();
-      await localVideoRef.current?.play().catch(() => {});
-    }
+    // Couper la caméra doit libérer le matériel, pas seulement rendre la
+    // piste muette. Au prochain clic, getUserMedia recréera une piste propre.
+    await releaseCamera(true);
   }
 
   async function switchAudioDevice(deviceId: string) {
@@ -892,27 +923,41 @@ export default function LiveSessionPage() {
   }
 
   async function switchVideoDevice(deviceId: string) {
-    if (!deviceId || recording) return;
+    if (!deviceId || recording || screenSharing) return;
+    setSelectedVideoInput(deviceId);
+
+    // Si la caméra est coupée, mémoriser seulement le périphérique choisi.
+    // Ne pas appeler getUserMedia ici : cela rallumerait physiquement la caméra
+    // alors que l'utilisateur vient précisément de la désactiver.
+    if (!cameraOn) return;
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
       });
       const nextTrack = stream.getVideoTracks()[0];
-      if (!nextTrack || !localStreamRef.current) return;
-      const previousCamera = cameraTrackRef.current;
-      nextTrack.enabled = cameraOn;
-      nextTrack.onended = () => setCameraOn(false);
-      cameraTrackRef.current = nextTrack;
-      setSelectedVideoInput(deviceId);
-
-      if (!screenSharing) {
-        const currentVideo = localStreamRef.current.getVideoTracks()[0];
-        if (currentVideo) localStreamRef.current.removeTrack(currentVideo);
-        localStreamRef.current.addTrack(nextTrack);
-        await replaceTrackOnPeers("video", nextTrack);
-        syncLocalVideo();
+      if (!nextTrack || !localStreamRef.current) {
+        stream.getTracks().forEach((item) => item.stop());
+        return;
       }
-      if (previousCamera && previousCamera.id !== nextTrack.id) previousCamera.stop();
+      const previousCamera = cameraTrackRef.current;
+      const activatedTrack = nextTrack;
+      activatedTrack.onended = () => {
+        if (cameraTrackRef.current?.id === activatedTrack.id) {
+          void releaseCamera(!screenStreamRef.current);
+        }
+      };
+      cameraTrackRef.current = nextTrack;
+
+      const currentVideo = localStreamRef.current.getVideoTracks()[0];
+      if (currentVideo) localStreamRef.current.removeTrack(currentVideo);
+      localStreamRef.current.addTrack(nextTrack);
+      await replaceTrackOnPeers("video", nextTrack);
+      syncLocalVideo();
+      if (previousCamera && previousCamera.id !== nextTrack.id) {
+        previousCamera.onended = null;
+        previousCamera.stop();
+      }
       await refreshDevices();
     } catch {
       setNotice("Impossible de changer de caméra.");
@@ -1850,7 +1895,7 @@ export default function LiveSessionPage() {
                     </select>
                   </label>
                   <label className="text-xs font-semibold text-gray-300">Caméra
-                    <select value={selectedVideoInput} onChange={(e) => switchVideoDevice(e.target.value)} disabled={recording} className="mt-1.5 w-full rounded-xl border border-white/10 bg-gray-950 px-2.5 py-1.5 text-[11px] text-white sm:text-xs">
+                    <select value={selectedVideoInput} onChange={(e) => switchVideoDevice(e.target.value)} disabled={recording || screenSharing} className="mt-1.5 w-full rounded-xl border border-white/10 bg-gray-950 px-2.5 py-1.5 text-[11px] text-white sm:text-xs">
                       {videoInputs.map((device) => <option key={device.deviceId} value={device.deviceId}>{device.label}</option>)}
                     </select>
                   </label>

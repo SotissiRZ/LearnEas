@@ -381,7 +381,7 @@ export default function LearnClient({ course }: { course: Course }) {
   return (
     <div ref={mainRef} className="min-h-screen bg-[#f5f7f9] text-gray-950">
       {/* Workspace header, volontairement neutre : ergonomie type plateforme de formation sans copier le branding LinkedIn. */}
-      <div className="sticky top-16 z-40 border-b border-white/10 bg-[#0b1728]/98 text-white shadow-sm backdrop-blur">
+      <div className="sticky top-16 z-40 border-b border-white/10 bg-[#0b1728] text-white shadow-sm">
         <div className="flex h-14 items-center gap-2 px-3 sm:px-5">
           <Link href={`/courses/${course.slug}`} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white/80 hover:bg-white/10 hover:text-white" aria-label="Retour au cours">
             <ChevronLeft size={21} />
@@ -424,8 +424,8 @@ export default function LearnClient({ course }: { course: Course }) {
 
         <main className="min-w-0 flex-1">
           <section className="bg-[#07101d]">
-            <div className="mx-auto w-full max-w-[1500px] px-0 xl:px-4">
-              <div className="aspect-video w-full bg-black lg:h-[clamp(430px,58vh,650px)] lg:aspect-auto xl:rounded-b-xl xl:overflow-hidden">
+            <div className="mx-auto w-full max-w-[1500px]">
+              <div className="aspect-video w-full bg-black">
                 {activeLesson?.video_url || activeLesson?.video_file ? (
                   <VideoPlayer
                     ref={playerRef}

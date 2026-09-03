@@ -130,6 +130,7 @@ Admin Django : **http://localhost/admin**
 
 ### Salle live / visioconférence
 - Salle WebRTC interne avec caméra et microphone, présence réelle et suivi du temps de connexion.
+- Lorsqu’un participant coupe sa caméra, LearnEas **arrête réellement la piste vidéo** (`MediaStreamTrack.stop()`), libère le périphérique et détache la piste WebRTC. Le prochain allumage recrée une nouvelle capture ; la modération organisateur applique la même règle.
 - Partage d'écran natif navigateur, chat de séance, levée de main et panneau des participants.
 - Choix du microphone et de la caméra pendant la séance, ainsi que mode plein écran.
 - Pour l'organisateur : commandes de modération (couper micro/caméra, retirer un participant).
