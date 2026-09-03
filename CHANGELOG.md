@@ -1,3 +1,17 @@
+# v44 — WhatsApp transactionnel et relances automatiques
+
+- Intégration directe de Meta WhatsApp Cloud API avec version Graph API configurable.
+- Consentement explicite et numéro E.164 dans les profils apprenant/instructeur.
+- Préférences séparées : paiements, rappels live, inactivité et certificats.
+- Notifications idempotentes après paiement confirmé et émission/réémission de certificat.
+- Rappel automatique avant les formations live via Celery Beat.
+- Relance hebdomadaire maximum des cours inactifs, après délai administrable.
+- Webhook Meta signé : suivi envoyé/livré/lu/échec.
+- Mode local `WHATSAPP_DRY_RUN=True` : workflow testable sans compte Meta ni message réel.
+- Paramètres administrateur pour activer le canal, les templates et les délais.
+- Nouveau service Docker `celery_beat`.
+- Documentation : `docs/WHATSAPP.md`.
+
 # v43 — HLS adaptatif + mode faible connexion / audio-only
 
 - Génération asynchrone via **Celery + ffmpeg** d'un paquet HLS multi-bitrate pour chaque vidéo uploadée.

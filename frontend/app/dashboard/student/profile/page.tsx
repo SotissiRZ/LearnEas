@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import DashboardNav from "@/components/dashboard/DashboardNav";
 import GuardScreen from "@/components/ui/GuardScreen";
 import { Save, Loader2 } from "lucide-react";
+import WhatsAppPreferencesCard from "@/components/notifications/WhatsAppPreferencesCard";
 
 export default function StudentProfilePage() {
   const { user, ready } = useAuthGuard();
@@ -36,7 +37,8 @@ export default function StudentProfilePage() {
   return (
     <div className="container-app py-10">
       <DashboardNav role="student" />
-      <div className="card max-w-lg p-6">
+      <div className="max-w-lg space-y-5">
+      <div className="card p-6">
         <h2 className="mb-4 text-xl font-bold">Mon profil</h2>
         <div className="flex flex-col gap-4">
           <div>
@@ -58,6 +60,8 @@ export default function StudentProfilePage() {
             {saved ? "Enregistré !" : "Enregistrer"}
           </button>
         </div>
+      </div>
+      <WhatsAppPreferencesCard />
       </div>
     </div>
   );

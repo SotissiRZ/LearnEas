@@ -454,3 +454,7 @@ HLS_TRANSCODE_PRESET=veryfast
 HLS_AUDIO_ONLY_BITRATE=48k
 ```
 
+## WhatsApp transactionnel (v44)
+
+LearnEas peut envoyer des confirmations de paiement, rappels de live, relances de cours inactifs et notifications de certificat via Meta WhatsApp Cloud API. Le canal est **opt-in**, les secrets restent côté backend, et un mode simulation permet les tests locaux sans envoi réel. Voir `docs/WHATSAPP.md` pour les templates, variables d'environnement, webhook et configuration Railway/Celery Beat.
+

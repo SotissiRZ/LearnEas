@@ -1,0 +1,17 @@
+from django.contrib import admin
+from .models import NotificationPreference, WhatsAppDelivery
+
+
+@admin.register(NotificationPreference)
+class NotificationPreferenceAdmin(admin.ModelAdmin):
+    list_display = ("user", "whatsapp_phone", "whatsapp_opt_in", "updated_at")
+    list_filter = ("whatsapp_opt_in", "whatsapp_payment_enabled", "whatsapp_live_enabled", "whatsapp_inactivity_enabled", "whatsapp_certificate_enabled")
+    search_fields = ("user__email", "user__first_name", "user__last_name", "whatsapp_phone")
+
+
+@admin.register(WhatsAppDelivery)
+class WhatsAppDeliveryAdmin(admin.ModelAdmin):
+    list_display = ("event_type", "recipient", "status", "template_name", "created_at")
+    list_filter = ("event_type", "status", "language_code")
+    search_fields = ("recipient", "event_key", "provider_message_id", "user__email")
+    readonly_fields = ("created_at", "sent_at", "delivered_at", "read_at", "failed_at")

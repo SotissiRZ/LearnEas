@@ -69,6 +69,18 @@ class PlatformSettings(models.Model):
     certificate_default_signatory_title = models.CharField(max_length=180, blank=True)
     certificate_default_accent_color = models.CharField(max_length=20, default="#1f6f5c")
     certificate_default_number_prefix = models.CharField(max_length=30, default="LE-CERT")
+
+    # WhatsApp transactionnel — les secrets Meta restent uniquement en variables d’environnement.
+    whatsapp_enabled = models.BooleanField(default=False)
+    whatsapp_template_language = models.CharField(max_length=16, default="fr")
+    whatsapp_payment_template_name = models.CharField(max_length=120, default="learneas_payment_confirmed")
+    whatsapp_live_template_name = models.CharField(max_length=120, default="learneas_live_reminder")
+    whatsapp_inactivity_template_name = models.CharField(max_length=120, default="learneas_inactivity_reminder")
+    whatsapp_certificate_template_name = models.CharField(max_length=120, default="learneas_certificate_ready")
+    whatsapp_test_template_name = models.CharField(max_length=120, default="hello_world")
+    whatsapp_live_reminder_minutes = models.PositiveSmallIntegerField(default=30)
+    whatsapp_inactivity_days = models.PositiveSmallIntegerField(default=4)
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

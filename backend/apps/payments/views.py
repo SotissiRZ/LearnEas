@@ -274,6 +274,13 @@ class CheckoutView(APIView):
                         raise ValueError(f"Plus de place disponible pour la formation {formation.title}.")
                     FormationEnrollment.objects.create(user=order.user, formation=formation)
         FormationSeatReservation.objects.filter(order=order).delete()
+        # La notification est lancée après COMMIT afin qu'une panne WhatsApp ne puisse jamais
+        # invalider une commande déjà payée et que le worker voie les inscriptions créées.
+        try:
+            from apps.notifications.services import queue_payment_confirmation
+            transaction.on_commit(lambda order_id=order.id: queue_payment_confirmation(order_id))
+        except Exception:
+            logger.exception("Impossible de planifier la notification WhatsApp de la commande %s", order.id)
         return order
 
 

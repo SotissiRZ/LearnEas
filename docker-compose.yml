@@ -72,6 +72,14 @@ x-backend-env: &backend-env
   EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
   EMAIL_USE_TLS: ${EMAIL_USE_TLS:-True}
   DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-LearnEas <no-reply@learneas.com>}
+  WHATSAPP_ENABLED: ${WHATSAPP_ENABLED:-False}
+  WHATSAPP_DRY_RUN: ${WHATSAPP_DRY_RUN:-True}
+  WHATSAPP_GRAPH_API_VERSION: ${WHATSAPP_GRAPH_API_VERSION:-v25.0}
+  WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+  WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+  WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
+  WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+  WHATSAPP_HTTP_TIMEOUT: ${WHATSAPP_HTTP_TIMEOUT:-15}
   SEED_DEMO: ${SEED_DEMO:-false}
 
 services:
@@ -142,6 +150,23 @@ services:
       SKIP_BOOTSTRAP: "true"
     volumes:
       - media_data:/app/media
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - learneas_net
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["celery", "-A", "learneas", "beat", "--loglevel=info"]
+    environment:
+      <<: *backend-env
+      SKIP_BOOTSTRAP: "true"
     depends_on:
       backend:
         condition: service_healthy

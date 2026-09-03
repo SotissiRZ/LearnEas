@@ -2,6 +2,7 @@ import uuid
 from datetime import timedelta
 from decimal import Decimal
 from django.db.models import Sum
+from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import PlatformSettings
@@ -108,6 +109,11 @@ def issue_course_certificate(enrollment, issued_by=None, force=False):
     if not enrollment.certificate_issued:
         enrollment.certificate_issued = True
         enrollment.save(update_fields=["certificate_issued"])
+    try:
+        from apps.notifications.services import queue_certificate_ready
+        transaction.on_commit(lambda certificate_id=cert.id: queue_certificate_ready(certificate_id))
+    except Exception:
+        pass
     return cert, existing is None
 
 
@@ -151,6 +157,11 @@ def issue_formation_certificate(enrollment, issued_by=None, force=False):
     if not enrollment.certificate_issued:
         enrollment.certificate_issued = True
         enrollment.save(update_fields=["certificate_issued"])
+    try:
+        from apps.notifications.services import queue_certificate_ready
+        transaction.on_commit(lambda certificate_id=cert.id: queue_certificate_ready(certificate_id))
+    except Exception:
+        pass
     return cert, existing is None
 
 

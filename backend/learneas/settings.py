@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "apps.faq",
     "apps.chat",
     "apps.formations",
+    "apps.notifications",
     "rest_framework_simplejwt.token_blacklist",
 ]
 
@@ -282,6 +283,19 @@ FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:3000")
 BACKEND_PUBLIC_URL = config("BACKEND_PUBLIC_URL", default=FRONTEND_URL)
 
 # ---------------------------------------------------------------------------
+# WhatsApp Cloud API (Meta) — messages transactionnels avec consentement explicite.
+# WHATSAPP_DRY_RUN=True en local journalise les envois sans appeler Meta.
+# ---------------------------------------------------------------------------
+WHATSAPP_ENABLED = config("WHATSAPP_ENABLED", default=False, cast=bool)
+WHATSAPP_DRY_RUN = config("WHATSAPP_DRY_RUN", default=True, cast=bool)
+WHATSAPP_GRAPH_API_VERSION = config("WHATSAPP_GRAPH_API_VERSION", default="v25.0")
+WHATSAPP_PHONE_NUMBER_ID = config("WHATSAPP_PHONE_NUMBER_ID", default="")
+WHATSAPP_ACCESS_TOKEN = config("WHATSAPP_ACCESS_TOKEN", default="")
+WHATSAPP_VERIFY_TOKEN = config("WHATSAPP_VERIFY_TOKEN", default="")
+WHATSAPP_APP_SECRET = config("WHATSAPP_APP_SECRET", default="")
+WHATSAPP_HTTP_TIMEOUT = config("WHATSAPP_HTTP_TIMEOUT", default=15, cast=int)
+
+# ---------------------------------------------------------------------------
 # Email — console en développement (le lien de réinitialisation s'affiche dans les
 # logs du conteneur backend), SMTP réel en production via variables d'environnement.
 # ---------------------------------------------------------------------------
@@ -312,6 +326,18 @@ CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_BEAT_SCHEDULE = {
+    "whatsapp-live-reminders-every-5-minutes": {
+        "task": "apps.notifications.tasks.dispatch_whatsapp_live_reminders",
+        "schedule": 300.0,
+    },
+    "whatsapp-inactivity-reminders-daily": {
+        "task": "apps.notifications.tasks.dispatch_whatsapp_inactivity_reminders",
+        "schedule": 86400.0,
+    },
+}
+
 
 # ---------------------------------------------------------------------------
 # Sécurité production — activée uniquement si DEBUG=False.

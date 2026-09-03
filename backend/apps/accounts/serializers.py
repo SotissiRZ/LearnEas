@@ -164,6 +164,11 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "certificate_default_title", "certificate_default_subtitle",
             "certificate_default_signatory_name", "certificate_default_signatory_title",
             "certificate_default_accent_color", "certificate_default_number_prefix",
+            "whatsapp_enabled", "whatsapp_template_language",
+            "whatsapp_payment_template_name", "whatsapp_live_template_name",
+            "whatsapp_inactivity_template_name", "whatsapp_certificate_template_name",
+            "whatsapp_test_template_name", "whatsapp_live_reminder_minutes",
+            "whatsapp_inactivity_days",
             "updated_at",
         ]
         read_only_fields = ["updated_at"]
@@ -186,6 +191,16 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
     def validate_minimum_payout_amount(self, value):
         if value < 0:
             raise serializers.ValidationError("Le montant minimum ne peut pas être négatif.")
+        return value
+
+    def validate_whatsapp_live_reminder_minutes(self, value):
+        if value < 5 or value > 1440:
+            raise serializers.ValidationError("Le rappel live doit être compris entre 5 et 1440 minutes.")
+        return value
+
+    def validate_whatsapp_inactivity_days(self, value):
+        if value < 2 or value > 90:
+            raise serializers.ValidationError("Le délai d'inactivité doit être compris entre 2 et 90 jours.")
         return value
 
 class InstructorApplicationSerializer(serializers.ModelSerializer):

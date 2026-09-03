@@ -19,6 +19,12 @@ class PlatformSettingsAdmin(admin.ModelAdmin):
         ("Identité", {"fields": ("site_name", "support_email")}),
         ("Accès", {"fields": ("registration_enabled", "instructor_applications_enabled")}),
         ("Finance", {"fields": ("platform_commission_percent", "minimum_payout_amount")}),
+        ("WhatsApp", {"fields": (
+            "whatsapp_enabled", "whatsapp_template_language",
+            "whatsapp_payment_template_name", "whatsapp_live_template_name",
+            "whatsapp_inactivity_template_name", "whatsapp_certificate_template_name",
+            "whatsapp_test_template_name", "whatsapp_live_reminder_minutes", "whatsapp_inactivity_days",
+        )}),
     )
 
     def has_add_permission(self, request):
