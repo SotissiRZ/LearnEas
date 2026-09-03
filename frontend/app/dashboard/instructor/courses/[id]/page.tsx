@@ -331,7 +331,7 @@ function AddLessonForm({
       </div>
       <div>
         <label className="mb-0.5 block text-xs font-medium text-gray-500">Transcription (optionnelle)</label>
-        <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} className="min-h-24 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" placeholder="Texte de la leçon pour l'accessibilité et la révision..." />
+        <textarea value={transcript} onChange={(e) => setTranscript(e.target.value)} className="min-h-24 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" placeholder="Transcription. Pour rendre les passages cliquables dans le lecteur : [00:00] Introduction, [01:25] Exemple…" />
       </div>
       <label className="flex items-center gap-2 text-xs text-gray-600">
         <input type="checkbox" checked={preview} onChange={(e) => setPreview(e.target.checked)} />

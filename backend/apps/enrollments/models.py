@@ -29,6 +29,7 @@ class LessonProgress(models.Model):
     lesson = models.ForeignKey("catalog.Lesson", on_delete=models.CASCADE, related_name="progress_entries")
     completed = models.BooleanField(default=False)
     watched_seconds = models.PositiveIntegerField(default=0)
+    last_position_seconds = models.PositiveIntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -133,3 +134,22 @@ class Certificate(models.Model):
         if self.expires_at and self.expires_at <= timezone.now():
             return self.Status.EXPIRED
         return self.Status.ACTIVE
+
+
+class LessonNote(models.Model):
+    """Note privée de l'apprenant, attachée à un instant précis d'une leçon."""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="lesson_notes")
+    lesson = models.ForeignKey("catalog.Lesson", on_delete=models.CASCADE, related_name="learner_notes")
+    timestamp_seconds = models.PositiveIntegerField(default=0)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["lesson__section__order", "lesson__order", "timestamp_seconds", "created_at"]
+        indexes = [
+            models.Index(fields=["user", "lesson", "timestamp_seconds"], name="enr_note_user_lesson_ts"),
+        ]
+
+    def __str__(self):
+        return f"{self.user} · {self.lesson} @ {self.timestamp_seconds}s"

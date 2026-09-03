@@ -148,3 +148,13 @@ Ces points ne sont pas des bugs corrigibles uniquement dans le dépôt :
 - Test d'intégration Nginx simulant `X-Accel-Redirect` : le PDF privé est servi en `application/pdf`, `SAMEORIGIN`, `frame-ancestors 'self'` et avec support des requêtes Range.
 - Les tests Django complets restent à rejouer dans l'image Docker, car Django n'est pas installé dans l'environnement de packaging actuel.
 
+
+## v37 — espace de lecture des cours
+
+- Lecteur repensé autour d'un workspace de formation : sommaire repliable, progression, navigation précédent/suivant, autoplay, reprise au dernier timestamp, transcription recherchable, carnet privé, Q&R et ressources.
+- Les vidéos restent non téléchargeables par l'interface (`nodownload`, pas de lien source, pas de bouton download) ; le carnet exporte uniquement du texte de notes personnelles.
+- Le carnet est stocké côté backend et filtré strictement par `request.user`; un autre apprenant reçoit 404 sur une note qui ne lui appartient pas.
+- La position de reprise est distincte du temps maximal visionné (`last_position_seconds` vs `watched_seconds`) pour permettre de revenir en arrière sans fausser le suivi.
+- Le client synchronise la position environ toutes les 15 secondes et lors d'une pause, ce qui reste largement sous le quota authentifié courant.
+- Validation statique effectuée : 129 fichiers Python parsés sans erreur et 100 fichiers TypeScript/TSX transpilés sans erreur de syntaxe.
+- Les tests Django ajoutés doivent être exécutés dans l'environnement Docker du projet après migration, les dépendances Django n'étant pas installées dans l'environnement de génération de l'archive.

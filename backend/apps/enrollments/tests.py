@@ -109,3 +109,74 @@ class CertificateRegressionTests(APITestCase):
         self.assertEqual(response.data["issued_count"], 1)
         self.assertTrue(Certificate.objects.filter(user=self.student, course_enrollment=self.enrollment).exists())
         self.assertFalse(Certificate.objects.filter(user=self.other_student).exists())
+
+
+class LearningPlayerRegressionTests(APITestCase):
+    def setUp(self):
+        from apps.catalog.models import Section, Lesson
+        self.instructor = User.objects.create_user(
+            username="player_trainer", email="player-trainer@example.com", password="passpass123", role=User.Role.INSTRUCTOR
+        )
+        self.student = User.objects.create_user(
+            username="player_student", email="player-student@example.com", password="passpass123", role=User.Role.STUDENT
+        )
+        self.other = User.objects.create_user(
+            username="player_other", email="player-other@example.com", password="passpass123", role=User.Role.STUDENT
+        )
+        self.category = Category.objects.create(name="Player")
+        self.course = Course.objects.create(
+            instructor=self.instructor, category=self.category, title="Cours lecteur", description="Test",
+            price=Decimal("25.00"), published=True,
+        )
+        self.section = Section.objects.create(course=self.course, title="Chapitre 1", order=1)
+        self.lesson = Lesson.objects.create(
+            section=self.section, title="Leçon 1", duration_minutes=10, order=1,
+            transcript="[00:00] Introduction\n[01:15] Démonstration",
+        )
+        self.enrollment = CourseEnrollment.objects.create(user=self.student, course=self.course)
+
+    def test_private_timestamped_note_crud_is_scoped_to_owner(self):
+        self.client.force_authenticate(self.student)
+        created = self.client.post(
+            "/api/enrollments/lesson-notes/",
+            {"lesson": self.lesson.id, "timestamp_seconds": 75, "content": "Point important"},
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        note_id = created.data["id"]
+
+        listing = self.client.get(f"/api/enrollments/lesson-notes/?lesson={self.lesson.id}")
+        self.assertEqual(listing.status_code, status.HTTP_200_OK, listing.data)
+        self.assertEqual(len(listing.data), 1)
+        self.assertEqual(listing.data[0]["timestamp_seconds"], 75)
+
+        self.client.force_authenticate(self.other)
+        hidden = self.client.get(f"/api/enrollments/lesson-notes/{note_id}/")
+        self.assertEqual(hidden.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_non_enrolled_student_cannot_create_note(self):
+        self.client.force_authenticate(self.other)
+        response = self.client.post(
+            "/api/enrollments/lesson-notes/",
+            {"lesson": self.lesson.id, "timestamp_seconds": 10, "content": "Interdit"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_player_progress_persists_resume_position(self):
+        self.client.force_authenticate(self.student)
+        response = self.client.post(
+            f"/api/enrollments/my-courses/{self.enrollment.id}/update-lesson-progress/",
+            {"lesson_id": self.lesson.id, "watched_seconds": 137},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["last_position_seconds"], 137)
+        self.enrollment.refresh_from_db()
+        self.assertEqual(self.enrollment.last_accessed_lesson_id, self.lesson.id)
+
+        listing = self.client.get("/api/enrollments/my-courses/")
+        self.assertEqual(listing.status_code, status.HTTP_200_OK, listing.data)
+        row = listing.data["results"][0]
+        self.assertEqual(row["last_accessed_lesson"], self.lesson.id)
+        self.assertEqual(row["lesson_progress"][0]["last_position_seconds"], 137)

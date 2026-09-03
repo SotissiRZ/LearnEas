@@ -4,11 +4,12 @@ from django.db import models
 from rest_framework import viewsets, permissions, status, filters, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.catalog.models import Lesson, Course, PDFProduct
-from .models import CourseEnrollment, LessonProgress, PDFPurchase, Wishlist, Certificate
+from .models import CourseEnrollment, LessonProgress, LessonNote, PDFPurchase, Wishlist, Certificate
 from .serializers import (
-    CourseEnrollmentSerializer, LessonProgressSerializer, PDFPurchaseSerializer, WishlistSerializer,
+    CourseEnrollmentSerializer, LessonProgressSerializer, LessonNoteSerializer, PDFPurchaseSerializer, WishlistSerializer,
     CertificateSerializer, PublicCertificateSerializer,
 )
 
@@ -19,7 +20,7 @@ class CourseEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return CourseEnrollment.objects.filter(user=self.request.user).select_related("course")
+        return CourseEnrollment.objects.filter(user=self.request.user).select_related("course").prefetch_related("lesson_progress")
 
     @action(detail=True, methods=["post"])
     def mark_lesson_complete(self, request, pk=None):
@@ -29,7 +30,12 @@ class CourseEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
 
         progress, _ = LessonProgress.objects.get_or_create(enrollment=enrollment, lesson=lesson)
         progress.completed = True
-        progress.watched_seconds = request.data.get("watched_seconds", progress.watched_seconds)
+        try:
+            watched_seconds = max(0, int(float(request.data.get("watched_seconds", progress.watched_seconds) or 0)))
+        except (TypeError, ValueError):
+            watched_seconds = progress.watched_seconds
+        progress.watched_seconds = max(progress.watched_seconds, watched_seconds)
+        progress.last_position_seconds = watched_seconds
         progress.save()
 
         total = Lesson.objects.filter(section__course=enrollment.course).count()
@@ -51,6 +57,26 @@ class CourseEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
 
         return Response(CourseEnrollmentSerializer(enrollment).data)
 
+    @action(detail=True, methods=["post"], url_path="update-lesson-progress")
+    def update_lesson_progress(self, request, pk=None):
+        """Mémorise la position de lecture sans marquer artificiellement la leçon comme terminée."""
+        enrollment = self.get_object()
+        lesson_id = request.data.get("lesson_id")
+        lesson = get_object_or_404(Lesson, id=lesson_id, section__course=enrollment.course)
+        try:
+            watched_seconds = max(0, int(float(request.data.get("watched_seconds", 0) or 0)))
+        except (TypeError, ValueError):
+            return Response({"watched_seconds": ["Valeur invalide."]}, status=400)
+
+        progress, _ = LessonProgress.objects.get_or_create(enrollment=enrollment, lesson=lesson)
+        # Ne jamais faire reculer la progression mémorisée suite à une requête arrivée en retard.
+        progress.watched_seconds = max(progress.watched_seconds, watched_seconds)
+        progress.last_position_seconds = watched_seconds
+        progress.save(update_fields=["watched_seconds", "last_position_seconds", "updated_at"])
+        enrollment.last_accessed_lesson = lesson
+        enrollment.save(update_fields=["last_accessed_lesson"])
+        return Response(LessonProgressSerializer(progress).data)
+
     @action(detail=True, methods=["get"])
     def certificate(self, request, pk=None):
         enrollment = self.get_object()
@@ -63,6 +89,41 @@ class CourseEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
             certificate, _ = issue_course_certificate(enrollment, issued_by=enrollment.course.instructor)
         return Response(CertificateSerializer(certificate, context={"request": request}).data)
 
+
+
+class LessonNoteViewSet(viewsets.ModelViewSet):
+    """Carnet personnel : chaque utilisateur ne peut lire et modifier que ses propres notes."""
+    serializer_class = LessonNoteSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["lesson"]
+    ordering_fields = ["timestamp_seconds", "created_at", "updated_at"]
+    ordering = ["timestamp_seconds", "created_at"]
+
+    def get_queryset(self):
+        qs = LessonNote.objects.filter(user=self.request.user).select_related(
+            "lesson", "lesson__section", "lesson__section__course"
+        )
+        course_id = self.request.query_params.get("course")
+        if course_id:
+            qs = qs.filter(lesson__section__course_id=course_id)
+        return qs
+
+    def perform_create(self, serializer):
+        lesson = serializer.validated_data["lesson"]
+        course = lesson.section.course
+        user = self.request.user
+        has_access = (
+            user.role == "admin"
+            or course.instructor_id == user.id
+            or course.is_free
+            or CourseEnrollment.objects.filter(user=user, course=course).exists()
+        )
+        if not has_access:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Vous devez avoir accès à ce cours pour prendre une note.")
+        serializer.save(user=user)
 
 
 class WishlistViewSet(viewsets.ModelViewSet):

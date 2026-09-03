@@ -1,3 +1,27 @@
+# v37 — Expérience de lecture type plateforme premium
+
+- Refonte complète de l'espace de lecture des cours avec une ergonomie inspirée des grandes plateformes de formation : **sommaire repliable**, espace vidéo sombre, navigation précédent/suivant et zone pédagogique à onglets.
+- Le lecteur vidéo conserve l'interdiction de téléchargement et adopte des contrôles plus discrets : timeline superposée, ±10 s, volume, vitesse 0,5×–2×, sous-titres, Picture-in-Picture, plein écran et raccourcis clavier.
+- Ajout de la **lecture automatique de la leçon suivante**, mémorisée par utilisateur dans le navigateur.
+- Ajout de la **reprise de lecture** : la dernière leçon et la position précise sont persistées côté backend et restaurées à la prochaine ouverture.
+- Ajout d'un **carnet personnel horodaté** : création, modification, suppression, retour au timestamp et export texte des notes. Les notes sont privées et isolées par utilisateur.
+- Refonte de la **transcription** avec recherche dans la vidéo ou dans tout le cours. Les lignes au format `[mm:ss]` / `[hh:mm:ss]` deviennent cliquables et déplacent le lecteur au passage concerné.
+- L'onglet **Q&R** utilise maintenant le vrai système de commentaires de leçon : questions apprenant et réponses instructeur sont visibles directement sous le lecteur.
+- Les ressources PDF restent disponibles dans un onglet dédié et ne modifient pas la politique de non-téléchargement des vidéos.
+- Ajout de tests backend pour la confidentialité du carnet et la persistance de la position de lecture.
+- **Migration requise** : `0004_lessonnote` ajoute le carnet personnel et `last_position_seconds` au suivi de leçon.
+
+---
+
+# v36 — Protection contre le téléchargement vidéo
+
+- Suppression des boutons de téléchargement/ouverture directe du lecteur vidéo.
+- Ajout de `controlsList="nodownload noremoteplayback"`, désactivation du clic droit et du glisser-déposer sur les vidéos.
+- Les médias vidéo privés sont servis en `inline`, `private, no-store` et l'ouverture directe de type document/iframe est refusée côté backend.
+- Les PDF ne sont pas concernés par ces restrictions vidéo.
+
+---
+
 # v35 — Sélecteur de devise global dans la navbar
 
 - Ajout d'un **sélecteur de devise global** dans la barre de navigation, disponible sur desktop et dans le menu mobile.

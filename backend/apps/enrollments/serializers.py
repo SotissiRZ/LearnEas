@@ -1,24 +1,48 @@
 from rest_framework import serializers
 from apps.catalog.serializers import CourseListSerializer, PDFProductListSerializer
 from apps.common.fields import RelativeFileField, ProtectedFileField
-from .models import CourseEnrollment, LessonProgress, PDFPurchase, Wishlist
-
-
-class CourseEnrollmentSerializer(serializers.ModelSerializer):
-    course = CourseListSerializer(read_only=True)
-
-    class Meta:
-        model = CourseEnrollment
-        fields = [
-            "id", "course", "purchased_at", "progress_percent",
-            "completed", "certificate_issued", "last_accessed_lesson",
-        ]
+from .models import CourseEnrollment, LessonProgress, LessonNote, PDFPurchase, Wishlist
 
 
 class LessonProgressSerializer(serializers.ModelSerializer):
     class Meta:
         model = LessonProgress
-        fields = ["id", "enrollment", "lesson", "completed", "watched_seconds", "updated_at"]
+        fields = ["id", "enrollment", "lesson", "completed", "watched_seconds", "last_position_seconds", "updated_at"]
+        read_only_fields = ["id", "enrollment", "updated_at"]
+
+
+class CourseEnrollmentSerializer(serializers.ModelSerializer):
+    course = CourseListSerializer(read_only=True)
+    lesson_progress = LessonProgressSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = CourseEnrollment
+        fields = [
+            "id", "course", "purchased_at", "progress_percent",
+            "completed", "certificate_issued", "last_accessed_lesson", "lesson_progress",
+        ]
+
+
+class LessonNoteSerializer(serializers.ModelSerializer):
+    lesson_title = serializers.CharField(source="lesson.title", read_only=True)
+    section_title = serializers.CharField(source="lesson.section.title", read_only=True)
+    course_id = serializers.IntegerField(source="lesson.section.course_id", read_only=True)
+
+    class Meta:
+        model = LessonNote
+        fields = [
+            "id", "lesson", "lesson_title", "section_title", "course_id",
+            "timestamp_seconds", "content", "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "lesson_title", "section_title", "course_id", "created_at", "updated_at"]
+
+    def validate_content(self, value):
+        value = str(value or "").strip()
+        if not value:
+            raise serializers.ValidationError("La note ne peut pas être vide.")
+        if len(value) > 5000:
+            raise serializers.ValidationError("La note est limitée à 5 000 caractères.")
+        return value
 
 
 class PurchasedPDFProductSerializer(PDFProductListSerializer):

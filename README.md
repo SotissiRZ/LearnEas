@@ -10,8 +10,8 @@ en **Django REST Framework + Next.js**, avec un nouveau paradigme :
 > On n'achète plus une vidéo isolée. On achète un **cours complet** (playlist entière avec toutes ses
 > vidéos organisées en modules) ou un **PDF** — vendu seul ou inclus dans un cours.
 
-Style visuel inspiré de Coursera / Udemy, avec une identité propre (palette verte, cartes arrondies,
-dashboards dédiés par rôle).
+Style visuel de plateforme de formation premium avec une identité propre (palette verte, cartes arrondies,
+dashboards dédiés par rôle et espace de lecture immersif).
 
 ---
 
@@ -81,7 +81,7 @@ Admin Django : **http://localhost/admin**
 
 - Footer enrichi avec une section **Légal** : conditions d'utilisation, confidentialité, mentions légales, cookies, paiements/remboursements et vérification publique des certificats.
 - Les informations juridiques (raison sociale, adresse, pays, immatriculation, identifiant fiscal, email confidentialité et délai de remboursement) sont configurables dans **Admin → Paramètres**.
-- Lecteur vidéo unifié : contrôles natifs complets, ±10 s, recommencer, volume/mute, vitesse 0,5× à 2×, boucle, sous-titres WebVTT, Picture-in-Picture, plein écran, nouvel onglet, téléchargement et raccourcis clavier (K/Espace, J/L, flèches, M, F).
+- Lecteur vidéo unifié : contrôles personnalisés, ±10 s, volume/mute, vitesse 0,5× à 2×, sous-titres WebVTT, Picture-in-Picture, plein écran et raccourcis clavier (K/Espace, J/L, flèches, M, F, C). Les vidéos de cours ne proposent ni téléchargement ni ouverture directe de la source.
 - Lecteur PDF unifié : barre native du navigateur (pages, recherche, zoom, miniatures selon navigateur), plein écran/modal, impression, nouvel onglet et téléchargement.
 - Upload vidéo instructeur : MP4/WebM/MOV/M4V, progression réelle, métadonnées extraites automatiquement et limite Docker locale de 2 Go par défaut (`MAX_VIDEO_UPLOAD_MB`).
 - Les leçons acceptent désormais un fichier de sous-titres `.vtt` et une transcription.
@@ -90,6 +90,18 @@ Admin Django : **http://localhost/admin**
 - **Admin → Certificats** : registre global, vérification/révocation/réémission, délivrance groupée ou forcée et paramètres globaux + surcharge par contenu.
 - La présence aux formations live est calculée à partir du temps réellement enregistré dans les séances, et non d'une simple case « présent ».
 - `seed_demo` délivre un certificat d'exemple à **Fatou Ndiaye** sur le cours Django pour tester immédiatement l'onglet « Mes certificats ».
+
+
+### Expérience de lecture des cours (v37)
+
+- Sommaire de cours repliable avec chapitres, durée, progression et leçon active.
+- Navigation précédent/suivant et lecture automatique de la leçon suivante.
+- Reprise automatique à la dernière leçon et au dernier timestamp enregistré.
+- Onglets **Aperçu**, **Transcription**, **Carnet**, **Q&R** et **Ressources** sous le lecteur.
+- Transcriptions recherchables ; utilisez le format `[01:25] Texte du passage` pour rendre un passage cliquable.
+- Carnet privé avec notes horodatées, édition/suppression, retour instantané au passage et export texte.
+- Q&R directement relié aux commentaires de la leçon et aux réponses de l'instructeur.
+- Migration à appliquer après mise à jour : `python manage.py migrate`.
 
 ### Catalogue
 - Cours = **playlist complète** : sections → leçons vidéo, durée totale et nombre de vidéos calculés

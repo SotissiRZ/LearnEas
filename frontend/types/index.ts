@@ -144,6 +144,16 @@ export interface AuthUser {
   domain?: string;
 }
 
+export interface LessonProgress {
+  id: number;
+  enrollment: number;
+  lesson: number;
+  completed: boolean;
+  watched_seconds: number;
+  last_position_seconds: number;
+  updated_at: string;
+}
+
 export interface CourseEnrollment {
   id: number;
   course: Course;
@@ -151,6 +161,20 @@ export interface CourseEnrollment {
   progress_percent: number;
   completed: boolean;
   certificate_issued: boolean;
+  last_accessed_lesson?: number | null;
+  lesson_progress?: LessonProgress[];
+}
+
+export interface LessonNote {
+  id: number;
+  lesson: number;
+  lesson_title: string;
+  section_title: string;
+  course_id: number;
+  timestamp_seconds: number;
+  content: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface FormationSession {
