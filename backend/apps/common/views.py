@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from apps.common.throttles import MediaRateThrottle
+from apps.common.hls_media import rewrite_hls_playlist, unsign_hls_token
 
 
 @method_decorator(xframe_options_exempt, name="dispatch")
@@ -107,3 +108,86 @@ class PrivateMediaView(APIView):
         response["X-Accel-Redirect"] = f"/_protected_media/{quote(name, safe='/')}"
         response["X-Accel-Buffering"] = "no"
         return allow_embedding(response)
+
+
+@method_decorator(xframe_options_exempt, name="dispatch")
+class HlsMediaView(APIView):
+    """Sert les manifests/segments HLS privés avec des URL signées expirantes.
+
+    Les manifests sont réécrits à la volée afin que chaque playlist et segment possède
+    son propre jeton. Cela permet à hls.js/Safari de suivre les références relatives sans
+    rendre le répertoire ``courses/hls`` public.
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [MediaRateThrottle]
+
+    def get(self, request):
+        token = request.query_params.get("token", "")
+        try:
+            name = unsign_hls_token(token, max_age=settings.PRIVATE_MEDIA_TOKEN_MAX_AGE)
+        except Exception:
+            return Response({"detail": "Lien streaming invalide ou expiré."}, status=403)
+
+        using_s3 = bool(getattr(settings, "USE_S3", False))
+        # Sur S3/R2, éviter un HEAD `exists()` pour chaque segment : le stockage signé
+        # répondra lui-même 404 si un objet a disparu. En local, le stat reste peu coûteux.
+        if not using_s3 and not default_storage.exists(name):
+            return Response({"detail": "Segment streaming introuvable."}, status=404)
+
+        lower = name.lower()
+        if lower.endswith(".m3u8"):
+            content_type = "application/vnd.apple.mpegurl"
+        elif lower.endswith(".ts"):
+            content_type = "video/mp2t"
+        elif lower.endswith(".aac"):
+            content_type = "audio/aac"
+        elif lower.endswith(".m4s"):
+            content_type = "video/iso.segment"
+        else:
+            content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+
+        if lower.endswith(".m3u8"):
+            try:
+                with default_storage.open(name, "rb") as handle:
+                    body = handle.read().decode("utf-8")
+                rewritten = rewrite_hls_playlist(name, body)
+            except Exception:
+                return Response({"detail": "Manifest streaming invalide."}, status=500)
+            response = HttpResponse(rewritten, content_type="application/vnd.apple.mpegurl; charset=utf-8")
+            response["Cache-Control"] = "private, no-store"
+            response["Referrer-Policy"] = "no-referrer"
+            response["X-Content-Type-Options"] = "nosniff"
+            return response
+
+        # Segments : déléguer les octets à nginx en local ou au stockage S3 via URL présignée.
+        if using_s3:
+            try:
+                storage_url = default_storage.url(name)
+            except Exception:
+                return Response({"detail": "Segment streaming indisponible."}, status=404)
+            response = redirect(storage_url)
+            response["Cache-Control"] = "private, no-store"
+            response["Referrer-Policy"] = "no-referrer"
+            return response
+
+        candidate = (Path(settings.MEDIA_ROOT) / name).resolve()
+        media_root = Path(settings.MEDIA_ROOT).resolve()
+        try:
+            candidate.relative_to(media_root)
+        except ValueError:
+            return Response({"detail": "Chemin streaming invalide."}, status=403)
+        if not candidate.is_file():
+            return Response({"detail": "Segment streaming introuvable."}, status=404)
+
+        response = HttpResponse(status=200, content_type=content_type)
+        response["Content-Disposition"] = content_disposition_header(False, Path(name).name)
+        response["X-Accel-Redirect"] = f"/_protected_media/{quote(name, safe='/')}"
+        response["X-Accel-Buffering"] = "no"
+        response["Cache-Control"] = "private, no-store"
+        response["Accept-Ranges"] = "bytes"
+        response["X-Content-Type-Options"] = "nosniff"
+        response["X-Download-Options"] = "noopen"
+        response["Cross-Origin-Resource-Policy"] = "same-origin"
+        response["Referrer-Policy"] = "no-referrer"
+        return response

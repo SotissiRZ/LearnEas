@@ -85,6 +85,7 @@ Admin Django : **http://localhost/admin**
 - Footer enrichi avec une section **Légal** : conditions d'utilisation, confidentialité, mentions légales, cookies, paiements/remboursements et vérification publique des certificats.
 - Les informations juridiques (raison sociale, adresse, pays, immatriculation, identifiant fiscal, email confidentialité et délai de remboursement) sont configurables dans **Admin → Paramètres**.
 - Lecteur vidéo unifié : contrôles personnalisés, ±10 s, volume/mute, vitesse 0,5× à 2×, sous-titres WebVTT, Picture-in-Picture, plein écran et raccourcis clavier (K/Espace, J/L, flèches, M, F, C). Les vidéos de cours ne proposent ni téléchargement ni ouverture directe de la source.
+- Streaming adaptatif HLS : 240p/360p/480p/720p selon la résolution source, qualité Auto, mode **Économie de données ≤360p** et mode **Audio uniquement ~48 kb/s**. Les préférences faible débit sont adaptées aux connexions mobiles et le lecteur peut activer automatiquement l'économie de données sur 2G/`Save-Data`.
 - Lecteur PDF unifié : barre native du navigateur (pages, recherche, zoom, miniatures selon navigateur), plein écran/modal, impression, nouvel onglet et téléchargement.
 - Upload vidéo instructeur : MP4/WebM/MOV/M4V, progression réelle, métadonnées extraites automatiquement et limite Docker locale de 2 Go par défaut (`MAX_VIDEO_UPLOAD_MB`).
 - Les leçons acceptent désormais un fichier de sous-titres `.vtt` et une transcription.
@@ -335,7 +336,7 @@ Avant exposition Internet, configurez obligatoirement :
 3. Les URLs webhook HTTPS : `/api/payments/stripe/webhook/` et `/api/payments/geniuspay/webhook/`. YouCan Pay est réconcilié côté serveur en relisant l’état de la facture lors du retour/vérification.
 4. Un SMTP réel pour les emails transactionnels puis utilisez **Admin → Paramètres → Test email**.
 5. Un serveur TURN pour fiabiliser les classes WebRTC sur réseaux mobiles/NAT restrictifs.
-6. Un stockage objet/CDN et idéalement HLS adaptatif pour les vidéos importantes ; sur Railway activez `USE_S3=True` et `REQUIRE_REMOTE_MEDIA=True`.
+6. Un stockage objet/CDN pour les médias et segments HLS ; sur Railway activez `USE_S3=True` et `REQUIRE_REMOTE_MEDIA=True` afin que les paquets HLS v43 survivent aux redéploiements.
 
 Les limitations et priorités restantes sont détaillées dans [`AUDIT.md`](./AUDIT.md).
 
@@ -414,4 +415,42 @@ docker compose exec backend python manage.py normalize_course_videos
 ```
 
 L'administrateur et l'instructeur propriétaire disposent aussi d'un bouton **Réparer cette vidéo** dans le lecteur. La conversion est envoyée au worker Celery et le lecteur se recharge automatiquement quand le fichier H.264/AAC est prêt.
+
+### Streaming adaptatif / faible connexion (v43)
+
+Après l'upload d'un fichier vidéo, LearnEas prépare automatiquement en arrière-plan un paquet HLS privé. Selon la résolution d'origine, le worker produit jusqu'à **240p, 360p, 480p et 720p** ainsi qu'une playlist **audio seule ~48 kb/s**. Le fichier MP4 normalisé reste conservé comme fallback.
+
+Le lecteur propose :
+
+- **Auto** : adaptation dynamique à la bande passante ;
+- **Économie de données** : Auto plafonné à 360p, mémorisé dans le navigateur ;
+- sélection manuelle de la qualité disponible ;
+- **Audio uniquement** : pas de téléchargement des segments vidéo, uniquement l'audio faible débit ;
+- conservation de la position de lecture lors du passage vidéo ↔ audio.
+
+Pour préparer les vidéos déjà présentes avant v43 :
+
+```bash
+docker compose exec backend python manage.py prepare_course_streaming
+```
+
+Pour forcer une régénération complète :
+
+```bash
+docker compose exec backend python manage.py prepare_course_streaming --force
+```
+
+Les manifests et segments sont privés : le frontend ne reçoit que des URL signées expirantes. En Docker local les segments passent par nginx/X-Accel-Redirect ; en production avec `USE_S3=True`, ils utilisent le stockage objet présigné.
+Si le frontend est sur **Vercel** et les segments sur un domaine S3/R2 distinct, définissez aussi `NEXT_PUBLIC_MEDIA_ORIGIN=https://votre-cdn.example.com` au build frontend et autorisez les requêtes `GET`/`HEAD` depuis le domaine LearnEas dans la politique CORS du bucket. Cela permet à hls.js de charger les segments sans élargir inutilement la CSP à tous les domaines.
+
+Variables disponibles :
+
+```env
+HLS_STREAMING_ENABLED=True
+HLS_MAX_HEIGHT=720
+HLS_SEGMENT_SECONDS=6
+HLS_TRANSCODE_TIMEOUT_SECONDS=7200
+HLS_TRANSCODE_PRESET=veryfast
+HLS_AUDIO_ONLY_BITRATE=48k
+```
 

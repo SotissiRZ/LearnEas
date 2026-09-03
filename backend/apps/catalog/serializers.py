@@ -1,8 +1,10 @@
 from django.conf import settings
+from django.db import transaction
 from rest_framework import serializers
 from apps.accounts.serializers import UserPublicSerializer
 from apps.common.fields import RelativeImageField, RelativeFileField, ProtectedFileField
 from apps.common.media_metadata import extract_pdf_page_count, extract_video_duration_minutes, normalize_video_upload, validate_upload_limits
+from apps.common.hls_media import sign_hls_path
 from .models import Category, Course, Section, Lesson, PDFResource, PDFProduct
 
 
@@ -43,13 +45,32 @@ class LessonSerializer(serializers.ModelSerializer):
     locked = serializers.SerializerMethodField()
     video_file = ProtectedFileField(read_only=True)
     subtitles_file = ProtectedFileField(read_only=True)
+    hls_url = serializers.SerializerMethodField()
+    audio_hls_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Lesson
         fields = [
             "id", "title", "video_url", "video_file", "duration_minutes",
             "order", "is_preview", "description", "subtitles_file", "transcript", "locked",
+            "hls_url", "audio_hls_url", "streaming_status", "streaming_variants",
         ]
+
+    def get_hls_url(self, obj):
+        if obj.streaming_status != "ready" or not obj.hls_master_path:
+            return None
+        try:
+            return sign_hls_path(obj.hls_master_path)
+        except Exception:
+            return None
+
+    def get_audio_hls_url(self, obj):
+        if obj.streaming_status != "ready" or not obj.audio_hls_path:
+            return None
+        try:
+            return sign_hls_path(obj.audio_hls_path)
+        except Exception:
+            return None
 
     def get_locked(self, obj):
         """Débloque previews, achats valides et contenu appartenant à l'organisateur/admin."""
@@ -66,6 +87,8 @@ class LessonSerializer(serializers.ModelSerializer):
             data["video_file"] = None
             data["subtitles_file"] = None
             data["transcript"] = ""
+            data["hls_url"] = None
+            data["audio_hls_url"] = None
         return data
 
 
@@ -262,6 +285,39 @@ class LessonWriteSerializer(serializers.ModelSerializer):
                 "video_url": "Impossible de déterminer la durée. Vérifiez que l'URL vidéo est accessible."
             })
         return attrs
+
+    def _schedule_streaming(self, lesson):
+        if not getattr(settings, "HLS_STREAMING_ENABLED", True) or not lesson.video_file:
+            return
+        from .models import StreamingStatus
+        from .tasks import prepare_lesson_streaming
+        Lesson.objects.filter(pk=lesson.pk).update(streaming_status=StreamingStatus.PENDING, streaming_error="")
+
+        def enqueue():
+            try:
+                prepare_lesson_streaming.delay(lesson.pk, force=True)
+            except Exception:
+                # L'upload reste valide même si Redis/Celery est momentanément indisponible.
+                # L'instructeur peut relancer la préparation depuis l'interface.
+                Lesson.objects.filter(pk=lesson.pk).update(
+                    streaming_status=StreamingStatus.PENDING,
+                    streaming_error="Worker de transcodage temporairement indisponible.",
+                )
+
+        transaction.on_commit(enqueue)
+
+    def create(self, validated_data):
+        lesson = super().create(validated_data)
+        if lesson.video_file:
+            self._schedule_streaming(lesson)
+        return lesson
+
+    def update(self, instance, validated_data):
+        video_changed = "video_file" in validated_data
+        lesson = super().update(instance, validated_data)
+        if video_changed and lesson.video_file:
+            self._schedule_streaming(lesson)
+        return lesson
 
 
 class PDFResourceWriteSerializer(serializers.ModelSerializer):

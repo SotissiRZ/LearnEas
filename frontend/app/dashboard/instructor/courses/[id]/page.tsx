@@ -2,7 +2,7 @@
 import { useParams } from "next/navigation";
 
 import { useEffect, useState, useCallback } from "react";
-import { PlusCircle, Trash2, PlayCircle, FileText, Eye, EyeOff, Loader2, Upload, Link as LinkIcon, AlertCircle } from "lucide-react";
+import { PlusCircle, Trash2, PlayCircle, FileText, Eye, EyeOff, Loader2, Upload, Link as LinkIcon, AlertCircle, RefreshCw } from "lucide-react";
 import { api, apiUploadWithProgress, ApiError } from "@/lib/api";
 import { Course } from "@/types";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
@@ -26,7 +26,8 @@ export default function ManageCoursePage() { const params = useParams<{ id: stri
   const [loading, setLoading] = useState(true);
   const [newSectionTitle, setNewSectionTitle] = useState("");
   const [publishing, setPublishing] = useState(false);
-  const [videoPreview, setVideoPreview] = useState<{src:string; title:string; subtitles?:string|null} | null>(null);
+  const [videoPreview, setVideoPreview] = useState<{src:string; title:string; subtitles?:string|null; hls?:string|null; audioHls?:string|null; variants?:Array<{height:number;width?:number;bandwidth?:number}>; streamingStatus?:string} | null>(null);
+  const [streamingBusy, setStreamingBusy] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     const list = await api.get<{ results: Course[] } | Course[]>("/catalog/courses/my_courses/");
@@ -101,6 +102,26 @@ export default function ManageCoursePage() { const params = useParams<{ id: stri
     load();
   }
 
+  async function prepareStreaming(lessonId: number) {
+    if (streamingBusy) return;
+    setStreamingBusy(lessonId);
+    try {
+      await api.post(`/catalog/lessons/${lessonId}/prepare-streaming/`, {});
+      const started = Date.now();
+      while (Date.now() - started < 30 * 60 * 1000) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2500));
+        const state = await api.get<{ status: string; detail?: string }>(`/catalog/lessons/${lessonId}/streaming-status/`);
+        if (state.status === "ready") break;
+        if (state.status === "failed") throw new Error(state.detail || "La préparation du streaming a échoué.");
+      }
+      await load();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Impossible de préparer le streaming adaptatif.");
+    } finally {
+      setStreamingBusy(null);
+    }
+  }
+
   async function togglePublish() {
     if (!course) return;
     setPublishing(true);
@@ -157,8 +178,18 @@ export default function ManageCoursePage() { const params = useParams<{ id: stri
                     <span className="flex-1">{lesson.title}</span>
                     {lesson.is_preview && <span className="badge bg-brand-50 text-brand-700">Aperçu gratuit</span>}
                     <span className="text-xs text-gray-400">{lesson.duration_minutes} min</span>
+                    {lesson.video_file && (
+                      <span className={`hidden rounded-full px-2 py-1 text-[10px] font-semibold sm:inline ${lesson.streaming_status === "ready" ? "bg-emerald-50 text-emerald-700" : lesson.streaming_status === "failed" ? "bg-red-50 text-red-600" : "bg-sky-50 text-sky-700"}`}>
+                        {lesson.streaming_status === "ready" ? `HLS ${lesson.streaming_variants?.map((v) => `${v.height}p`).join("/") || "prêt"}` : lesson.streaming_status === "processing" ? "HLS en cours" : lesson.streaming_status === "failed" ? "HLS échoué" : "HLS en attente"}
+                      </span>
+                    )}
+                    {lesson.video_file && (lesson.streaming_status === "failed" || lesson.streaming_status === "pending") && (
+                      <button type="button" disabled={streamingBusy === lesson.id} onClick={() => void prepareStreaming(lesson.id)} className="rounded-md p-1.5 text-sky-700 hover:bg-sky-50 disabled:opacity-50" title="Préparer le streaming faible débit">
+                        <RefreshCw size={14} className={streamingBusy === lesson.id ? "animate-spin" : ""} />
+                      </button>
+                    )}
                     {(lesson.video_file || lesson.video_url) && (
-                      <button type="button" onClick={() => setVideoPreview({ src: (lesson.video_file || lesson.video_url) as string, title: lesson.title, subtitles: lesson.subtitles_file })}
+                      <button type="button" onClick={() => setVideoPreview({ src: (lesson.video_file || lesson.video_url) as string, title: lesson.title, subtitles: lesson.subtitles_file, hls: lesson.hls_url, audioHls: lesson.audio_hls_url, variants: lesson.streaming_variants, streamingStatus: lesson.streaming_status })}
                         className="font-semibold text-brand-700">Lire</button>
                     )}
                     <button onClick={() => deleteLesson(lesson.id)} className="text-gray-400 hover:text-red-600">
@@ -205,7 +236,7 @@ export default function ManageCoursePage() { const params = useParams<{ id: stri
           </div>
         </div>
       </div>
-      {videoPreview && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setVideoPreview(null)}><div className="w-full max-w-5xl overflow-hidden rounded-2xl bg-black" onClick={(e) => e.stopPropagation()}><div className="flex items-center justify-between bg-white px-4 py-3"><strong className="text-sm">{videoPreview.title}</strong><button type="button" onClick={() => setVideoPreview(null)} className="text-sm text-gray-500">Fermer</button></div><div className="aspect-video"><VideoPlayer src={videoPreview.src} title={videoPreview.title} subtitlesUrl={videoPreview.subtitles}/></div></div></div>}
+      {videoPreview && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setVideoPreview(null)}><div className="w-full max-w-5xl overflow-hidden rounded-2xl bg-black" onClick={(e) => e.stopPropagation()}><div className="flex items-center justify-between bg-white px-4 py-3"><strong className="text-sm">{videoPreview.title}</strong><button type="button" onClick={() => setVideoPreview(null)} className="text-sm text-gray-500">Fermer</button></div><div className="aspect-video"><VideoPlayer src={videoPreview.src} hlsSrc={videoPreview.hls} audioHlsSrc={videoPreview.audioHls} streamingVariants={videoPreview.variants} streamingStatus={videoPreview.streamingStatus} title={videoPreview.title} subtitlesUrl={videoPreview.subtitles}/></div></div></div>}
     </div>
   );
 }

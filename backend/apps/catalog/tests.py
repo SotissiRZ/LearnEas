@@ -1,4 +1,6 @@
 from io import BytesIO
+from pathlib import Path
+import tempfile
 from decimal import Decimal
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -149,6 +151,66 @@ class CatalogAccessRegressionTests(APITestCase):
         self.assertIn("/_protected_media/", media["X-Accel-Redirect"])
         self.assertIn("inline", media["Content-Disposition"])
         self.assertEqual(media["X-Download-Options"], "noopen")
+
+    def test_locked_lesson_does_not_leak_hls_urls(self):
+        self.lesson.hls_master_path = "courses/hls/1/pkg/master.m3u8"
+        self.lesson.audio_hls_path = "courses/hls/1/pkg/audio/index.m3u8"
+        self.lesson.streaming_status = "ready"
+        self.lesson.streaming_variants = [{"height": 240}, {"height": 360}]
+        self.lesson.save(update_fields=["hls_master_path", "audio_hls_path", "streaming_status", "streaming_variants"])
+        self.client.force_authenticate(self.student)
+        response = self.client.get(f"/api/catalog/courses/{self.course.slug}/")
+        lesson = response.data["sections"][0]["lessons"][0]
+        self.assertTrue(lesson["locked"])
+        self.assertIsNone(lesson["hls_url"])
+        self.assertIsNone(lesson["audio_hls_url"])
+
+    def test_hls_manifests_rewrite_nested_assets_to_signed_urls(self):
+        with tempfile.TemporaryDirectory() as tmpdir, self.settings(MEDIA_ROOT=tmpdir, USE_S3=False):
+            prefix = Path(tmpdir) / "courses" / "hls" / str(self.lesson.id) / "pkg"
+            (prefix / "v240").mkdir(parents=True)
+            (prefix / "audio").mkdir(parents=True)
+            (prefix / "master.m3u8").write_text(
+                "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=340000,RESOLUTION=426x240\nv240/index.m3u8\n",
+                encoding="utf-8",
+            )
+            (prefix / "v240" / "index.m3u8").write_text(
+                "#EXTM3U\n#EXTINF:6.0,\nseg_00000.ts\n#EXT-X-ENDLIST\n",
+                encoding="utf-8",
+            )
+            (prefix / "v240" / "seg_00000.ts").write_bytes(b"segment")
+            (prefix / "audio" / "index.m3u8").write_text(
+                "#EXTM3U\n#EXTINF:6.0,\nseg_00000.aac\n#EXT-X-ENDLIST\n",
+                encoding="utf-8",
+            )
+            (prefix / "audio" / "seg_00000.aac").write_bytes(b"audio")
+
+            relative = f"courses/hls/{self.lesson.id}/pkg"
+            self.lesson.hls_master_path = f"{relative}/master.m3u8"
+            self.lesson.audio_hls_path = f"{relative}/audio/index.m3u8"
+            self.lesson.streaming_status = "ready"
+            self.lesson.streaming_variants = [{"height": 240, "width": 426, "bandwidth": 340000}]
+            self.lesson.save(update_fields=["hls_master_path", "audio_hls_path", "streaming_status", "streaming_variants"])
+
+            self.client.force_authenticate(self.instructor)
+            detail = self.client.get(f"/api/catalog/courses/{self.course.slug}/")
+            lesson = detail.data["sections"][0]["lessons"][0]
+            self.assertTrue(lesson["hls_url"].startswith("/api/media/hls/?token="))
+            self.assertTrue(lesson["audio_hls_url"].startswith("/api/media/hls/?token="))
+
+            master = self.client.get(lesson["hls_url"])
+            self.assertEqual(master.status_code, status.HTTP_200_OK)
+            self.assertEqual(master["Content-Type"].split(";")[0], "application/vnd.apple.mpegurl")
+            variant_url = next(line for line in master.content.decode().splitlines() if line.startswith("/api/media/hls/?token="))
+
+            variant = self.client.get(variant_url)
+            self.assertEqual(variant.status_code, status.HTTP_200_OK)
+            segment_url = next(line for line in variant.content.decode().splitlines() if line.startswith("/api/media/hls/?token="))
+
+            segment = self.client.get(segment_url)
+            self.assertEqual(segment.status_code, status.HTTP_200_OK)
+            self.assertEqual(segment["Content-Type"], "video/mp2t")
+            self.assertIn("/_protected_media/", segment["X-Accel-Redirect"])
 
     def test_private_video_rejects_direct_document_navigation(self):
         self.lesson.video_url = ""

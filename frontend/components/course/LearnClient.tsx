@@ -431,6 +431,10 @@ export default function LearnClient({ course }: { course: Course }) {
                     ref={playerRef}
                     key={activeLesson.id}
                     src={(activeLesson.video_url || activeLesson.video_file) as string}
+                    hlsSrc={activeLesson.hls_url}
+                    audioHlsSrc={activeLesson.audio_hls_url}
+                    streamingVariants={activeLesson.streaming_variants}
+                    streamingStatus={activeLesson.streaming_status}
                     poster={course.thumbnail}
                     title={activeLesson.title}
                     subtitlesUrl={activeLesson.subtitles_file}

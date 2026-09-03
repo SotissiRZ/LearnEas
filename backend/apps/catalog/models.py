@@ -32,6 +32,13 @@ class Level(models.TextChoices):
     EXPERT = "expert", "Expert"
 
 
+class StreamingStatus(models.TextChoices):
+    PENDING = "pending", "En attente"
+    PROCESSING = "processing", "Préparation en cours"
+    READY = "ready", "Prêt"
+    FAILED = "failed", "Échec"
+
+
 class Course(models.Model):
     """Un cours = une PLAYLIST complète (plusieurs vidéos organisées en sections).
     On vend l'accès à l'ensemble du cours, pas à une vidéo isolée."""
@@ -148,6 +155,14 @@ class Lesson(models.Model):
     description = models.TextField(blank=True)
     subtitles_file = models.FileField(upload_to="courses/subtitles/", blank=True, null=True, help_text="Sous-titres WebVTT (.vtt)")
     transcript = models.TextField(blank=True, help_text="Transcription texte de la leçon")
+    # Streaming adaptatif généré en arrière-plan à partir du fichier source. Les chemins
+    # pointent vers un paquet HLS versionné et ne sont jamais exposés directement au client.
+    hls_master_path = models.CharField(max_length=500, blank=True)
+    audio_hls_path = models.CharField(max_length=500, blank=True)
+    streaming_status = models.CharField(max_length=20, choices=StreamingStatus.choices, default=StreamingStatus.PENDING)
+    streaming_variants = models.JSONField(default=list, blank=True)
+    streaming_error = models.TextField(blank=True)
+    streaming_updated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["order", "id"]

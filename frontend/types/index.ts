@@ -86,6 +86,10 @@ export interface Lesson {
   description: string;
   subtitles_file?: string | null;
   transcript?: string;
+  hls_url?: string | null;
+  audio_hls_url?: string | null;
+  streaming_status?: "pending" | "processing" | "ready" | "failed" | string;
+  streaming_variants?: Array<{ height: number; width?: number; bandwidth?: number }>;
   locked: boolean;
 }
 

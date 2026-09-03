@@ -182,6 +182,10 @@ export default function CourseCurriculum({ course: initialCourse }: { course: Co
               <VideoPlayer
                 key={activeLesson.id}
                 src={playableSource(activeLesson) as string}
+                hlsSrc={activeLesson.hls_url}
+                audioHlsSrc={activeLesson.audio_hls_url}
+                streamingVariants={activeLesson.streaming_variants}
+                streamingStatus={activeLesson.streaming_status}
                 poster={course.thumbnail}
                 title={activeLesson.title}
                 subtitlesUrl={activeLesson.subtitles_file}

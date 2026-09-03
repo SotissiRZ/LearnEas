@@ -98,7 +98,7 @@ def probe_video_path(path: str | os.PathLike[str]) -> dict[str, Any]:
         [
             "ffprobe",
             "-v", "error",
-            "-show_entries", "format=format_name,duration:stream=index,codec_type,codec_name,pix_fmt",
+            "-show_entries", "format=format_name,duration:stream=index,codec_type,codec_name,pix_fmt,width,height",
             "-of", "json",
             str(path),
         ],
@@ -131,6 +131,8 @@ def probe_video_path(path: str | os.PathLike[str]) -> dict[str, Any]:
         "duration_seconds": duration,
         "video_codec": str(video_stream.get("codec_name") or "").lower() or None,
         "pixel_format": str(video_stream.get("pix_fmt") or "").lower() or None,
+        "width": int(video_stream.get("width") or 0),
+        "height": int(video_stream.get("height") or 0),
         "audio_codec": (str(audio_stream.get("codec_name") or "").lower() or None) if audio_stream else None,
         "has_audio": bool(audio_stream),
     }

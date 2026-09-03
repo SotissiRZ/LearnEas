@@ -1,3 +1,21 @@
+# v43 — HLS adaptatif + mode faible connexion / audio-only
+
+- Génération asynchrone via **Celery + ffmpeg** d'un paquet HLS multi-bitrate pour chaque vidéo uploadée.
+- Profils orientés réseaux mobiles : **240p, 360p, 480p et 720p**, sans upscale au-delà de la source.
+- Génération d'une piste **audio-only ~48 kb/s** pour suivre un cours avec une consommation de données minimale.
+- Le lecteur utilise **hls.js** sur Chrome/Firefox/Edge/Android et le HLS natif lorsque le navigateur le prend en charge.
+- Nouveau réglage **Économie de données** : le mode Auto est plafonné à 360p et le choix est mémorisé dans le navigateur ; activation automatique si `Save-Data`/2G est détecté.
+- Sélecteur de qualité Auto / 240p / 360p / 480p / 720p et bascule Audio uniquement, avec conservation du timestamp lors du changement de source.
+- Les manifests HLS restent privés : chaque playlist/segment est servi par une URL signée expirante et les manifests sont réécrits côté Django ; aucun répertoire HLS n'est exposé publiquement.
+- Support local via `X-Accel-Redirect` et stockage S3-compatible via URL présignée.
+- Régénération HLS disponible côté instructeur/admin, statut visible dans l'éditeur de cours, et nettoyage des anciens paquets lors d'une régénération ou suppression de leçon.
+- Commande de migration des anciennes vidéos : `python manage.py prepare_course_streaming`.
+- Correction d'une déclaration `const video` dupliquée dans le lecteur vidéo qui pouvait casser la compilation TypeScript.
+- Ajout de `hls.js` 1.6.13 au frontend.
+- **Migration requise :** `catalog.0005_lesson_adaptive_streaming`.
+
+---
+
 # v42 — Mobile Money Afrique francophone (CinetPay)
 
 - Ajout d’un vrai driver **CinetPay Mobile Money** au moteur de paiement LearnEas, sans exposer les secrets au frontend.

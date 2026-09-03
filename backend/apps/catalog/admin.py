@@ -35,7 +35,8 @@ class SectionAdmin(admin.ModelAdmin):
 
 @admin.register(Lesson)
 class LessonAdmin(admin.ModelAdmin):
-    list_display = ("section", "title", "duration_minutes", "is_preview", "order")
+    list_display = ("section", "title", "duration_minutes", "streaming_status", "is_preview", "order")
+    list_filter = ("streaming_status", "is_preview")
 
 
 @admin.register(PDFResource)

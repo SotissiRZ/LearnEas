@@ -8,7 +8,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 from apps.enrollments.models import CourseEnrollment, PDFPurchase
 from .models import Category, Course, Section, Lesson, PDFResource, PDFProduct
 from .permissions import IsInstructorOrAdmin, IsInstructorOrAdminOnly, IsAdminRoleOrReadOnly
-from .tasks import normalize_lesson_video
+from .tasks import normalize_lesson_video, prepare_lesson_streaming
+from apps.common.hls_media import sign_hls_path
 from .serializers import (
     CategorySerializer, CourseListSerializer, CourseDetailSerializer, CourseWriteSerializer,
     SectionWriteSerializer, LessonWriteSerializer, PDFResourceWriteSerializer,
@@ -131,6 +132,36 @@ class LessonViewSet(viewsets.ModelViewSet):
         if state == "FAILURE":
             return Response({"state": state, "detail": "La conversion vidéo a échoué. Vérifiez les logs du worker Celery."})
         return Response({"state": state})
+
+
+    @action(detail=True, methods=["post"], url_path="prepare-streaming")
+    def prepare_streaming(self, request, pk=None):
+        """(Re)génère le HLS adaptatif + audio faible débit d'une leçon uploadée."""
+        lesson = self.get_object()
+        if not lesson.video_file:
+            return Response({"detail": "Le streaming adaptatif nécessite un fichier vidéo uploadé."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            task = prepare_lesson_streaming.delay(lesson.id, force=True)
+        except Exception:
+            return Response({"detail": "Le worker de transcodage est temporairement indisponible."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"task_id": task.id, "status": "queued"}, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["get"], url_path="streaming-status")
+    def streaming_status(self, request, pk=None):
+        lesson = self.get_object()
+        payload = {
+            "lesson_id": lesson.id,
+            "status": lesson.streaming_status,
+            "variants": lesson.streaming_variants,
+            "detail": lesson.streaming_error if lesson.streaming_status == "failed" else "",
+            "hls_url": None,
+            "audio_hls_url": None,
+        }
+        if lesson.streaming_status == "ready" and lesson.hls_master_path:
+            payload["hls_url"] = sign_hls_path(lesson.hls_master_path)
+            if lesson.audio_hls_path:
+                payload["audio_hls_url"] = sign_hls_path(lesson.audio_hls_path)
+        return Response(payload)
 
 
 class PDFResourceViewSet(viewsets.ModelViewSet):

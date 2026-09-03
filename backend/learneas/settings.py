@@ -136,6 +136,15 @@ VIDEO_TRANSCODE_TIMEOUT_SECONDS = config("VIDEO_TRANSCODE_TIMEOUT_SECONDS", defa
 VIDEO_TRANSCODE_PRESET = config("VIDEO_TRANSCODE_PRESET", default="veryfast")
 VIDEO_TRANSCODE_CRF = config("VIDEO_TRANSCODE_CRF", default=22, cast=int)
 
+# Streaming HLS adaptatif : 240p/360p/480p/720p + piste audio seule très faible débit.
+# Le transcodage est asynchrone via Celery pour ne jamais bloquer les requêtes HTTP.
+HLS_STREAMING_ENABLED = config("HLS_STREAMING_ENABLED", default=True, cast=bool)
+HLS_MAX_HEIGHT = config("HLS_MAX_HEIGHT", default=720, cast=int)
+HLS_SEGMENT_SECONDS = config("HLS_SEGMENT_SECONDS", default=6, cast=int)
+HLS_TRANSCODE_TIMEOUT_SECONDS = config("HLS_TRANSCODE_TIMEOUT_SECONDS", default=7200, cast=int)
+HLS_TRANSCODE_PRESET = config("HLS_TRANSCODE_PRESET", default="veryfast")
+HLS_AUDIO_ONLY_BITRATE = config("HLS_AUDIO_ONLY_BITRATE", default="48k")
+
 # Railway utilise un disque éphémère par défaut : activez USE_S3 avec un bucket S3-compatible
 # (AWS, Cloudflare R2, Backblaze, MinIO, etc.) pour conserver durablement les médias.
 if USE_S3:

@@ -10,9 +10,11 @@ function externalOrigin(value) {
 }
 
 const apiOrigin = externalOrigin(process.env.NEXT_PUBLIC_API_URL);
+const mediaOrigin = externalOrigin(process.env.NEXT_PUBLIC_MEDIA_ORIGIN);
 const connectSources = [
   "'self'",
   apiOrigin,
+  mediaOrigin,
   'https://api.stripe.com',
   'https://www.youtube.com',
   'https://www.youtube-nocookie.com',
