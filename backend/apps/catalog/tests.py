@@ -147,6 +147,23 @@ class CatalogAccessRegressionTests(APITestCase):
         self.assertEqual(media["Accept-Ranges"], "bytes")
         self.assertEqual(media["X-Accel-Buffering"], "no")
         self.assertIn("/_protected_media/", media["X-Accel-Redirect"])
+        self.assertIn("inline", media["Content-Disposition"])
+        self.assertEqual(media["X-Download-Options"], "noopen")
+
+    def test_private_video_rejects_direct_document_navigation(self):
+        self.lesson.video_url = ""
+        self.lesson.video_file = SimpleUploadedFile("intro.mp4", b"fake-mp4-bytes", content_type="video/mp4")
+        self.lesson.save(update_fields=["video_url", "video_file"])
+        self.client.force_authenticate(self.instructor)
+        detail = self.client.get(f"/api/catalog/courses/{self.course.slug}/")
+        protected_url = detail.data["sections"][0]["lessons"][0]["video_file"]
+
+        blocked = self.client.get(protected_url, HTTP_SEC_FETCH_DEST="document")
+        self.assertEqual(blocked.status_code, status.HTTP_403_FORBIDDEN)
+
+        playable = self.client.get(protected_url, HTTP_SEC_FETCH_DEST="video")
+        self.assertEqual(playable.status_code, status.HTTP_200_OK)
+        self.assertEqual(playable["Content-Type"], "video/mp4")
 
     def test_private_media_x_accel_redirect_encodes_unicode_filename(self):
         self.lesson.video_url = ""

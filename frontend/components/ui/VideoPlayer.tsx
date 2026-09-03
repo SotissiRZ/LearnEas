@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Download,
-  ExternalLink,
   Maximize2,
   Minimize2,
   Pause,
@@ -220,6 +218,8 @@ export default function VideoPlayer({ src, poster, title = "Vidéo", subtitlesUr
       ref={wrapperRef}
       tabIndex={0}
       onKeyDown={handleKeyDown}
+      onContextMenu={(event) => event.preventDefault()}
+      onDragStart={(event) => event.preventDefault()}
       aria-label={`Lecteur vidéo · ${title}`}
       className="group relative flex h-full w-full flex-col overflow-hidden bg-black outline-none focus:ring-2 focus:ring-brand-500"
     >
@@ -229,9 +229,12 @@ export default function VideoPlayer({ src, poster, title = "Vidéo", subtitlesUr
           src={resolvedSrc}
           playsInline
           preload="metadata"
+          controlsList="nodownload noremoteplayback"
+          disableRemotePlayback
           poster={poster || undefined}
           muted={muted}
           loop={loop}
+          draggable={false}
           className="h-full w-full object-contain"
           onClick={() => void togglePlay()}
           onLoadedMetadata={(e) => {
@@ -291,7 +294,6 @@ export default function VideoPlayer({ src, poster, title = "Vidéo", subtitlesUr
                     {repairing ? "Réparation en cours…" : "Réparer cette vidéo"}
                   </button>
                 )}
-                <a href={resolvedSrc} target="_blank" rel="noreferrer" className="rounded-lg border border-white/20 px-4 py-2 text-sm font-semibold text-white">Ouvrir la source</a>
               </div>
             </div>
           </div>
@@ -376,8 +378,6 @@ export default function VideoPlayer({ src, poster, title = "Vidéo", subtitlesUr
           <label className="ml-1 hidden items-center gap-1 text-xs text-white/65 md:flex"><input type="checkbox" checked={loop} onChange={(e) => setLoop(e.target.checked)} /> Boucle</label>
           <span className="flex-1" />
           <button type="button" onClick={togglePip} className="rounded-lg p-2 hover:bg-white/10" title="Picture-in-Picture"><PictureInPicture2 size={17} /></button>
-          <a href={resolvedSrc} target="_blank" rel="noreferrer" className="rounded-lg p-2 hover:bg-white/10" title="Ouvrir dans un nouvel onglet"><ExternalLink size={17} /></a>
-          <a href={resolvedSrc} download className="hidden rounded-lg p-2 hover:bg-white/10 sm:inline-flex" title={`Télécharger ${title}`}><Download size={17} /></a>
           <button type="button" onClick={() => void toggleFullscreen()} className="rounded-lg p-2 hover:bg-white/10" title="Plein écran (F)">{fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</button>
         </div>
       </div>

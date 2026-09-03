@@ -589,3 +589,14 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Chaque certificat conserve un snapshot des informations au moment de l'émission et dispose d'un numéro ainsi que d'un code de vérification uniques.
 - La vérification publique ne révèle pas l'adresse email de l'apprenant.
 - `seed_demo` génère un certificat de démonstration pour **Fatou Ndiaye** afin de tester immédiatement le parcours apprenant.
+
+## v36 — Vidéos non téléchargeables depuis l’interface
+
+- Suppression des boutons **Télécharger** et **Ouvrir la source** du lecteur vidéo LearnEas.
+- Le lecteur HTML5 annonce `nodownload` et `noremoteplayback`, désactive le glisser-déposer et le menu contextuel sur la zone vidéo.
+- Les médias vidéo privés restent servis uniquement via des URLs signées et en `Content-Disposition: inline`, avec cache privé/no-store.
+- Une navigation navigateur explicitement déclarée comme `document`, `iframe`, `object` ou `embed` vers un média vidéo privé est refusée ; les requêtes normales du lecteur `<video>` continuent de fonctionner.
+- Les redirections S3 demandent une disposition `inline` et un cache privé/no-store quand le backend de stockage le permet.
+- Ajout de tests de régression sur les en-têtes de streaming et le refus de navigation directe.
+
+> Limite technique : un navigateur doit recevoir les octets d’une vidéo pour la lire. Sans DRM (Widevine/FairPlay/PlayReady), aucun site web ne peut empêcher absolument un utilisateur technique de capturer le flux réseau ou l’écran. v36 supprime et durcit les mécanismes de téléchargement ordinaires sans casser la lecture.

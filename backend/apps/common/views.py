@@ -54,10 +54,35 @@ class PrivateMediaView(APIView):
             response["Referrer-Policy"] = "no-referrer"
             return response
 
+        content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        is_video = content_type.startswith("video/")
+
+        # Les vidéos LearnEas sont destinées au lecteur intégré. Une navigation directe
+        # (nouvel onglet / iframe de téléchargement) est refusée lorsque le navigateur
+        # l'identifie explicitement comme un document. Cela ne remplace pas un DRM, mais
+        # élimine les voies de téléchargement proposées par l'interface et les navigations
+        # directes les plus courantes tout en laissant fonctionner les requêtes <video>.
+        fetch_dest = (request.headers.get("Sec-Fetch-Dest") or "").lower()
+        if is_video and fetch_dest in {"document", "iframe", "object", "embed"}:
+            return Response({"detail": "Cette vidéo doit être lue depuis le lecteur LearnEas."}, status=403)
+
         if getattr(settings, "USE_S3", False):
             if not default_storage.exists(name):
                 return Response({"detail": "Fichier introuvable."}, status=404)
-            return allow_embedding(redirect(default_storage.url(name)))
+            parameters = {
+                "ResponseContentDisposition": "inline",
+                "ResponseCacheControl": "private, no-store",
+                "ResponseContentType": content_type,
+            } if is_video else {}
+            try:
+                storage_url = default_storage.url(name, parameters=parameters or None)
+            except TypeError:
+                storage_url = default_storage.url(name)
+            response = redirect(storage_url)
+            if is_video:
+                response["X-Download-Options"] = "noopen"
+                response["Cross-Origin-Resource-Policy"] = "same-site"
+            return allow_embedding(response)
 
         candidate = (Path(settings.MEDIA_ROOT) / name).resolve()
         media_root = Path(settings.MEDIA_ROOT).resolve()
@@ -72,9 +97,11 @@ class PrivateMediaView(APIView):
         # ce qui peut transformer le Content-Type du fichier servi par X-Accel-Redirect.
         # Le navigateur recevait alors les octets du PDF comme du texte brut (`%PDF`,
         # `endstream`, caractères illisibles) au lieu d'ouvrir son lecteur PDF natif.
-        content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
         response = HttpResponse(status=200, content_type=content_type)
         response["Content-Disposition"] = content_disposition_header(False, Path(name).name)
+        if is_video:
+            response["X-Download-Options"] = "noopen"
+            response["Cross-Origin-Resource-Policy"] = "same-origin"
         # X-Accel-Redirect est une URI, pas un chemin système : les accents/espaces doivent être
         # percent-encodés, sinon nginx peut retourner un contenu invalide/404 alors que le fichier existe.
         response["X-Accel-Redirect"] = f"/_protected_media/{quote(name, safe='/')}"
