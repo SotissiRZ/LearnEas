@@ -2,7 +2,10 @@ from rest_framework import serializers
 from apps.accounts.serializers import UserPublicSerializer
 from apps.catalog.serializers import CategorySerializer
 from apps.common.fields import RelativeImageField
-from .models import InteractiveFormation, FormationSession, FormationEnrollment, FormationAttendance, FormationSessionInvite
+from .models import (
+    InteractiveFormation, FormationSession, FormationEnrollment, FormationAttendance, FormationSessionInvite,
+    MentorshipOffering, MentorshipSlot, MentorshipBooking,
+)
 
 
 def _is_manager(user, formation):
@@ -98,7 +101,8 @@ class InteractiveFormationListSerializer(serializers.ModelSerializer):
             "id", "title", "slug", "category", "instructor", "co_instructor",
             "level", "language", "price", "num_sessions", "session_duration_minutes",
             "max_students", "thumbnail", "start_date", "end_date", "status",
-            "published", "students_count", "seats_left", "is_full", "created_at",
+            "published", "students_count", "seats_left", "is_full", "is_enrollment_open",
+            "cohort_name", "cohort_timezone", "enrollment_deadline", "min_students", "created_at",
         ]
 
 
@@ -135,6 +139,7 @@ class InteractiveFormationWriteSerializer(serializers.ModelSerializer):
             "id", "category", "co_instructor", "title", "description", "level", "language",
             "price", "num_sessions", "session_duration_minutes", "max_students",
             "thumbnail", "start_date", "end_date", "status", "published", "slug",
+            "cohort_name", "cohort_timezone", "enrollment_deadline", "min_students",
             "certificate_enabled", "certificate_auto_issue", "certificate_attendance_percent",
             "certificate_validity_months", "certificate_title", "certificate_subtitle",
             "certificate_description", "certificate_signatory_name", "certificate_signatory_title",
@@ -148,11 +153,27 @@ class InteractiveFormationWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Le seuil de présence doit être compris entre 0 et 100 %.")
         return value
 
+    def validate_cohort_timezone(self, value):
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        value = (value or "").strip()
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise serializers.ValidationError("Fuseau horaire IANA invalide (ex. Africa/Abidjan).")
+        return value
+
     def validate(self, attrs):
         start = attrs.get("start_date", getattr(self.instance, "start_date", None))
         end = attrs.get("end_date", getattr(self.instance, "end_date", None))
         if start and end and end < start:
             raise serializers.ValidationError({"end_date": "La date de fin doit être postérieure à la date de début."})
+        deadline = attrs.get("enrollment_deadline", getattr(self.instance, "enrollment_deadline", None))
+        if deadline and start and deadline.date() > start:
+            raise serializers.ValidationError({"enrollment_deadline": "La clôture des inscriptions doit être au plus tard le jour de début."})
+        min_students = attrs.get("min_students", getattr(self.instance, "min_students", 1))
+        max_students = attrs.get("max_students", getattr(self.instance, "max_students", 1))
+        if min_students and max_students and int(min_students) > int(max_students):
+            raise serializers.ValidationError({"min_students": "Le minimum d'apprenants ne peut pas dépasser le nombre de places."})
         price = attrs.get("price", getattr(self.instance, "price", 0))
         if price is not None and price < 0:
             raise serializers.ValidationError({"price": "Le prix ne peut pas être négatif."})
@@ -193,3 +214,110 @@ class AttendanceSerializer(serializers.ModelSerializer):
 
     def get_full_name(self, obj):
         return obj.user.get_full_name() or obj.user.username
+
+class MentorshipSlotSerializer(serializers.ModelSerializer):
+    is_available = serializers.SerializerMethodField()
+    duration_minutes = serializers.IntegerField(source="offering.duration_minutes", read_only=True)
+
+    class Meta:
+        model = MentorshipSlot
+        fields = ["id", "offering", "starts_at", "duration_minutes", "is_active", "is_available", "session"]
+        read_only_fields = ["id", "session", "is_available", "duration_minutes"]
+
+    def get_is_available(self, obj):
+        from django.db.models import Q
+        from django.utils import timezone
+        from datetime import timedelta
+
+        now = timezone.now()
+        confirmed_exists = obj.bookings.filter(status=MentorshipBooking.Status.CONFIRMED).exists()
+        pending_exists = obj.bookings.filter(status=MentorshipBooking.Status.PENDING_PAYMENT).filter(
+            Q(expires_at__isnull=True)
+            | Q(expires_at__gt=now)
+            | Q(order_items__order__status__in=["pending", "paid"])
+        ).exists()
+        notice = timedelta(hours=obj.offering.booking_notice_hours)
+        return bool(obj.is_active and obj.starts_at > now + notice and not confirmed_exists and not pending_exists)
+
+
+class MentorshipOfferingListSerializer(serializers.ModelSerializer):
+    instructor = UserPublicSerializer(read_only=True)
+    next_slots = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MentorshipOffering
+        fields = [
+            "id", "title", "slug", "description", "instructor", "duration_minutes", "price",
+            "language", "timezone", "booking_notice_hours", "cancellation_notice_hours",
+            "published", "next_slots", "created_at",
+        ]
+
+    def get_next_slots(self, obj):
+        from django.utils import timezone
+        view = self.context.get("view")
+        qs = obj.slots.filter(starts_at__gt=timezone.now()).order_by("starts_at")
+        # L'espace mentor voit aussi ses créneaux désactivés / déjà réservés pour pouvoir
+        # gérer leur état sans perdre l'historique. Le catalogue public reste limité aux actifs.
+        if getattr(view, "action", "") == "mine":
+            slots = qs[:50]
+        else:
+            slots = qs.filter(is_active=True)[:12]
+        return MentorshipSlotSerializer(slots, many=True, context=self.context).data
+
+
+class MentorshipOfferingWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MentorshipOffering
+        fields = [
+            "id", "title", "slug", "description", "duration_minutes", "price", "language", "timezone",
+            "booking_notice_hours", "cancellation_notice_hours", "published",
+        ]
+        read_only_fields = ["id", "slug"]
+
+    def validate_duration_minutes(self, value):
+        if value < 15 or value > 180:
+            raise serializers.ValidationError("La durée doit être comprise entre 15 et 180 minutes.")
+        return value
+
+    def validate_price(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Le prix ne peut pas être négatif.")
+        return value
+
+    def validate_timezone(self, value):
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        value = (value or "").strip()
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise serializers.ValidationError("Fuseau horaire IANA invalide (ex. Africa/Abidjan).")
+        return value
+
+
+class MentorshipBookingSerializer(serializers.ModelSerializer):
+    offering = MentorshipOfferingListSerializer(read_only=True)
+    slot = MentorshipSlotSerializer(read_only=True)
+    join_session_id = serializers.ReadOnlyField()
+    mentor_name = serializers.SerializerMethodField()
+    learner_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MentorshipBooking
+        fields = [
+            "id", "offering", "slot", "status", "price_snapshot", "expires_at", "confirmed_at",
+            "cancelled_at", "learner_note", "mentor_note", "created_at", "updated_at",
+            "join_session_id", "mentor_name", "learner_name",
+        ]
+        read_only_fields = [
+            "id", "status", "price_snapshot", "expires_at", "confirmed_at", "cancelled_at",
+            "mentor_note", "created_at", "updated_at", "join_session_id",
+        ]
+
+    def get_mentor_name(self, obj):
+        u = obj.offering.instructor
+        return u.get_full_name() or u.username
+
+    def get_learner_name(self, obj):
+        u = obj.user
+        return u.get_full_name() or u.username
+

@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, MessageCircle, Save } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
+import InternationalPhoneField from "@/components/ui/InternationalPhoneField";
 
 type WhatsAppPreferences = {
   whatsapp_phone: string;
@@ -16,6 +18,7 @@ type WhatsAppPreferences = {
 };
 
 export default function WhatsAppPreferencesCard() {
+  const user = useAuth((state) => state.user);
   const [form, setForm] = useState<WhatsAppPreferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -52,7 +55,13 @@ export default function WhatsAppPreferencesCard() {
         <div><h2 className="font-bold">Notifications WhatsApp</h2><p className="mt-1 text-xs leading-5 text-gray-500">Recevez uniquement les informations utiles liées à vos achats et formations. Vous pouvez retirer votre accord à tout moment.</p></div>
       </div>
       <div className="mt-4 space-y-4">
-        <label className="block"><span className="mb-1 block text-xs font-medium text-gray-500">Numéro WhatsApp international</span><input className="input-admin w-full" inputMode="tel" placeholder="+221771234567" value={form.whatsapp_phone} onChange={e=>setForm({...form,whatsapp_phone:e.target.value})}/><span className="mt-1 block text-[11px] text-gray-400">Ex. Sénégal +221, Côte d'Ivoire +225, Cameroun +237. Ne mettez pas le 0 national après l'indicatif.</span></label>
+        <InternationalPhoneField
+          value={form.whatsapp_phone}
+          onChange={(whatsapp_phone) => setForm({ ...form, whatsapp_phone })}
+          preferredCountry={user?.country}
+          label="Numéro WhatsApp"
+          helperText="Choisissez le pays / indicatif puis saisissez uniquement le numéro national. LearnEas enregistre automatiquement le format international E.164."
+        />
         <Toggle title="Activer WhatsApp" description="Consentement aux notifications transactionnelles LearnEas." checked={form.whatsapp_opt_in} onChange={v=>toggle("whatsapp_opt_in",v)}/>
         {form.whatsapp_opt_in && <div className="grid gap-2 rounded-xl border border-gray-100 bg-gray-50 p-3 sm:grid-cols-2">
           <Toggle compact title="Paiements confirmés" checked={form.whatsapp_payment_enabled} onChange={v=>toggle("whatsapp_payment_enabled",v)}/>

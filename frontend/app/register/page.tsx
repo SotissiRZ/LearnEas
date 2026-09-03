@@ -7,13 +7,7 @@ import { GraduationCap, Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth";
 import { ApiError } from "@/lib/api";
 import PasswordInput from "@/components/ui/PasswordInput";
-
-const AFRICAN_COUNTRIES = [
-  "Maroc", "Sénégal", "Côte d'Ivoire", "Cameroun", "Mali", "Burkina Faso", "Bénin",
-  "Togo", "Niger", "Guinée", "RD Congo", "Congo", "Gabon", "Tchad", "Rwanda",
-  "Kenya", "Nigeria", "Ghana", "Tunisie", "Algérie", "Égypte", "Madagascar",
-  "Mauritanie", "République centrafricaine", "Burundi", "Autre",
-];
+import CountrySelect from "@/components/ui/CountrySelect";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -43,6 +37,9 @@ export default function RegisterPage() {
     const errors: Record<string, string[]> = {};
     if (!/^\S+@\S+\.\S+$/.test(form.email)) {
       errors.email = ["Adresse email invalide."];
+    }
+    if (!form.country) {
+      errors.country = ["Sélectionnez votre pays."];
     }
     if (form.password.length < 8) {
       errors.password = ["Doit contenir au moins 8 caractères."];
@@ -127,11 +124,13 @@ export default function RegisterPage() {
             {fieldError("email")}
           </div>
           <div className="sm:col-span-2">
-            <select value={form.country} onChange={(e) => set("country", e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-100">
-              <option value="">Sélectionnez votre pays</option>
-              {AFRICAN_COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <CountrySelect
+              required
+              value={form.country}
+              onChange={(country) => set("country", country)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+            />
+            {fieldError("country")}
           </div>
           <div>
             <PasswordInput required placeholder="Mot de passe (8 caractères min.)" value={form.password}

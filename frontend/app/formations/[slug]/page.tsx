@@ -24,7 +24,7 @@ export default async function FormationDetailPage({ params }: { params: Promise<
     <div className="container-app grid grid-cols-1 gap-10 py-10 lg:grid-cols-[1fr_380px]">
       <div className="flex flex-col gap-8">
         <div>
-          <span className="badge bg-violet-50 text-violet-700">Formation interactive en direct</span>
+          <span className="badge bg-violet-50 text-violet-700">{formation.cohort_name || "Cohorte live"}</span>
           <h1 className="mt-2 text-3xl font-extrabold">{formation.title}</h1>
           <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
             <LevelBadge level={formation.level} />
@@ -43,7 +43,7 @@ export default async function FormationDetailPage({ params }: { params: Promise<
         </div>
 
         <div className="card p-6">
-          <h2 className="mb-4 text-xl font-bold">Planning des séances</h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-bold">Planning de la cohorte</h2><a className="btn-outline !py-1.5 !text-xs" href={`${process.env.NEXT_PUBLIC_API_URL || "/api"}/formations/${formation.slug}/calendar/`}>Ajouter au calendrier (.ics)</a></div>
           <FormationSchedule initialFormation={formation} />
         </div>
       </div>

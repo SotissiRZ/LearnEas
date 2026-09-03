@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from apps.common.phone import normalize_e164_phone
 from .models import Order, OrderItem, PayoutProfile, InstructorPayout, Currency, PaymentGateway
 
 
@@ -9,7 +10,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrderItem
         fields = [
-            "id", "item_type", "course", "pdf_product", "formation", "unit_price", "title",
+            "id", "item_type", "course", "pdf_product", "formation", "mentorship_booking", "unit_price", "title",
             "instructor", "instructor_name", "platform_fee_amount", "instructor_earning_amount",
         ]
 
@@ -20,6 +21,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
             return obj.pdf_product.title
         if obj.formation:
             return obj.formation.title
+        if obj.mentorship_booking:
+            return f"Mentorat · {obj.mentorship_booking.offering.title}"
         return ""
 
     def get_instructor_name(self, obj):
@@ -48,6 +51,7 @@ class CheckoutSerializer(serializers.Serializer):
     course_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, default=list)
     pdf_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, default=list)
     formation_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, default=list)
+    mentorship_booking_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, default=list)
     provider = serializers.CharField(max_length=30, default=Order.Provider.STRIPE)
     currency = serializers.CharField(max_length=3, default="EUR")
     test_payment = serializers.BooleanField(required=False, default=False)
@@ -55,7 +59,7 @@ class CheckoutSerializer(serializers.Serializer):
     def validate(self, attrs):
         attrs["provider"] = attrs["provider"].strip().lower()
         attrs["currency"] = attrs["currency"].strip().upper()
-        for field in ("course_ids", "pdf_ids", "formation_ids"):
+        for field in ("course_ids", "pdf_ids", "formation_ids", "mentorship_booking_ids"):
             attrs[field] = list(dict.fromkeys(attrs[field]))
         return attrs
 
@@ -138,6 +142,25 @@ class PayoutProfileSerializer(serializers.ModelSerializer):
         model = PayoutProfile
         fields = ["method", "account_name", "account_reference", "updated_at"]
         read_only_fields = ["updated_at"]
+
+    def validate(self, attrs):
+        method = attrs.get("method", getattr(self.instance, "method", PayoutProfile.Method.BANK) if self.instance else PayoutProfile.Method.BANK)
+        reference = str(attrs.get("account_reference", getattr(self.instance, "account_reference", "") if self.instance else "") or "").strip()
+        if method == PayoutProfile.Method.MOBILE_MONEY:
+            try:
+                attrs["account_reference"] = normalize_e164_phone(reference, required=True)
+            except ValueError as exc:
+                raise serializers.ValidationError({"account_reference": str(exc)})
+        elif method == PayoutProfile.Method.PAYPAL and reference:
+            try:
+                serializers.EmailField().run_validation(reference)
+            except serializers.ValidationError:
+                raise serializers.ValidationError({"account_reference": "Adresse email PayPal invalide."})
+            attrs["account_reference"] = reference.lower()
+        else:
+            attrs["account_reference"] = reference
+        attrs["account_name"] = str(attrs.get("account_name", getattr(self.instance, "account_name", "") if self.instance else "") or "").strip()
+        return attrs
 
 
 class InstructorPayoutSerializer(serializers.ModelSerializer):

@@ -219,6 +219,11 @@ export interface InteractiveFormation {
   students_count: number;
   seats_left: number;
   is_full: boolean;
+  is_enrollment_open?: boolean;
+  cohort_name?: string;
+  cohort_timezone?: string;
+  enrollment_deadline?: string | null;
+  min_students?: number;
   created_at: string;
   description?: string;
   sessions?: FormationSession[];
@@ -244,6 +249,53 @@ export interface FormationEnrollment {
   formation: InteractiveFormation;
   enrolled_at: string;
   certificate_issued: boolean;
+}
+
+export interface MentorshipSlot {
+  id: number;
+  offering: number;
+  starts_at: string;
+  duration_minutes: number;
+  is_active: boolean;
+  is_available: boolean;
+  session: number | null;
+}
+
+export interface MentorshipOffering {
+  id: number;
+  title: string;
+  slug: string;
+  description: string;
+  instructor: Instructor;
+  duration_minutes: number;
+  price: string;
+  language: string;
+  timezone: string;
+  booking_notice_hours: number;
+  cancellation_notice_hours: number;
+  published: boolean;
+  next_slots: MentorshipSlot[];
+  created_at: string;
+}
+
+export type MentorshipBookingStatus = "pending_payment" | "confirmed" | "completed" | "cancelled" | "expired";
+
+export interface MentorshipBooking {
+  id: number;
+  offering: MentorshipOffering;
+  slot: MentorshipSlot;
+  status: MentorshipBookingStatus;
+  price_snapshot: string;
+  expires_at: string | null;
+  confirmed_at: string | null;
+  cancelled_at: string | null;
+  learner_note: string;
+  mentor_note: string;
+  created_at: string;
+  updated_at: string;
+  join_session_id: number | null;
+  mentor_name: string;
+  learner_name: string;
 }
 
 export interface Certificate {

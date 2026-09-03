@@ -1,22 +1,15 @@
-import re
 from django.utils import timezone
 from rest_framework import serializers
+from apps.common.phone import normalize_e164_phone
 from .models import NotificationPreference, WhatsAppDelivery
 
 
-_E164_RE = re.compile(r"^\+[1-9]\d{7,14}$")
-
-
 def normalize_whatsapp_phone(value: str) -> str:
-    value = str(value or "").strip()
-    value = re.sub(r"[\s().-]+", "", value)
-    if value.startswith("00"):
-        value = "+" + value[2:]
-    if value and not value.startswith("+"):
-        raise serializers.ValidationError("Utilisez le format international, par ex. +221771234567.")
-    if value and not _E164_RE.match(value):
-        raise serializers.ValidationError("Numéro WhatsApp invalide. Utilisez le format E.164, par ex. +2250700000000.")
-    return value
+    try:
+        return normalize_e164_phone(value)
+    except ValueError as exc:
+        raise serializers.ValidationError(str(exc))
+
 
 
 class NotificationPreferenceSerializer(serializers.ModelSerializer):

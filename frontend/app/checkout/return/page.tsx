@@ -7,6 +7,7 @@ import { api, ApiError } from "@/lib/api";
 import { useCart } from "@/hooks/useCart";
 
 type State = "checking" | "paid" | "waiting" | "failed";
+type ConfirmedOrder = { items?: Array<{ item_type?: string }> };
 
 export default function CheckoutReturnPage() {
   const router = useRouter();
@@ -31,12 +32,17 @@ export default function CheckoutReturnPage() {
       attemptRef.current += 1;
       setState(attemptRef.current === 1 ? "checking" : "waiting");
       try {
-        await api.post(`/payments/orders/${orderId}/confirm/`, {});
+        const order = await api.post<ConfirmedOrder>(`/payments/orders/${orderId}/confirm/`, {});
         if (cancelled) return;
         clear();
         setState("paid");
         setMessage("Paiement confirmé. Votre accès est activé.");
-        timer = setTimeout(() => router.replace(`/dashboard/student?purchased=1&order=${orderId}`), 900);
+        const items = order.items || [];
+        const mentorshipOnly = items.length > 0 && items.every((item) => item.item_type === "mentoring");
+        const destination = mentorshipOnly
+          ? `/dashboard/student/mentorship?booked=1&order=${orderId}`
+          : `/dashboard/student?purchased=1&order=${orderId}`;
+        timer = setTimeout(() => router.replace(destination), 900);
       } catch (error) {
         if (cancelled) return;
         const text = error instanceof ApiError ? error.message : "Impossible de vérifier le paiement.";

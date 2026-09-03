@@ -1,10 +1,10 @@
 "use client";
 
 import { create } from "zustand";
-import { Course, PDFProduct, InteractiveFormation } from "@/types";
+import { Course, PDFProduct, InteractiveFormation, MentorshipBooking } from "@/types";
 
 export interface CartItem {
-  type: "course" | "pdf" | "formation";
+  type: "course" | "pdf" | "formation" | "mentoring";
   id: number;
   title: string;
   price: number;
@@ -19,7 +19,8 @@ interface CartState {
   addCourse: (course: Course) => void;
   addPdf: (pdf: PDFProduct) => void;
   addFormation: (formation: InteractiveFormation) => void;
-  remove: (type: "course" | "pdf" | "formation", id: number) => void;
+  addMentorshipBooking: (booking: MentorshipBooking) => void;
+  remove: (type: "course" | "pdf" | "formation" | "mentoring", id: number) => void;
   clear: () => void;
   total: () => number;
 }
@@ -85,6 +86,23 @@ export const useCart = create<CartState>((set, get) => ({
         price: parseFloat(formation.price),
         thumbnail: formation.thumbnail,
         slug: formation.slug,
+      },
+    ];
+    set({ items });
+    persist(items);
+  },
+
+  addMentorshipBooking: (booking) => {
+    if (get().items.some((i) => i.type === "mentoring" && i.id === booking.id)) return;
+    const items = [
+      ...get().items,
+      {
+        type: "mentoring" as const,
+        id: booking.id,
+        title: `Mentorat · ${booking.offering.title}`,
+        price: parseFloat(booking.price_snapshot),
+        thumbnail: booking.offering.instructor.avatar || null,
+        slug: booking.offering.slug,
       },
     ];
     set({ items });

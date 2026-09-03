@@ -580,7 +580,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden bg-[#07101d] text-white">
           {poster && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={poster} alt="" className="absolute inset-0 h-full w-full scale-105 object-cover opacity-20 blur-xl" />
+            <img src={poster} alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full scale-105 object-cover opacity-20 blur-xl" />
           )}
           <div className="relative z-10 mx-5 max-w-lg rounded-2xl border border-white/10 bg-black/35 px-7 py-6 text-center shadow-2xl backdrop-blur">
             <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-500/20 text-emerald-300"><Headphones size={28} /></div>

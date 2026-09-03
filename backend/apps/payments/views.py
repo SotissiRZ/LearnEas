@@ -24,7 +24,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from apps.accounts.models import User, PlatformSettings, InstructorApplication
 from apps.catalog.models import Course, PDFProduct
 from apps.enrollments.models import CourseEnrollment, PDFPurchase
-from apps.formations.models import InteractiveFormation, FormationEnrollment, FormationSession, FormationAttendance
+from apps.formations.models import InteractiveFormation, FormationEnrollment, FormationSession, FormationAttendance, MentorshipBooking, FormationKind
 from .models import Order, OrderItem, PayoutProfile, InstructorPayout, FormationSeatReservation, Currency, PaymentGateway
 import stripe
 from apps.common.throttles import CheckoutRateThrottle, AdminTestRateThrottle, WebhookRateThrottle
@@ -67,6 +67,24 @@ def _split_revenue(price):
     return fee, (price - fee).quantize(MONEY, rounding=ROUND_HALF_UP)
 
 
+def _release_failed_order_reservations(order):
+    """Libère uniquement les réservations liées à une commande définitivement échouée.
+
+    Une commande encore PENDING peut être confirmée de façon asynchrone par Mobile Money
+    ou carte : elle ne doit donc jamais libérer un créneau de mentorat ou une place de cohorte.
+    """
+    FormationSeatReservation.objects.filter(order=order).delete()
+    now = timezone.now()
+    MentorshipBooking.objects.filter(
+        order_items__order=order,
+        status=MentorshipBooking.Status.PENDING_PAYMENT,
+    ).update(
+        status=MentorshipBooking.Status.EXPIRED,
+        expires_at=None,
+        updated_at=now,
+    )
+
+
 def _finance_totals(instructor):
     paid_items = OrderItem.objects.filter(instructor=instructor, order__status=Order.Status.PAID)
     gross = paid_items.aggregate(v=Sum("unit_price"))["v"] or Decimal("0")
@@ -98,7 +116,7 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Order.objects.select_related("user").prefetch_related("items__instructor", "items__course", "items__pdf_product", "items__formation")
+        qs = Order.objects.select_related("user").prefetch_related("items__instructor", "items__course", "items__pdf_product", "items__formation", "items__mentorship_booking__offering")
         if user.role == "admin":
             return qs
         return qs.filter(user=user)
@@ -126,6 +144,8 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
         else:
             order.status = new_status
             order.save(update_fields=["status"])
+            if new_status == Order.Status.FAILED:
+                _release_failed_order_reservations(order)
         order.refresh_from_db()
         return Response(self.get_serializer(order).data)
 
@@ -156,22 +176,48 @@ class CheckoutView(APIView):
         owned_formation_ids = set(FormationEnrollment.objects.filter(user=user).values_list("formation_id", flat=True))
         courses = list(Course.objects.filter(id__in=[pk for pk in data["course_ids"] if pk not in owned_course_ids], published=True).select_related("instructor"))
         pdfs = list(PDFProduct.objects.filter(id__in=[pk for pk in data["pdf_ids"] if pk not in owned_pdf_ids], published=True).select_related("instructor"))
-        formations = list(InteractiveFormation.objects.select_for_update().filter(id__in=[pk for pk in data["formation_ids"] if pk not in owned_formation_ids], published=True).select_related("instructor"))
-        if not courses and not pdfs and not formations:
-            return Response({"detail": "Tous les éléments du panier sont déjà acquis ou indisponibles."}, status=400)
+        formations = list(InteractiveFormation.objects.select_for_update().filter(
+            id__in=[pk for pk in data["formation_ids"] if pk not in owned_formation_ids],
+            published=True, kind=FormationKind.COHORT,
+        ).select_related("instructor"))
+        from apps.formations.mentorship import expire_stale_bookings
+        expire_stale_bookings()
+        mentorship_bookings = list(MentorshipBooking.objects.select_for_update().filter(
+            id__in=data["mentorship_booking_ids"],
+            user=user,
+            status=MentorshipBooking.Status.PENDING_PAYMENT,
+        ).select_related("offering", "offering__instructor", "slot"))
+        if not courses and not pdfs and not formations and not mentorship_bookings:
+            return Response({"detail": "Tous les éléments du panier sont déjà acquis, expirés ou indisponibles."}, status=400)
 
         now = timezone.now()
         unavailable = []
         for formation in formations:
             active_reservations = FormationSeatReservation.objects.filter(formation=formation, order__status=Order.Status.PENDING, expires_at__gt=now).count()
-            if formation.enrollments.count() + active_reservations >= formation.max_students:
+            if not formation.is_enrollment_open or formation.enrollments.count() + active_reservations >= formation.max_students:
                 unavailable.append(formation.title)
         if unavailable:
-            return Response({"detail": "Formation(s) complète(s) ou temporairement réservée(s) : " + ", ".join(unavailable)}, status=409)
+            return Response({"detail": "Cohorte(s) complète(s), fermée(s) ou temporairement réservée(s) : " + ", ".join(unavailable)}, status=409)
+
+        invalid_bookings = []
+        for booking in mentorship_bookings:
+            if booking.expires_at and booking.expires_at <= now:
+                invalid_bookings.append(booking.id)
+                continue
+            if booking.slot.starts_at <= now:
+                invalid_bookings.append(booking.id)
+                continue
+            if OrderItem.objects.filter(
+                mentorship_booking=booking, order__status=Order.Status.PENDING
+            ).exists():
+                invalid_bookings.append(booking.id)
+        if invalid_bookings:
+            return Response({"detail": "Une réservation de mentorat est expirée ou possède déjà une commande en cours."}, status=409)
 
         base_total = sum((Decimal("0") if c.is_free else (c.discount_price if c.discount_price is not None else c.price) for c in courses), Decimal("0"))
         base_total += sum((Decimal("0") if item.is_free else item.price for item in pdfs), Decimal("0"))
         base_total += sum((item.price for item in formations), Decimal("0"))
+        base_total += sum((item.price_snapshot for item in mentorship_bookings), Decimal("0"))
         quantum = Decimal("1").scaleb(-int(currency.decimal_places))
         payment_total = (base_total * Decimal(currency.exchange_rate)).quantize(quantum, rounding=ROUND_HALF_UP)
 
@@ -217,6 +263,22 @@ class CheckoutView(APIView):
         for formation in formations:
             fee, earning = _split_revenue(formation.price)
             OrderItem.objects.create(order=order, item_type=OrderItem.ItemType.FORMATION, formation=formation, instructor=formation.instructor, unit_price=formation.price, platform_fee_amount=fee, instructor_earning_amount=earning)
+        mentorship_payment_expiry = timezone.now() + timedelta(hours=2)
+        for booking in mentorship_bookings:
+            # Une fois le checkout lancé, le créneau reste bloqué assez longtemps pour
+            # couvrir les wallets Mobile Money dont la confirmation peut être différée.
+            booking.expires_at = mentorship_payment_expiry
+            booking.save(update_fields=["expires_at", "updated_at"])
+            fee, earning = _split_revenue(booking.price_snapshot)
+            OrderItem.objects.create(
+                order=order,
+                item_type=OrderItem.ItemType.MENTORING,
+                mentorship_booking=booking,
+                instructor=booking.offering.instructor,
+                unit_price=booking.price_snapshot,
+                platform_fee_amount=fee,
+                instructor_earning_amount=earning,
+            )
 
         if base_total > 0:
             reservation_expiry = timezone.now() + timedelta(minutes=45)
@@ -253,7 +315,7 @@ class CheckoutView(APIView):
         elif not order.paid_at:
             order.paid_at = timezone.now()
             order.save(update_fields=["paid_at"])
-        for item in order.items.select_related("course", "pdf_product", "formation").all():
+        for item in order.items.select_related("course", "pdf_product", "formation", "mentorship_booking__offering", "mentorship_booking__slot").all():
             if item.course:
                 CourseEnrollment.objects.get_or_create(user=order.user, course=item.course)
                 item.course.students_count = item.course.enrollments.count()
@@ -273,6 +335,9 @@ class CheckoutView(APIView):
                     if formation.enrollments.count() + active_other >= formation.max_students and not reservation_valid:
                         raise ValueError(f"Plus de place disponible pour la formation {formation.title}.")
                     FormationEnrollment.objects.create(user=order.user, formation=formation)
+            if item.mentorship_booking:
+                from apps.formations.mentorship import confirm_booking
+                confirm_booking(item.mentorship_booking)
         FormationSeatReservation.objects.filter(order=order).delete()
         # La notification est lancée après COMMIT afin qu'une panne WhatsApp ne puisse jamais
         # invalider une commande déjà payée et que le worker voie les inscriptions créées.
@@ -295,6 +360,8 @@ class ConfirmPaymentView(APIView):
             return Response({"detail": "Commande introuvable."}, status=404)
         if order.status == Order.Status.PAID:
             return Response(OrderSerializer(order).data)
+        if order.status == Order.Status.FAILED:
+            return Response({"detail": "Cette commande a déjà échoué. Relancez un nouveau paiement."}, status=402)
         if order.base_total_amount == 0:
             CheckoutView()._fulfill(order)
         elif order.provider == Order.Provider.MANUAL:
@@ -309,7 +376,15 @@ class ConfirmPaymentView(APIView):
             expected = Decimal(order.total_amount)
             if not verification["paid"]:
                 provider_status = str(verification.get("status") or "").upper()
-                if provider_status in {"REFUSED", "CANCELLED", "CANCELED", "FAILED"}:
+                terminal_failures = {"CANCELLED", "CANCELED", "FAILED"}
+                # CinetPay peut faire transiter certains wallets par REFUSED avant un autre
+                # état opérateur ; on ne libère donc jamais le créneau sur ce seul statut.
+                if provider_status == "REFUSED" and order.provider != Order.Provider.CINETPAY:
+                    terminal_failures.add("REFUSED")
+                if provider_status in terminal_failures:
+                    order.status = Order.Status.FAILED
+                    order.save(update_fields=["status"])
+                    _release_failed_order_reservations(order)
                     return Response({"detail": "Le paiement a été refusé ou annulé par le prestataire."}, status=402)
                 return Response({"detail": "Le paiement est encore en attente de confirmation par le prestataire."}, status=409)
             if verification["currency"] != order.currency or abs(Decimal(verification["amount"]) - expected) > Decimal("0.01"):
@@ -350,7 +425,7 @@ class InstructorFinanceView(APIView):
         totals = _finance_totals(request.user)
         recent = OrderItem.objects.filter(
             instructor=request.user, order__status=Order.Status.PAID
-        ).select_related("order", "course", "pdf_product", "formation").order_by("-order__paid_at")[:10]
+        ).select_related("order", "course", "pdf_product", "formation", "mentorship_booking__offering").order_by("-order__paid_at")[:10]
         profile = PayoutProfile.objects.filter(instructor=request.user).first()
         paid_items = OrderItem.objects.filter(instructor=request.user, order__status=Order.Status.PAID)
         monthly = (
@@ -361,16 +436,18 @@ class InstructorFinanceView(APIView):
             .order_by("month")
         )
         top_rows = []
-        for item_type in (OrderItem.ItemType.COURSE, OrderItem.ItemType.PDF, OrderItem.ItemType.FORMATION):
+        for item_type in (OrderItem.ItemType.COURSE, OrderItem.ItemType.PDF, OrderItem.ItemType.FORMATION, OrderItem.ItemType.MENTORING):
             field = {
                 OrderItem.ItemType.COURSE: "course__title",
                 OrderItem.ItemType.PDF: "pdf_product__title",
                 OrderItem.ItemType.FORMATION: "formation__title",
+                OrderItem.ItemType.MENTORING: "mentorship_booking__offering__title",
             }[item_type]
             id_field = {
                 OrderItem.ItemType.COURSE: "course_id",
                 OrderItem.ItemType.PDF: "pdf_product_id",
                 OrderItem.ItemType.FORMATION: "formation_id",
+                OrderItem.ItemType.MENTORING: "mentorship_booking__offering_id",
             }[item_type]
             rows = (paid_items.filter(item_type=item_type)
                 .values(id_field, field)
@@ -390,7 +467,7 @@ class InstructorFinanceView(APIView):
             "recent_sales": [
                 {
                     "id": item.id,
-                    "title": item.course.title if item.course else item.pdf_product.title if item.pdf_product else item.formation.title if item.formation else "",
+                    "title": item.course.title if item.course else item.pdf_product.title if item.pdf_product else item.formation.title if item.formation else item.mentorship_booking.offering.title if item.mentorship_booking else "",
                     "type": item.item_type,
                     "gross": str(item.unit_price),
                     "earning": str(item.instructor_earning_amount),
@@ -825,7 +902,8 @@ class StripeWebhookView(APIView):
             if not any(secret for _, secret in candidates):
                 return Response({"detail": "Webhook Stripe non configuré."}, status=503)
             return Response({"detail": "Signature webhook invalide."}, status=400)
-        if event.get("type") == "checkout.session.completed":
+        event_type = event.get("type")
+        if event_type == "checkout.session.completed":
             obj = event["data"]["object"]
             order_id = (obj.get("metadata") or {}).get("order_id") or obj.get("client_reference_id")
             if order_id:
@@ -839,4 +917,17 @@ class StripeWebhookView(APIView):
                         paid = str(obj.get("payment_status") or "").lower() == "paid"
                         if paid and user_ok and currency == order.currency and abs(amount - Decimal(order.total_amount)) <= Decimal("0.01"):
                             CheckoutView()._fulfill(order)
+        elif event_type in {"checkout.session.expired", "checkout.session.async_payment_failed"}:
+            obj = event["data"]["object"]
+            order_id = (obj.get("metadata") or {}).get("order_id") or obj.get("client_reference_id")
+            if order_id:
+                with transaction.atomic():
+                    order = Order.objects.select_for_update().filter(
+                        pk=order_id, provider=Order.Provider.STRIPE, provider_sandbox=bool(webhook_sandbox),
+                        status=Order.Status.PENDING,
+                    ).first()
+                    if order and str(order.provider_reference) == str(obj.get("id")):
+                        order.status = Order.Status.FAILED
+                        order.save(update_fields=["status"])
+                        _release_failed_order_reservations(order)
         return Response({"received": True})

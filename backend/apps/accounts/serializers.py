@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from apps.common.fields import RelativeImageField
+from apps.common.countries import canonical_country_name
 from .models import PlatformSettings, InstructorApplication
 
 User = get_user_model()
@@ -45,8 +46,17 @@ class UserSerializer(serializers.ModelSerializer):
         # applicatif. Elle reste donc réservée aux comptes techniques explicitement superuser.
         return bool(obj.role == User.Role.ADMIN and obj.is_staff and obj.is_superuser)
 
+    def validate_country(self, value):
+        if not str(value or "").strip():
+            return ""
+        try:
+            return canonical_country_name(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
+
 
 class RegisterSerializer(serializers.ModelSerializer):
+    country = serializers.CharField(required=True, allow_blank=False, max_length=100)
     password = serializers.CharField(write_only=True, min_length=8)
     password2 = serializers.CharField(write_only=True, min_length=8)
 
@@ -59,6 +69,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         if User.objects.filter(email__iexact=email).exists():
             raise serializers.ValidationError("Un compte existe déjà avec cet email.")
         return email
+
+    def validate_country(self, value):
+        try:
+            return canonical_country_name(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
 
     def validate(self, attrs):
         if attrs["password"] != attrs["password2"]:
@@ -99,6 +115,14 @@ class AdminUserSerializer(serializers.ModelSerializer):
             "country", "headline", "domain",
         ]
         read_only_fields = ["id", "username", "email", "is_staff", "date_joined", "last_login", "full_name"]
+
+    def validate_country(self, value):
+        if not str(value or "").strip():
+            return ""
+        try:
+            return canonical_country_name(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
 
     def get_full_name(self, obj):
         return obj.get_full_name() or obj.username
@@ -172,6 +196,14 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["updated_at"]
+
+    def validate_legal_country(self, value):
+        if not str(value or "").strip():
+            return ""
+        try:
+            return canonical_country_name(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
 
     def validate_platform_commission_percent(self, value):
         if value < 0 or value > 100:

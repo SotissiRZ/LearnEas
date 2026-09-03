@@ -18,7 +18,7 @@ export default function FormationCard({ formation }: { formation: InteractiveFor
         ) : (
           <Video size={44} className="text-violet-300" />
         )}
-        <span className="badge absolute left-3 top-3 bg-white/95 text-violet-700 shadow">En direct</span>
+        <span className="badge absolute left-3 top-3 bg-white/95 text-violet-700 shadow">{formation.cohort_name || "Cohorte live"}</span>
         {formation.is_full && (
           <span className="badge absolute right-3 top-3 bg-rose-600 text-white">Complet</span>
         )}
@@ -46,6 +46,11 @@ export default function FormationCard({ formation }: { formation: InteractiveFor
         {formation.start_date && (
           <span className="flex items-center gap-1 text-xs text-gray-500">
             <CalendarDays size={14} /> Début le {new Date(formation.start_date).toLocaleDateString("fr-FR")}
+          </span>
+        )}
+        {formation.enrollment_deadline && (
+          <span className={`text-xs ${formation.is_enrollment_open === false ? "font-semibold text-rose-600" : "text-gray-500"}`}>
+            Inscriptions jusqu'au {new Date(formation.enrollment_deadline).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })}
           </span>
         )}
 

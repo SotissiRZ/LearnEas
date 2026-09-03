@@ -82,10 +82,11 @@ export default function CheckoutPage() {
       const course_ids = items.filter((i) => i.type === "course").map((i) => i.id);
       const pdf_ids = items.filter((i) => i.type === "pdf").map((i) => i.id);
       const formation_ids = items.filter((i) => i.type === "formation").map((i) => i.id);
+      const mentorship_booking_ids = items.filter((i) => i.type === "mentoring").map((i) => i.id);
       const isTestPayment = provider === "__test__";
       const res = await api.post<{ order: { id: number }; requires_payment: boolean; checkout_url?: string | null; manual_review?: boolean; test_payment?: boolean }>(
         "/payments/checkout/",
-        { course_ids, pdf_ids, formation_ids, provider: isTestPayment ? "manual" : (provider || "manual"), currency, test_payment: isTestPayment }
+        { course_ids, pdf_ids, formation_ids, mentorship_booking_ids, provider: isTestPayment ? "manual" : (provider || "manual"), currency, test_payment: isTestPayment }
       );
       if (res.requires_payment && res.checkout_url) {
         window.location.assign(res.checkout_url);
@@ -96,8 +97,9 @@ export default function CheckoutPage() {
         router.push(`/dashboard/student?payment_pending=1&order=${res.order.id}`);
         return;
       }
+      const mentoringOnly = items.length > 0 && items.every((i) => i.type === "mentoring");
       clear();
-      router.push("/dashboard/student?purchased=1");
+      router.push(mentoringOnly ? "/dashboard/student/mentorship?booked=1" : "/dashboard/student?purchased=1");
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Une erreur est survenue lors du paiement.");
     } finally {

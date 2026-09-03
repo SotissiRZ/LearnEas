@@ -74,7 +74,8 @@ export default function Navbar() {
 
         <nav className="hidden items-center gap-1 lg:flex">
           <Link href="/courses" className="btn-ghost !px-3">Cours</Link>
-          <Link href="/formations" className="btn-ghost !px-3">Formations interactives</Link>
+          <Link href="/formations" className="btn-ghost !px-3">Cohortes live</Link>
+          <Link href="/mentorship" className="btn-ghost !px-3">Mentorat</Link>
           <Link href="/pdfs" className="btn-ghost !px-3">PDF & Guides</Link>
           <Link href="/instructors" className="btn-ghost !px-3">Instructeurs</Link>
         </nav>
@@ -181,7 +182,8 @@ export default function Navbar() {
           <div className="flex flex-col gap-1">
             <div className="mb-2"><CurrencySelector mobile /></div>
             <Link href="/courses" className="rounded-lg px-3 py-2 hover:bg-gray-50">Cours</Link>
-            <Link href="/formations" className="rounded-lg px-3 py-2 hover:bg-gray-50">Formations interactives</Link>
+            <Link href="/formations" className="rounded-lg px-3 py-2 hover:bg-gray-50">Cohortes live</Link>
+            <Link href="/mentorship" className="rounded-lg px-3 py-2 hover:bg-gray-50">Mentorat</Link>
             <Link href="/pdfs" className="rounded-lg px-3 py-2 hover:bg-gray-50">PDF & Guides</Link>
             <Link href="/instructors" className="rounded-lg px-3 py-2 hover:bg-gray-50">Instructeurs</Link>
             {!user ? (

@@ -302,3 +302,154 @@ class PaymentConfigurationTests(APITestCase):
         self.assertEqual(normalize_provider_amount("cinetpay", Decimal("15002"), "XOF"), Decimal("15000"))
         self.assertEqual(normalize_provider_amount("cinetpay", Decimal("15003"), "XOF"), Decimal("15005"))
 
+
+
+class MentorshipPaymentRegressionTests(APITestCase):
+    def setUp(self):
+        from apps.formations.models import MentorshipOffering
+        from apps.formations.mentorship import create_slot, reserve_booking
+        from django.utils import timezone
+        from datetime import timedelta
+
+        self.mentor = User.objects.create_user(
+            username="pay_mentor", email="pay-mentor@example.com", password="passpass123", role=User.Role.INSTRUCTOR
+        )
+        self.student = User.objects.create_user(
+            username="pay_mentee", email="pay-mentee@example.com", password="passpass123", role=User.Role.STUDENT
+        )
+        Currency.objects.update_or_create(
+            code="EUR",
+            defaults={"name": "Euro", "symbol": "€", "exchange_rate": Decimal("1"), "decimal_places": 2, "is_active": True, "is_default": True},
+        )
+        PaymentGateway.objects.update_or_create(
+            code="stripe",
+            defaults={"name": "Stripe", "is_active": True, "supported_currencies": ["EUR"], "sandbox": True},
+        )
+        self.offer = MentorshipOffering.objects.create(
+            instructor=self.mentor,
+            title="Mentorat paiement",
+            description="Test du cycle paiement mentorat",
+            price=Decimal("20.00"),
+            published=True,
+            booking_notice_hours=1,
+        )
+        self.slot = create_slot(self.offer, timezone.now() + timedelta(days=2))
+        self.booking = reserve_booking(user=self.student, slot=self.slot, learner_note="Objectif paiement")
+        self.client.force_authenticate(self.student)
+
+    @override_settings(TEST_PAYMENTS_ENABLED=True)
+    def test_internal_test_payment_confirms_mentorship_and_revenue_split(self):
+        from apps.formations.models import MentorshipBooking, FormationSessionInvite
+
+        response = self.client.post(
+            "/api/payments/checkout/",
+            {
+                "course_ids": [], "pdf_ids": [], "formation_ids": [],
+                "mentorship_booking_ids": [self.booking.id],
+                "provider": "stripe", "currency": "EUR", "test_payment": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, MentorshipBooking.Status.CONFIRMED)
+        self.assertIsNone(self.booking.expires_at)
+        self.assertTrue(FormationSessionInvite.objects.filter(
+            session=self.slot.session, email__iexact=self.student.email, revoked_at__isnull=True
+        ).exists())
+        item = OrderItem.objects.get(order_id=response.data["order"]["id"], mentorship_booking=self.booking)
+        self.assertEqual(item.item_type, OrderItem.ItemType.MENTORING)
+        self.assertEqual(item.platform_fee_amount, Decimal("3.00"))
+        self.assertEqual(item.instructor_earning_amount, Decimal("17.00"))
+
+    @override_settings(STRIPE_SECRET_KEY="sk_test_fake")
+    @patch("apps.payments.views.create_checkout")
+    def test_external_checkout_extends_slot_hold_to_two_hours(self, create_checkout_mock):
+        from django.utils import timezone
+        from datetime import timedelta
+
+        create_checkout_mock.return_value = ("https://checkout.stripe.test/mentor", "cs_mentor_1")
+        before = timezone.now()
+        response = self.client.post(
+            "/api/payments/checkout/",
+            {
+                "course_ids": [], "pdf_ids": [], "formation_ids": [],
+                "mentorship_booking_ids": [self.booking.id],
+                "provider": "stripe", "currency": "EUR",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.booking.refresh_from_db()
+        self.assertGreaterEqual(self.booking.expires_at, before + timedelta(minutes=119))
+        self.assertEqual(Order.objects.get(pk=response.data["order"]["id"]).status, Order.Status.PENDING)
+
+    @override_settings(STRIPE_SECRET_KEY="sk_test_fake")
+    @patch("apps.payments.views.verify_payment")
+    @patch("apps.payments.views.create_checkout")
+    def test_failed_external_payment_releases_mentorship_slot(self, create_checkout_mock, verify_payment_mock):
+        from apps.formations.models import MentorshipBooking
+        from django.utils import timezone
+        from datetime import timedelta
+
+        create_checkout_mock.return_value = ("https://checkout.stripe.test/mentor-failed", "cs_mentor_failed")
+        checkout = self.client.post(
+            "/api/payments/checkout/",
+            {
+                "course_ids": [], "pdf_ids": [], "formation_ids": [],
+                "mentorship_booking_ids": [self.booking.id],
+                "provider": "stripe", "currency": "EUR",
+            },
+            format="json",
+        )
+        self.assertEqual(checkout.status_code, status.HTTP_201_CREATED, checkout.data)
+        order = Order.objects.get(pk=checkout.data["order"]["id"])
+
+        # Même si l'expiration locale passe, une commande prestataire encore PENDING
+        # doit continuer de verrouiller le créneau jusqu'à un état terminal.
+        self.booking.expires_at = timezone.now() - timedelta(minutes=1)
+        self.booking.save(update_fields=["expires_at", "updated_at"])
+        from apps.formations.mentorship import expire_stale_bookings
+        expire_stale_bookings(self.slot)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, MentorshipBooking.Status.PENDING_PAYMENT)
+
+        cancel = self.client.post(f"/api/mentorship/bookings/{self.booking.id}/cancel/", {}, format="json")
+        self.assertEqual(cancel.status_code, status.HTTP_409_CONFLICT, cancel.data)
+
+        verify_payment_mock.return_value = {
+            "paid": False, "amount": Decimal("20.00"), "currency": "EUR", "status": "FAILED"
+        }
+        confirm = self.client.post(f"/api/payments/orders/{order.id}/confirm/", {}, format="json")
+        self.assertEqual(confirm.status_code, status.HTTP_402_PAYMENT_REQUIRED, confirm.data)
+        order.refresh_from_db()
+        self.booking.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.FAILED)
+        self.assertEqual(self.booking.status, MentorshipBooking.Status.EXPIRED)
+        self.assertIsNone(self.booking.expires_at)
+
+    def test_mobile_money_payout_requires_e164_number(self):
+        self.client.force_authenticate(self.mentor)
+        invalid = self.client.patch(
+            "/api/payments/instructor/payout-profile/",
+            {"method": "mobile_money", "account_name": "Mentor", "account_reference": "771234567"},
+            format="json",
+        )
+        self.assertEqual(invalid.status_code, status.HTTP_400_BAD_REQUEST, invalid.data)
+        self.assertIn("account_reference", invalid.data)
+
+        unknown_dial = self.client.patch(
+            "/api/payments/instructor/payout-profile/",
+            {"method": "mobile_money", "account_name": "Mentor", "account_reference": "+99912345678"},
+            format="json",
+        )
+        self.assertEqual(unknown_dial.status_code, status.HTTP_400_BAD_REQUEST, unknown_dial.data)
+        self.assertIn("account_reference", unknown_dial.data)
+
+        valid = self.client.patch(
+            "/api/payments/instructor/payout-profile/",
+            {"method": "mobile_money", "account_name": "Mentor", "account_reference": "+221771234567"},
+            format="json",
+        )
+        self.assertEqual(valid.status_code, status.HTTP_200_OK, valid.data)
+        self.assertEqual(valid.data["account_reference"], "+221771234567")

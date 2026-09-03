@@ -20,6 +20,8 @@ class WhatsAppNotificationTests(TestCase):
 
     def test_phone_normalization(self):
         self.assertEqual(normalize_whatsapp_phone("00 221 77 123 45 67"), "+221771234567")
+        with self.assertRaises(Exception):
+            normalize_whatsapp_phone("+99912345678")
 
     @override_settings(WHATSAPP_ENABLED=True, WHATSAPP_DRY_RUN=True)
     def test_dry_run_never_calls_meta(self):

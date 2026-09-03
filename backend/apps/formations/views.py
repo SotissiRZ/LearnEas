@@ -1,12 +1,13 @@
 import json
-from datetime import timedelta
+from datetime import timedelta, timezone as dt_timezone
 from urllib.parse import quote
 from django.conf import settings
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import viewsets, permissions, filters, status
@@ -19,11 +20,14 @@ from apps.common.throttles import LiveRateThrottle
 from .models import (
     InteractiveFormation, FormationSession, FormationEnrollment,
     FormationAttendance, FormationSignal, FormationStatus, FormationRoomFile, FormationSessionInvite,
+    FormationKind, MentorshipOffering, MentorshipSlot, MentorshipBooking,
 )
 from .serializers import (
     InteractiveFormationListSerializer, InteractiveFormationDetailSerializer,
     InteractiveFormationWriteSerializer, FormationSessionSerializer, FormationSessionWriteSerializer,
     FormationEnrollmentSerializer, AttendanceSerializer,
+    MentorshipOfferingListSerializer, MentorshipOfferingWriteSerializer,
+    MentorshipSlotSerializer, MentorshipBookingSerializer,
 )
 
 User = get_user_model()
@@ -91,7 +95,7 @@ class InteractiveFormationViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = InteractiveFormation.objects.select_related(
             "instructor", "co_instructor", "category"
-        ).prefetch_related("sessions")
+        ).prefetch_related("sessions").filter(kind=FormationKind.COHORT)
         user = self.request.user
         if self.action == "my_formations" and user.is_authenticated:
             return qs.filter(Q(instructor=user) | Q(co_instructor=user)).distinct()
@@ -118,6 +122,30 @@ class InteractiveFormationViewSet(viewsets.ModelViewSet):
         qs = self.get_queryset()
         serializer = InteractiveFormationDetailSerializer(qs, many=True, context=self.get_serializer_context())
         return Response(serializer.data)
+
+    @action(detail=True, methods=["get"])
+    def calendar(self, request, slug=None):
+        formation = self.get_object()
+        def esc(value):
+            return str(value or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+        lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//LearnEas//Cohorte//FR", "CALSCALE:GREGORIAN"]
+        for session in formation.sessions.all():
+            start = session.scheduled_at.astimezone(dt_timezone.utc)
+            end = start + timedelta(minutes=session.duration_minutes)
+            lines.extend([
+                "BEGIN:VEVENT",
+                f"UID:learneas-formation-{formation.id}-session-{session.id}@learneas",
+                f"DTSTAMP:{timezone.now().astimezone(dt_timezone.utc).strftime('%Y%m%dT%H%M%SZ')}",
+                f"DTSTART:{start.strftime('%Y%m%dT%H%M%SZ')}",
+                f"DTEND:{end.strftime('%Y%m%dT%H%M%SZ')}",
+                f"SUMMARY:{esc(formation.title)} · Séance {session.session_number}",
+                f"DESCRIPTION:{esc('Séance live LearnEas')}",
+                "END:VEVENT",
+            ])
+        lines.append("END:VCALENDAR")
+        response = HttpResponse("\r\n".join(lines) + "\r\n", content_type="text/calendar; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="learneas-{formation.slug}.ics"'
+        return response
 
 
 class FormationSessionViewSet(viewsets.ModelViewSet):
@@ -731,3 +759,250 @@ class MyFormationsViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         return FormationEnrollment.objects.filter(user=self.request.user).select_related("formation", "formation__instructor", "formation__co_instructor", "formation__category")
+
+class MentorshipOfferingViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsInstructorOrAdmin]
+    lookup_field = "slug"
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["instructor__id", "language", "published"]
+    search_fields = ["title", "description", "instructor__first_name", "instructor__last_name"]
+    ordering_fields = ["created_at", "price", "duration_minutes"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        qs = MentorshipOffering.objects.select_related("instructor", "room_formation").prefetch_related("slots__bookings")
+        user = self.request.user
+        if self.action == "mine" and user.is_authenticated:
+            return qs.filter(instructor=user)
+        if user.is_authenticated and user.role == "admin":
+            return qs
+        if user.is_authenticated and user.role == "instructor":
+            return qs.filter(Q(published=True) | Q(instructor=user)).distinct()
+        return qs.filter(published=True)
+
+    def get_serializer_class(self):
+        if self.action in ("create", "update", "partial_update"):
+            return MentorshipOfferingWriteSerializer
+        return MentorshipOfferingListSerializer
+
+    def perform_create(self, serializer):
+        offering = serializer.save(instructor=self.request.user)
+        from .mentorship import ensure_room_formation
+        ensure_room_formation(offering)
+
+    def perform_update(self, serializer):
+        offering = serializer.save()
+        if offering.room_formation_id:
+            room = offering.room_formation
+            room.title = f"Mentorat privé · {offering.title}"
+            room.language = offering.language
+            room.session_duration_minutes = offering.duration_minutes
+            room.cohort_timezone = offering.timezone
+            room.save(update_fields=["title", "language", "session_duration_minutes", "cohort_timezone"])
+
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        offering = self.get_object()
+        if offering.bookings.exists():
+            return Response({
+                "detail": "Cette offre possède déjà un historique de réservation. Dépubliez-la au lieu de la supprimer."
+            }, status=409)
+        room_id = offering.room_formation_id
+        offering.delete()
+        if room_id:
+            # Sans réservation, le conteneur et ses séances ne portent aucun historique métier.
+            InteractiveFormation.objects.filter(pk=room_id, kind=FormationKind.MENTORSHIP).delete()
+        return Response(status=204)
+
+    @action(detail=False, methods=["get"], permission_classes=[permissions.IsAuthenticated])
+    def mine(self, request):
+        if request.user.role not in ("instructor", "admin"):
+            return Response({"detail": "Compte instructeur requis."}, status=403)
+        return Response(MentorshipOfferingListSerializer(
+            self.get_queryset(), many=True, context=self.get_serializer_context()
+        ).data)
+
+
+class MentorshipSlotViewSet(viewsets.ModelViewSet):
+    serializer_class = MentorshipSlotSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["offering", "is_active"]
+    ordering_fields = ["starts_at"]
+    ordering = ["starts_at"]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_queryset(self):
+        from .mentorship import expire_stale_bookings
+        expire_stale_bookings()
+        qs = MentorshipSlot.objects.select_related("offering", "offering__instructor", "session").prefetch_related("bookings")
+        if self.request.user.is_authenticated and self.request.user.role == "admin":
+            return qs
+        if self.request.user.is_authenticated and self.request.user.role == "instructor":
+            return qs.filter(Q(offering__published=True) | Q(offering__instructor=self.request.user)).distinct()
+        return qs.filter(offering__published=True, is_active=True, starts_at__gt=timezone.now())
+
+    def create(self, request, *args, **kwargs):
+        if request.user.role not in ("instructor", "admin"):
+            return Response({"detail": "Compte instructeur requis."}, status=403)
+        offering = MentorshipOffering.objects.filter(pk=request.data.get("offering")).first()
+        if not offering:
+            return Response({"offering": ["Offre introuvable."]}, status=404)
+        if request.user.role != "admin" and offering.instructor_id != request.user.id:
+            return Response({"detail": "Vous ne pouvez gérer que vos propres créneaux."}, status=403)
+        raw = request.data.get("starts_at")
+        try:
+            from django.utils.dateparse import parse_datetime
+            starts_at = parse_datetime(str(raw))
+            if starts_at is None:
+                raise ValueError
+            if timezone.is_naive(starts_at):
+                starts_at = timezone.make_aware(starts_at)
+        except Exception:
+            return Response({"starts_at": ["Date et heure invalides."]}, status=400)
+        if starts_at <= timezone.now():
+            return Response({"starts_at": ["Le créneau doit être dans le futur."]}, status=400)
+        try:
+            from .mentorship import create_slot
+            slot = create_slot(offering, starts_at, bool(request.data.get("is_active", True)))
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(self.get_serializer(slot).data, status=201)
+
+    def partial_update(self, request, *args, **kwargs):
+        slot = self.get_object()
+        if request.user.role != "admin" and slot.offering.instructor_id != request.user.id:
+            return Response({"detail": "Action interdite."}, status=403)
+        extra = set(request.data.keys()) - {"is_active"}
+        if extra:
+            return Response({"detail": "Seule l'activation du créneau peut être modifiée. Créez un nouveau créneau pour changer l'horaire."}, status=400)
+        if "is_active" not in request.data:
+            return Response({"is_active": ["Valeur requise."]}, status=400)
+        raw = request.data.get("is_active")
+        if isinstance(raw, str):
+            is_active = raw.strip().lower() in {"1", "true", "yes", "oui"}
+        else:
+            is_active = bool(raw)
+        slot.is_active = is_active
+        slot.save(update_fields=["is_active"])
+        return Response(self.get_serializer(slot).data)
+
+    def destroy(self, request, *args, **kwargs):
+        slot = self.get_object()
+        if request.user.role != "admin" and slot.offering.instructor_id != request.user.id:
+            return Response({"detail": "Action interdite."}, status=403)
+        from .mentorship import expire_stale_bookings
+        expire_stale_bookings(slot)
+        if slot.bookings.exists():
+            return Response({
+                "detail": "Ce créneau possède un historique de réservation. Désactivez-le au lieu de le supprimer."
+            }, status=409)
+        session = slot.session
+        slot.delete()
+        if session:
+            session.delete()
+        return Response(status=204)
+
+
+class MentorshipBookingViewSet(viewsets.ModelViewSet):
+    serializer_class = MentorshipBookingSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["status", "offering"]
+    ordering_fields = ["created_at", "slot__starts_at"]
+    ordering = ["-created_at"]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        from .mentorship import expire_stale_bookings
+        expire_stale_bookings()
+        qs = MentorshipBooking.objects.select_related(
+            "user", "offering", "offering__instructor", "slot", "slot__session"
+        )
+        if self.request.user.role == "admin":
+            return qs
+        if self.request.user.role == "instructor":
+            if self.action in {"retrieve", "cancel", "complete"}:
+                return qs.filter(Q(user=self.request.user) | Q(offering__instructor=self.request.user)).distinct()
+            if self.request.query_params.get("as_mentor") == "1":
+                return qs.filter(offering__instructor=self.request.user)
+        return qs.filter(user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        slot = MentorshipSlot.objects.select_related("offering").filter(pk=request.data.get("slot_id")).first()
+        if not slot:
+            return Response({"slot_id": ["Créneau introuvable."]}, status=404)
+        if slot.offering.instructor_id == request.user.id:
+            return Response({"detail": "Un mentor ne peut pas réserver son propre créneau."}, status=400)
+        try:
+            from .mentorship import reserve_booking
+            booking = reserve_booking(
+                user=request.user,
+                slot=slot,
+                learner_note=request.data.get("learner_note", ""),
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=409)
+        data = self.get_serializer(booking).data
+        return Response(data, status=201)
+
+    @action(detail=True, methods=["post"])
+    @transaction.atomic
+    def cancel(self, request, pk=None):
+        visible = self.get_object()
+        booking = MentorshipBooking.objects.select_for_update().select_related(
+            "user", "offering", "slot", "slot__session"
+        ).get(pk=visible.pk)
+        can_manage = request.user.role == "admin" or booking.user_id == request.user.id or booking.offering.instructor_id == request.user.id
+        if not can_manage:
+            return Response({"detail": "Action interdite."}, status=403)
+        if booking.status not in (MentorshipBooking.Status.PENDING_PAYMENT, MentorshipBooking.Status.CONFIRMED):
+            return Response({"detail": "Cette réservation ne peut plus être annulée."}, status=409)
+
+        if booking.status == MentorshipBooking.Status.PENDING_PAYMENT:
+            # Une commande externe peut être confirmée quelques secondes/minutes après le clic.
+            # Tant que cette commande est PENDING, libérer le créneau créerait un risque de
+            # double réservation après le webhook Mobile Money/carte.
+            if booking.order_items.filter(order__status="pending").exists():
+                return Response({
+                    "detail": "Un paiement est déjà en cours pour ce rendez-vous. Attendez sa confirmation ou son échec avant d'annuler."
+                }, status=409)
+            if booking.order_items.filter(order__status="paid").exists():
+                return Response({
+                    "detail": "Le paiement de ce rendez-vous est déjà confirmé. Actualisez la page avant toute annulation."
+                }, status=409)
+
+        if (
+            booking.status == MentorshipBooking.Status.CONFIRMED
+            and booking.user_id == request.user.id
+            and request.user.role != "admin"
+            and booking.slot.starts_at <= timezone.now() + timedelta(hours=booking.offering.cancellation_notice_hours)
+        ):
+            return Response({
+                "detail": f"L'annulation par l'apprenant doit intervenir au moins {booking.offering.cancellation_notice_hours} h avant le rendez-vous."
+            }, status=409)
+
+        # Les remboursements restent volontairement séparés : annuler un rendez-vous payé ne
+        # déclenche jamais silencieusement un remboursement financier.
+        booking.status = MentorshipBooking.Status.CANCELLED
+        booking.cancelled_at = timezone.now()
+        booking.expires_at = None
+        booking.save(update_fields=["status", "cancelled_at", "expires_at", "updated_at"])
+        if booking.slot.session_id and booking.user.email:
+            FormationSessionInvite.objects.filter(
+                session_id=booking.slot.session_id, email__iexact=booking.user.email, revoked_at__isnull=True
+            ).update(revoked_at=timezone.now())
+        return Response(self.get_serializer(booking).data)
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        booking = self.get_object()
+        if request.user.role != "admin" and booking.offering.instructor_id != request.user.id:
+            return Response({"detail": "Seul le mentor peut clôturer ce rendez-vous."}, status=403)
+        if booking.status != MentorshipBooking.Status.CONFIRMED:
+            return Response({"detail": "Seule une réservation confirmée peut être clôturée."}, status=409)
+        booking.status = MentorshipBooking.Status.COMPLETED
+        booking.mentor_note = str(request.data.get("mentor_note", "")).strip()
+        booking.save(update_fields=["status", "mentor_note", "updated_at"])
+        return Response(self.get_serializer(booking).data)
+

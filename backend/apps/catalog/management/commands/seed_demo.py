@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from apps.catalog.models import Category, Course, Section, Lesson, PDFResource, PDFProduct
-from apps.formations.models import InteractiveFormation, FormationSession
+from apps.formations.models import InteractiveFormation, FormationSession, MentorshipOffering
 from apps.reviews.models import Review
 from apps.enrollments.models import CourseEnrollment
 from apps.enrollments.certificates import issue_course_certificate
@@ -247,6 +247,47 @@ class Command(BaseCommand):
                     meeting_link="",
                 ),
             )
+
+        # Métadonnées de cohorte v45 : les get_or_create ci-dessus conservent aussi les bases
+        # créées par les anciennes versions du seed. On met donc ces champs à jour explicitement.
+        cohort_meta = [
+            (f1, "Cohorte React · Septembre", 3, now + timedelta(days=6)),
+            (f2, "Cohorte Data · Septembre", 4, now + timedelta(days=9)),
+            (f3, "Cohorte Design · Septembre", 4, now + timedelta(days=4)),
+        ]
+        for formation, cohort_name, minimum, deadline in cohort_meta:
+            formation.cohort_name = cohort_name
+            formation.cohort_timezone = "Africa/Abidjan"
+            formation.min_students = minimum
+            formation.enrollment_deadline = deadline
+            formation.status = "scheduled"
+            formation.published = True
+            formation.save(update_fields=[
+                "cohort_name", "cohort_timezone", "min_students", "enrollment_deadline", "status", "published"
+            ])
+
+        self.stdout.write("Création des offres de mentorat...")
+        from apps.formations.mentorship import create_slot, ensure_room_formation
+        mentor_offers = [
+            (koffi, "Mentorat Data & carrière", "Séance individuelle pour débloquer un projet data, préparer un entretien ou structurer votre progression.", 45, 13.80),
+            (amina, "Revue portfolio UI/UX", "Relecture de portfolio et recommandations concrètes pour présenter vos projets à un recruteur ou à un client.", 30, 9.20),
+        ]
+        for mentor, title, description, duration, price in mentor_offers:
+            offer, _ = MentorshipOffering.objects.get_or_create(
+                instructor=mentor, title=title,
+                defaults={
+                    "description": description, "duration_minutes": duration, "price": price,
+                    "language": "Français", "timezone": "Africa/Abidjan",
+                    "booking_notice_hours": 2, "cancellation_notice_hours": 12, "published": True,
+                },
+            )
+            if not offer.published:
+                offer.published = True
+                offer.save(update_fields=["published", "updated_at"])
+            ensure_room_formation(offer)
+            if not offer.slots.filter(is_active=True, starts_at__gt=now).exists():
+                create_slot(offer, now + timedelta(days=3, hours=3))
+                create_slot(offer, now + timedelta(days=5, hours=5))
 
         self.stdout.write("Création des avis...")
         reviews_data = [

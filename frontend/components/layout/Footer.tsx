@@ -10,10 +10,10 @@ export default function Footer() {
             <div className="grid h-9 w-9 place-items-center rounded-xl bg-brand-600 text-white"><GraduationCap size={20} /></div>
             <span className="text-lg font-extrabold">Learn<span className="text-brand-600">Eas</span></span>
           </Link>
-          <p className="mt-3 max-w-sm text-sm text-gray-500">Apprenez à votre rythme grâce à des cours complets, des formations interactives et des ressources PDF conçus par des instructeurs experts.</p>
+          <p className="mt-3 max-w-sm text-sm text-gray-500">Apprenez à votre rythme grâce à des cours complets, des cohortes live, du mentorat individuel et des ressources PDF conçus par des instructeurs experts.</p>
           <div className="mt-4 flex gap-3 text-gray-400"><Facebook size={18} /><Instagram size={18} /><Linkedin size={18} /><Twitter size={18} /></div>
         </div>
-        <FooterColumn title="Découvrir" items={[["/courses","Tous les cours"],["/formations","Formations interactives"],["/pdfs","Tous les PDF"],["/instructors","Instructeurs"]]} />
+        <FooterColumn title="Découvrir" items={[["/courses","Tous les cours"],["/formations","Cohortes live"],["/mentorship","Mentorat 1:1"],["/pdfs","Tous les PDF"],["/instructors","Instructeurs"]]} />
         <FooterColumn title="Compte" items={[["/dashboard/student","Mon espace"],["/dashboard/instructor","Devenir instructeur"],["/dashboard/student/certificates","Mes certificats"],["/faq","FAQ"]]} />
         <FooterColumn title="Support" items={[["/contact","Contactez-nous"],["/faq","Centre d'aide"],["/certificates/verify","Vérifier un certificat"]]} />
         <FooterColumn title="Légal" items={[["/legal/terms","Conditions d'utilisation"],["/legal/privacy","Confidentialité"],["/legal/notices","Mentions légales"],["/legal/cookies","Cookies"],["/legal/refunds","Paiements & remboursements"]]} />

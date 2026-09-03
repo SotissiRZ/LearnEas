@@ -35,6 +35,8 @@ export default function FormationAccessCard({ initialFormation }: { initialForma
           <span className="flex items-center gap-2"><Video size={16} /> {formation.num_sessions} séances en direct</span>
           <span className="flex items-center gap-2"><Clock size={16} /> {formation.session_duration_minutes} min par séance</span>
           <span className="flex items-center gap-2"><Users size={16} /> Groupe limité à {formation.max_students} apprenants</span>
+          {formation.min_students && formation.min_students > 1 && <span className="text-xs text-gray-500">Démarrage prévu à partir de {formation.min_students} participants.</span>}
+          {formation.enrollment_deadline && <span className="text-xs text-gray-500">Clôture des inscriptions : {new Date(formation.enrollment_deadline).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })}</span>}
         </div>
       </div>
     </div>

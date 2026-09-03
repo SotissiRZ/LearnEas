@@ -306,3 +306,141 @@ class FormationSessionInviteTests(APITestCase):
         self.client.force_authenticate(self.guest)
         room = self.client.get(f"/api/sessions/{self.session.id}/room/")
         self.assertEqual(room.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class CohortAndMentorshipRegressionTests(APITestCase):
+    def setUp(self):
+        self.mentor = User.objects.create_user(
+            username="mentor_regression", email="mentor-regression@example.com", password="passpass123",
+            role=User.Role.INSTRUCTOR,
+        )
+        self.learner = User.objects.create_user(
+            username="mentee_regression", email="mentee-regression@example.com", password="passpass123",
+            role=User.Role.STUDENT,
+        )
+        self.category = Category.objects.create(name="Mentorat regression")
+
+    def test_hidden_mentorship_room_never_appears_in_cohort_catalog(self):
+        from .models import FormationKind, MentorshipOffering
+        from .mentorship import ensure_room_formation
+
+        offer = MentorshipOffering.objects.create(
+            instructor=self.mentor,
+            title="Portfolio review",
+            description="Relecture privée",
+            price=Decimal("10.00"),
+            published=True,
+        )
+        room = ensure_room_formation(offer)
+        self.assertEqual(room.kind, FormationKind.MENTORSHIP)
+        self.assertFalse(room.published)
+        self.assertFalse(room.certificate_enabled)
+
+        response = self.client.get("/api/formations/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        rows = response.data.get("results", response.data)
+        self.assertNotIn(room.id, [row["id"] for row in rows])
+
+    def test_free_mentorship_booking_confirms_and_grants_only_session_invite(self):
+        from .models import MentorshipBooking, MentorshipOffering
+        from .mentorship import create_slot
+
+        offer = MentorshipOffering.objects.create(
+            instructor=self.mentor,
+            title="CV express",
+            description="Coaching CV",
+            price=Decimal("0.00"),
+            published=True,
+            booking_notice_hours=1,
+        )
+        slot = create_slot(offer, timezone.now() + timedelta(days=2))
+        self.client.force_authenticate(self.learner)
+        booked = self.client.post(
+            "/api/mentorship/bookings/",
+            {"slot_id": slot.id, "learner_note": "Préparer mon CV"},
+            format="json",
+        )
+        self.assertEqual(booked.status_code, status.HTTP_201_CREATED, booked.data)
+        self.assertEqual(booked.data["status"], MentorshipBooking.Status.CONFIRMED)
+        self.assertEqual(booked.data["join_session_id"], slot.session_id)
+        self.assertTrue(FormationSessionInvite.objects.filter(
+            session=slot.session, email__iexact=self.learner.email, revoked_at__isnull=True
+        ).exists())
+        self.assertFalse(FormationEnrollment.objects.filter(
+            user=self.learner, formation=slot.session.formation
+        ).exists())
+
+    def test_mentor_can_complete_own_booking_without_as_mentor_query_parameter(self):
+        from .models import MentorshipOffering
+        from .mentorship import create_slot, reserve_booking
+
+        offer = MentorshipOffering.objects.create(
+            instructor=self.mentor,
+            title="Entretien technique",
+            description="Simulation",
+            price=Decimal("0.00"),
+            published=True,
+            booking_notice_hours=1,
+        )
+        slot = create_slot(offer, timezone.now() + timedelta(days=2))
+        booking = reserve_booking(user=self.learner, slot=slot)
+        self.client.force_authenticate(self.mentor)
+        response = self.client.post(
+            f"/api/mentorship/bookings/{booking.id}/complete/",
+            {"mentor_note": "Objectif atteint"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["status"], "completed")
+        self.assertEqual(response.data["mentor_note"], "Objectif atteint")
+
+    def test_cohort_deadline_closes_enrollment(self):
+        formation = InteractiveFormation.objects.create(
+            instructor=self.mentor,
+            category=self.category,
+            title="Cohorte fermée",
+            description="Test date limite",
+            price=Decimal("10.00"),
+            max_students=10,
+            min_students=2,
+            enrollment_deadline=timezone.now() - timedelta(minutes=1),
+            start_date=(timezone.now() + timedelta(days=1)).date(),
+            status="scheduled",
+            published=True,
+        )
+        self.assertFalse(formation.is_enrollment_open)
+
+    def test_historical_mentorship_slot_and_offering_must_be_deactivated_not_deleted(self):
+        from .models import MentorshipOffering
+        from .mentorship import create_slot, reserve_booking
+
+        offer = MentorshipOffering.objects.create(
+            instructor=self.mentor,
+            title="Historique mentorat",
+            description="Conserver la traçabilité",
+            price=Decimal("20.00"),
+            published=True,
+            booking_notice_hours=1,
+        )
+        slot = create_slot(offer, timezone.now() + timedelta(days=3))
+        reserve_booking(user=self.learner, slot=slot)
+
+        self.client.force_authenticate(self.mentor)
+        slot_delete = self.client.delete(f"/api/mentorship/slots/{slot.id}/")
+        self.assertEqual(slot_delete.status_code, status.HTTP_409_CONFLICT, slot_delete.data)
+        slot.refresh_from_db()
+
+        disabled = self.client.patch(
+            f"/api/mentorship/slots/{slot.id}/", {"is_active": False}, format="json"
+        )
+        self.assertEqual(disabled.status_code, status.HTTP_200_OK, disabled.data)
+        self.assertFalse(disabled.data["is_active"])
+
+        offer_delete = self.client.delete(f"/api/mentorship/offerings/{offer.slug}/")
+        self.assertEqual(offer_delete.status_code, status.HTTP_409_CONFLICT, offer_delete.data)
+
+        unpublished = self.client.patch(
+            f"/api/mentorship/offerings/{offer.slug}/", {"published": False}, format="json"
+        )
+        self.assertEqual(unpublished.status_code, status.HTTP_200_OK, unpublished.data)
+        self.assertFalse(unpublished.data["published"])

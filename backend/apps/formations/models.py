@@ -13,6 +13,11 @@ class FormationStatus(models.TextChoices):
     CANCELLED = "cancelled", "Annulée"
 
 
+class FormationKind(models.TextChoices):
+    COHORT = "cohort", "Cohorte"
+    MENTORSHIP = "mentorship", "Conteneur mentorat"
+
+
 class InteractiveFormation(models.Model):
     """Formation interactive en direct, hébergée dans une salle LearnEas."""
 
@@ -36,6 +41,11 @@ class InteractiveFormation(models.Model):
         default="beginner",
     )
     language = models.CharField(max_length=50, default="Français")
+    kind = models.CharField(max_length=20, choices=FormationKind.choices, default=FormationKind.COHORT, db_index=True)
+    cohort_name = models.CharField(max_length=120, blank=True, help_text="Ex : Cohorte Septembre 2026")
+    cohort_timezone = models.CharField(max_length=64, default="Africa/Abidjan")
+    enrollment_deadline = models.DateTimeField(null=True, blank=True)
+    min_students = models.PositiveIntegerField(default=1)
 
     price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     num_sessions = models.PositiveIntegerField(default=1, help_text="Nombre de séances de la formation")
@@ -100,6 +110,25 @@ class InteractiveFormation(models.Model):
     @property
     def is_full(self):
         return self.seats_left <= 0
+
+    @property
+    def is_enrollment_open(self):
+        if self.kind != FormationKind.COHORT or not self.published or self.is_full:
+            return False
+        # Une cohorte n'accepte de nouveaux participants que pendant sa phase planifiée.
+        # Le démarrage de la première séance bascule déjà la formation en IN_PROGRESS.
+        if self.status != FormationStatus.SCHEDULED:
+            return False
+        now = timezone.now()
+        if self.enrollment_deadline and self.enrollment_deadline <= now:
+            return False
+        if not self.enrollment_deadline:
+            first_session = self.sessions.order_by("scheduled_at").values_list("scheduled_at", flat=True).first()
+            if first_session and first_session <= now:
+                return False
+            if not first_session and self.start_date and self.start_date < timezone.localdate():
+                return False
+        return True
 
 
 class FormationSession(models.Model):
@@ -257,4 +286,117 @@ class FormationRoomFile(models.Model):
 
     def __str__(self):
         return f"{self.session} · {self.original_name}"
+
+class MentorshipOffering(models.Model):
+    """Offre de mentorat 1:1 commercialisée par un instructeur."""
+
+    instructor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mentorship_offerings"
+    )
+    title = models.CharField(max_length=180)
+    slug = models.SlugField(max_length=200, unique=True, blank=True)
+    description = models.TextField()
+    duration_minutes = models.PositiveSmallIntegerField(default=30)
+    price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    language = models.CharField(max_length=50, default="Français")
+    timezone = models.CharField(max_length=64, default="Africa/Abidjan")
+    booking_notice_hours = models.PositiveSmallIntegerField(default=2)
+    cancellation_notice_hours = models.PositiveSmallIntegerField(default=12)
+    published = models.BooleanField(default=False)
+    room_formation = models.OneToOneField(
+        InteractiveFormation, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="mentorship_container_for",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["published", "instructor"], name="mentor_offer_pub_instr_idx"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(self.title) or "mentorat"
+            slug = base
+            i = 1
+            while MentorshipOffering.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                i += 1
+                slug = f"{base}-{i}"
+            self.slug = slug
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.instructor} · {self.title}"
+
+
+class MentorshipSlot(models.Model):
+    """Créneau de réservation proposé par un mentor."""
+
+    offering = models.ForeignKey(MentorshipOffering, on_delete=models.CASCADE, related_name="slots")
+    starts_at = models.DateTimeField()
+    is_active = models.BooleanField(default=True)
+    session = models.OneToOneField(
+        FormationSession, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="mentorship_slot",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["starts_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["offering", "starts_at"], name="uniq_mentor_offer_start"),
+        ]
+        indexes = [
+            models.Index(fields=["offering", "starts_at", "is_active"], name="mentor_slot_offer_time_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.offering.title} · {self.starts_at:%Y-%m-%d %H:%M}"
+
+
+class MentorshipBooking(models.Model):
+    class Status(models.TextChoices):
+        PENDING_PAYMENT = "pending_payment", "Paiement en attente"
+        CONFIRMED = "confirmed", "Confirmée"
+        COMPLETED = "completed", "Terminée"
+        CANCELLED = "cancelled", "Annulée"
+        EXPIRED = "expired", "Expirée"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mentorship_bookings"
+    )
+    offering = models.ForeignKey(MentorshipOffering, on_delete=models.PROTECT, related_name="bookings")
+    slot = models.ForeignKey(MentorshipSlot, on_delete=models.PROTECT, related_name="bookings")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING_PAYMENT)
+    price_snapshot = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    learner_note = models.TextField(blank=True)
+    mentor_note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["slot"],
+                condition=models.Q(status__in=["pending_payment", "confirmed"]),
+                name="uniq_active_mentor_slot_booking",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "status"], name="mentor_book_user_status_idx"),
+            models.Index(fields=["offering", "status"], name="mentor_book_offer_status_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.user} · {self.offering.title} · {self.get_status_display()}"
+
+    @property
+    def join_session_id(self):
+        return self.slot.session_id if self.status == self.Status.CONFIRMED else None
 

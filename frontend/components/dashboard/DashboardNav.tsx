@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BookOpen, FileText, User, PlusCircle, Users, ShoppingBag, Video, Award } from "lucide-react";
+import { LayoutDashboard, BookOpen, FileText, User, PlusCircle, Users, ShoppingBag, Video, Award, CalendarCheck2 } from "lucide-react";
 
 const LINKS: Record<string, { href: string; label: string; icon: React.ReactNode }[]> = {
   student: [
     { href: "/dashboard/student", label: "Mes cours", icon: <BookOpen size={16} /> },
-    { href: "/dashboard/student/formations", label: "Mes formations", icon: <Video size={16} /> },
+    { href: "/dashboard/student/formations", label: "Mes cohortes", icon: <Video size={16} /> },
+    { href: "/dashboard/student/mentorship", label: "Mon mentorat", icon: <CalendarCheck2 size={16} /> },
     { href: "/dashboard/student/pdfs", label: "Mes PDF", icon: <FileText size={16} /> },
     { href: "/dashboard/student/certificates", label: "Mes certificats", icon: <Award size={16} /> },
     { href: "/dashboard/student/profile", label: "Profil", icon: <User size={16} /> },
@@ -16,7 +17,8 @@ const LINKS: Record<string, { href: string; label: string; icon: React.ReactNode
     { href: "/dashboard/instructor", label: "Aperçu", icon: <LayoutDashboard size={16} /> },
     { href: "/dashboard/instructor/courses", label: "Mes cours", icon: <BookOpen size={16} /> },
     { href: "/dashboard/instructor/courses/new", label: "Nouveau cours", icon: <PlusCircle size={16} /> },
-    { href: "/dashboard/instructor/formations", label: "Formations interactives", icon: <Video size={16} /> },
+    { href: "/dashboard/instructor/formations", label: "Cohortes live", icon: <Video size={16} /> },
+    { href: "/dashboard/instructor/mentorship", label: "Mentorat 1:1", icon: <CalendarCheck2 size={16} /> },
     { href: "/dashboard/instructor/formations/new", label: "Nouvelle formation", icon: <PlusCircle size={16} /> },
     { href: "/dashboard/instructor/pdfs", label: "Mes PDF", icon: <FileText size={16} /> },
     { href: "/dashboard/instructor/pdfs/new", label: "Nouveau PDF", icon: <PlusCircle size={16} /> },

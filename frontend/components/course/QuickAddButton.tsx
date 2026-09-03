@@ -23,6 +23,7 @@ export default function QuickAddButton({ item }: { item: Item }) {
 
   const inCart = items.some((i) => i.type === item.kind && i.id === item.data.id);
   const isFull = item.kind === "formation" && (item.data as InteractiveFormation).is_full;
+  const enrollmentClosed = item.kind === "formation" && (item.data as InteractiveFormation).is_enrollment_open === false;
 
   function handleClick(e: React.MouseEvent) {
     e.preventDefault();
@@ -43,10 +44,10 @@ export default function QuickAddButton({ item }: { item: Item }) {
     else addFormation(item.data as InteractiveFormation);
   }
 
-  if (isFull) {
+  if (isFull || enrollmentClosed) {
     return (
       <button disabled className="btn-outline !py-1.5 !text-xs cursor-not-allowed opacity-50">
-        Complet
+        {isFull ? "Complet" : "Inscriptions closes"}
       </button>
     );
   }

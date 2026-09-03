@@ -107,6 +107,18 @@ Admin Django : **http://localhost/admin**
 - Q&R directement relié aux commentaires de la leçon et aux réponses de l'instructeur.
 - Migration à appliquer après mise à jour : `python manage.py migrate`.
 
+### Cohortes & mentorat 1:1 (v45)
+
+- Les formations synchrones sont structurées en **cohortes** : nom de promotion, places min/max, clôture des inscriptions, fuseau horaire et planning exportable en `.ics`.
+- Les instructeurs peuvent publier des **offres de mentorat individuel**, ouvrir des créneaux, fixer durée/prix/délais et recevoir des réservations dans une salle vidéo LearnEas privée.
+- Les séances payantes passent par le checkout existant et alimentent automatiquement les revenus/commissions instructeur ; Mobile Money et devises locales restent compatibles.
+- L'apprenant dispose de **Mes rendez-vous de mentorat** et le mentor d'un espace de gestion dédié.
+- Les rappels WhatsApp peuvent prévenir les deux parties avant le rendez-vous.
+- Les champs **Pays** utilisent un référentiel sélectionnable (marchés africains francophones en tête) au lieu d'une saisie libre ; WhatsApp et Mobile Money utilisent un sélecteur **pays + indicatif** puis le numéro national.
+- Les numéros sont enregistrés au format international E.164 et revalidés côté API ; les pays sont eux aussi normalisés côté serveur.
+- Le cycle réservation/paiement empêche la libération d'un créneau pendant une transaction externe encore en attente et conserve l'historique des offres/créneaux déjà réservés.
+- Voir `docs/MENTORSHIP.md` pour le flux, l'API et les règles de réservation.
+
 ### Catalogue
 - Cours = **playlist complète** : sections → leçons vidéo, durée totale et nombre de vidéos calculés
   automatiquement (signal Django).

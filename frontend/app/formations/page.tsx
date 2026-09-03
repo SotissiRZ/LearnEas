@@ -20,9 +20,9 @@ export default async function FormationsPage() {
           <Video size={22} />
         </div>
         <div>
-          <h1 className="text-3xl font-extrabold">Formations interactives</h1>
+          <h1 className="text-3xl font-extrabold">Cohortes live</h1>
           <p className="mt-1 text-gray-500">
-            Séances en direct par visioconférence avec un instructeur, en petit groupe.
+            Programmes accompagnés en petit groupe, avec calendrier, places limitées et séances live.
           </p>
         </div>
       </div>
@@ -30,7 +30,7 @@ export default async function FormationsPage() {
       {formations.length === 0 ? (
         <div className="card p-10 text-center text-gray-500">
           {result.ok
-            ? "Aucune formation interactive disponible pour le moment."
+            ? "Aucune cohorte disponible pour le moment."
             : "Le catalogue n'a pas pu être chargé."}
         </div>
       ) : (

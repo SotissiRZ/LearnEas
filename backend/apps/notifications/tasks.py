@@ -36,11 +36,49 @@ def dispatch_whatsapp_live_reminders():
         completed=False,
         scheduled_at__gte=target - timedelta(minutes=3),
         scheduled_at__lt=target + timedelta(minutes=4),
-    ).select_related("formation")
+    ).select_related("formation").prefetch_related("mentorship_slot__bookings__user")
     count = 0
     for session in sessions:
-        start_label = timezone.localtime(session.scheduled_at).strftime("%d/%m/%Y %H:%M")
         room_url = f"{settings.FRONTEND_URL.rstrip('/')}/live/session/{session.id}"
+        try:
+            mentor_slot = session.mentorship_slot
+        except Exception:
+            mentor_slot = None
+
+        if mentor_slot is not None:
+            try:
+                from zoneinfo import ZoneInfo
+                start_local = session.scheduled_at.astimezone(ZoneInfo(mentor_slot.offering.timezone))
+            except Exception:
+                start_local = timezone.localtime(session.scheduled_at)
+            start_label = start_local.strftime("%d/%m/%Y %H:%M")
+            confirmed = mentor_slot.bookings.filter(status="confirmed").select_related("user").first()
+            if confirmed:
+                user = confirmed.user
+                name = user.first_name or user.get_full_name() or user.username
+                delivery = queue_whatsapp_event(
+                    user=user,
+                    event_type=WhatsAppDelivery.EventType.LIVE,
+                    event_key=f"mentorship-live:{session.id}:{minutes}m:{user.id}",
+                    variables=[name, f"Mentorat · {mentor_slot.offering.title}", start_label, room_url],
+                    metadata={"session_id": session.id, "mentorship_booking_id": confirmed.id, "reminder_minutes": minutes},
+                )
+                count += int(delivery is not None)
+
+                mentor = mentor_slot.offering.instructor
+                mentor_name = mentor.first_name or mentor.get_full_name() or mentor.username
+                learner_name = user.get_full_name() or user.username
+                mentor_delivery = queue_whatsapp_event(
+                    user=mentor,
+                    event_type=WhatsAppDelivery.EventType.LIVE,
+                    event_key=f"mentorship-live-mentor:{session.id}:{minutes}m:{mentor.id}",
+                    variables=[mentor_name, f"Mentorat · {mentor_slot.offering.title} · {learner_name}", start_label, room_url],
+                    metadata={"session_id": session.id, "mentorship_booking_id": confirmed.id, "reminder_minutes": minutes, "mentor": True},
+                )
+                count += int(mentor_delivery is not None)
+            continue
+
+        start_label = timezone.localtime(session.scheduled_at).strftime("%d/%m/%Y %H:%M")
         enrollments = session.formation.enrollments.select_related("user").all()
         for enrollment in enrollments:
             user = enrollment.user

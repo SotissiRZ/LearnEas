@@ -6,22 +6,156 @@ import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import GuardScreen from "@/components/ui/GuardScreen";
+import CountrySelect from "@/components/ui/CountrySelect";
 import WhatsAppPreferencesCard from "@/components/notifications/WhatsAppPreferencesCard";
 
-interface Profile { id:number; username:string; email:string; first_name:string; last_name:string; role:string; avatar:string|null; bio:string; country:string; headline:string; domain:string; years_experience:number; }
-
-export default function InstructorProfilePage(){
-  const {ready}=useAuthGuard({roles:["instructor","admin"],redirectTo:"/dashboard/instructor"}); const {refreshMe}=useAuth(); const [profile,setProfile]=useState<Profile|null>(null); const [avatar,setAvatar]=useState<File|null>(null); const [message,setMessage]=useState(""); const [saving,setSaving]=useState(false); const [pw,setPw]=useState({current_password:"",new_password:"",new_password2:""}); const [pwMessage,setPwMessage]=useState("");
-  useEffect(()=>{if(ready)api.get<Profile>("/auth/me/").then(setProfile)},[ready]);
-  function set<K extends keyof Profile>(key:K,value:Profile[K]){setProfile(p=>p?{...p,[key]:value}:p)}
-  async function saveProfile(e:React.FormEvent){e.preventDefault();if(!profile)return;setSaving(true);setMessage("");try{const fd=new FormData();fd.append("first_name",profile.first_name);fd.append("last_name",profile.last_name);fd.append("bio",profile.bio||"");fd.append("country",profile.country||"");fd.append("headline",profile.headline||"");fd.append("domain",profile.domain||"");fd.append("years_experience",String(profile.years_experience||0));if(avatar)fd.append("avatar",avatar);const updated=await api.patch<Profile>("/auth/me/",fd);setProfile(updated);setAvatar(null);await refreshMe();setMessage("Profil instructeur mis à jour.");}catch(e){setMessage(e instanceof ApiError?e.message:"Impossible d'enregistrer le profil.");}finally{setSaving(false)}}
-  async function changePassword(e:React.FormEvent){e.preventDefault();setPwMessage("");try{const r=await api.post<{detail:string}>("/auth/change-password/",pw);setPw({current_password:"",new_password:"",new_password2:""});setPwMessage(r.detail);}catch(e){setPwMessage(e instanceof ApiError?e.message:"Impossible de modifier le mot de passe.")}}
-  if(!ready)return <GuardScreen/>; if(!profile)return <div className="card p-8 text-center text-gray-500">Chargement...</div>;
-  return <div className="min-w-0"><div className="mb-6"><h1 className="flex items-center gap-2 text-xl font-bold"><UserRoundCog size={20} className="text-brand-600"/> Profil & paramètres</h1><p className="mt-1 text-sm text-gray-500">Informations publiques de votre profil instructeur et sécurité du compte.</p></div>
-    <div className="grid gap-5 xl:grid-cols-[1.15fr_.85fr]"><form onSubmit={saveProfile} className="card p-5"><h2 className="font-bold">Profil public</h2><p className="mb-5 text-xs text-gray-500">Ces informations apparaissent sur vos contenus.</p><div className="mb-5 flex items-center gap-4"><div className="grid h-20 w-20 place-items-center overflow-hidden rounded-2xl bg-brand-50 text-brand-700">{profile.avatar?<img loading="lazy" decoding="async" src={profile.avatar} alt="Avatar" className="h-full w-full object-cover"/>:<UserRoundCog size={30}/>}</div><div><label className="btn-outline cursor-pointer !py-2 !text-xs"><Camera size={14}/> Changer la photo<input type="file" accept="image/*" className="hidden" onChange={e=>setAvatar(e.target.files?.[0]||null)}/></label>{avatar&&<p className="mt-1 max-w-[220px] truncate text-[11px] text-gray-400">{avatar.name}</p>}</div></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Prénom"><input value={profile.first_name} onChange={e=>set("first_name",e.target.value)} className="input-admin w-full"/></Field><Field label="Nom"><input value={profile.last_name} onChange={e=>set("last_name",e.target.value)} className="input-admin w-full"/></Field><Field label="Email"><input value={profile.email} readOnly className="input-admin w-full bg-gray-50 text-gray-500"/></Field><Field label="Pays"><input value={profile.country||""} onChange={e=>set("country",e.target.value)} className="input-admin w-full"/></Field><Field label="Titre professionnel"><input value={profile.headline||""} onChange={e=>set("headline",e.target.value)} className="input-admin w-full" placeholder="Ex: Expert Django & React"/></Field><Field label="Domaine"><input value={profile.domain||""} onChange={e=>set("domain",e.target.value)} className="input-admin w-full"/></Field><Field label="Années d'expérience"><input type="number" min={0} value={profile.years_experience||0} onChange={e=>set("years_experience",Number(e.target.value))} className="input-admin w-full"/></Field></div><Field label="Biographie"><textarea rows={5} value={profile.bio||""} onChange={e=>set("bio",e.target.value)} className="input-admin mt-1 w-full" placeholder="Présentez votre parcours et votre expertise."/></Field>{message&&<p className="mt-3 text-xs text-gray-600">{message}</p>}<button type="submit" disabled={saving} className="btn-primary mt-4"><Save size={15}/>{saving?"Enregistrement...":"Enregistrer le profil"}</button></form>
-      <div className="space-y-5"><form onSubmit={changePassword} className="card p-5"><h2 className="flex items-center gap-2 font-bold"><LockKeyhole size={17} className="text-brand-600"/> Sécurité</h2><p className="mb-4 text-xs text-gray-500">Modifiez votre mot de passe sans quitter votre espace.</p><div className="space-y-3"><input type="password" required value={pw.current_password} onChange={e=>setPw({...pw,current_password:e.target.value})} placeholder="Mot de passe actuel" className="input-admin w-full"/><input type="password" required minLength={8} value={pw.new_password} onChange={e=>setPw({...pw,new_password:e.target.value})} placeholder="Nouveau mot de passe" className="input-admin w-full"/><input type="password" required minLength={8} value={pw.new_password2} onChange={e=>setPw({...pw,new_password2:e.target.value})} placeholder="Confirmer le mot de passe" className="input-admin w-full"/><button type="submit" className="btn-outline w-full !py-2 !text-xs">Modifier le mot de passe</button>{pwMessage&&<p className="text-xs text-gray-600">{pwMessage}</p>}</div></form><div className="card p-5"><h2 className="font-bold">Compte instructeur</h2><div className="mt-3 space-y-2 text-sm"><Row label="Rôle" value={profile.role}/><Row label="Identifiant interne" value={profile.username}/></div><p className="mt-4 text-xs leading-5 text-gray-400">La connexion utilise votre adresse email. L'identifiant interne reste technique et n'est pas nécessaire pour vous connecter.</p></div><WhatsAppPreferencesCard /></div>
-    </div>
-  </div>
+interface Profile {
+  id: number;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: string;
+  avatar: string | null;
+  bio: string;
+  country: string;
+  headline: string;
+  domain: string;
+  years_experience: number;
 }
-function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="block"><span className="mb-1 block text-xs font-medium text-gray-500">{label}</span>{children}</label>}
-function Row({label,value}:{label:string;value:string}){return <div className="flex justify-between rounded-lg bg-gray-50 px-3 py-2"><span className="text-gray-500">{label}</span><span className="font-medium">{value}</span></div>}
+
+export default function InstructorProfilePage() {
+  const { ready } = useAuthGuard({ roles: ["instructor", "admin"], redirectTo: "/dashboard/instructor" });
+  const { refreshMe } = useAuth();
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [avatar, setAvatar] = useState<File | null>(null);
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [pw, setPw] = useState({ current_password: "", new_password: "", new_password2: "" });
+  const [pwMessage, setPwMessage] = useState("");
+
+  useEffect(() => {
+    if (ready) api.get<Profile>("/auth/me/").then(setProfile);
+  }, [ready]);
+
+  function set<K extends keyof Profile>(key: K, value: Profile[K]) {
+    setProfile((current) => current ? { ...current, [key]: value } : current);
+  }
+
+  async function saveProfile(event: React.FormEvent) {
+    event.preventDefault();
+    if (!profile) return;
+    if (!profile.country) {
+      setMessage("Sélectionnez votre pays.");
+      return;
+    }
+    setSaving(true);
+    setMessage("");
+    try {
+      const fd = new FormData();
+      fd.append("first_name", profile.first_name);
+      fd.append("last_name", profile.last_name);
+      fd.append("bio", profile.bio || "");
+      fd.append("country", profile.country || "");
+      fd.append("headline", profile.headline || "");
+      fd.append("domain", profile.domain || "");
+      fd.append("years_experience", String(profile.years_experience || 0));
+      if (avatar) fd.append("avatar", avatar);
+      const updated = await api.patch<Profile>("/auth/me/", fd);
+      setProfile(updated);
+      setAvatar(null);
+      await refreshMe();
+      setMessage("Profil instructeur mis à jour.");
+    } catch (error) {
+      setMessage(error instanceof ApiError ? error.message : "Impossible d'enregistrer le profil.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function changePassword(event: React.FormEvent) {
+    event.preventDefault();
+    setPwMessage("");
+    try {
+      const response = await api.post<{ detail: string }>("/auth/change-password/", pw);
+      setPw({ current_password: "", new_password: "", new_password2: "" });
+      setPwMessage(response.detail);
+    } catch (error) {
+      setPwMessage(error instanceof ApiError ? error.message : "Impossible de modifier le mot de passe.");
+    }
+  }
+
+  if (!ready) return <GuardScreen />;
+  if (!profile) return <div className="card p-8 text-center text-gray-500">Chargement...</div>;
+
+  return (
+    <div className="min-w-0">
+      <div className="mb-6">
+        <h1 className="flex items-center gap-2 text-xl font-bold"><UserRoundCog size={20} className="text-brand-600" /> Profil & paramètres</h1>
+        <p className="mt-1 text-sm text-gray-500">Informations publiques de votre profil instructeur et sécurité du compte.</p>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1.15fr_.85fr]">
+        <form onSubmit={saveProfile} className="card p-5">
+          <h2 className="font-bold">Profil public</h2>
+          <p className="mb-5 text-xs text-gray-500">Ces informations apparaissent sur vos contenus.</p>
+          <div className="mb-5 flex items-center gap-4">
+            <div className="grid h-20 w-20 place-items-center overflow-hidden rounded-2xl bg-brand-50 text-brand-700">
+              {profile.avatar ? <img loading="lazy" decoding="async" src={profile.avatar} alt="Avatar" className="h-full w-full object-cover" /> : <UserRoundCog size={30} />}
+            </div>
+            <div>
+              <label className="btn-outline cursor-pointer !py-2 !text-xs">
+                <Camera size={14} /> Changer la photo
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => setAvatar(e.target.files?.[0] || null)} />
+              </label>
+              {avatar && <p className="mt-1 max-w-[220px] truncate text-[11px] text-gray-400">{avatar.name}</p>}
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Prénom"><input value={profile.first_name} onChange={(e) => set("first_name", e.target.value)} className="input-admin w-full" /></Field>
+            <Field label="Nom"><input value={profile.last_name} onChange={(e) => set("last_name", e.target.value)} className="input-admin w-full" /></Field>
+            <Field label="Email"><input value={profile.email} readOnly className="input-admin w-full bg-gray-50 text-gray-500" /></Field>
+            <Field label="Pays">
+              <CountrySelect required value={profile.country} onChange={(country) => set("country", country)} />
+            </Field>
+            <Field label="Titre professionnel"><input value={profile.headline || ""} onChange={(e) => set("headline", e.target.value)} className="input-admin w-full" placeholder="Ex: Expert Django & React" /></Field>
+            <Field label="Domaine"><input value={profile.domain || ""} onChange={(e) => set("domain", e.target.value)} className="input-admin w-full" /></Field>
+            <Field label="Années d'expérience"><input type="number" min={0} value={profile.years_experience || 0} onChange={(e) => set("years_experience", Number(e.target.value))} className="input-admin w-full" /></Field>
+          </div>
+          <Field label="Biographie"><textarea rows={5} value={profile.bio || ""} onChange={(e) => set("bio", e.target.value)} className="input-admin mt-1 w-full" placeholder="Présentez votre parcours et votre expertise." /></Field>
+          {message && <p className="mt-3 text-xs text-gray-600">{message}</p>}
+          <button type="submit" disabled={saving} className="btn-primary mt-4"><Save size={15} />{saving ? "Enregistrement..." : "Enregistrer le profil"}</button>
+        </form>
+
+        <div className="space-y-5">
+          <form onSubmit={changePassword} className="card p-5">
+            <h2 className="flex items-center gap-2 font-bold"><LockKeyhole size={17} className="text-brand-600" /> Sécurité</h2>
+            <p className="mb-4 text-xs text-gray-500">Modifiez votre mot de passe sans quitter votre espace.</p>
+            <div className="space-y-3">
+              <input type="password" required value={pw.current_password} onChange={(e) => setPw({ ...pw, current_password: e.target.value })} placeholder="Mot de passe actuel" className="input-admin w-full" />
+              <input type="password" required minLength={8} value={pw.new_password} onChange={(e) => setPw({ ...pw, new_password: e.target.value })} placeholder="Nouveau mot de passe" className="input-admin w-full" />
+              <input type="password" required minLength={8} value={pw.new_password2} onChange={(e) => setPw({ ...pw, new_password2: e.target.value })} placeholder="Confirmer le mot de passe" className="input-admin w-full" />
+              <button type="submit" className="btn-outline w-full !py-2 !text-xs">Modifier le mot de passe</button>
+              {pwMessage && <p className="text-xs text-gray-600">{pwMessage}</p>}
+            </div>
+          </form>
+          <div className="card p-5">
+            <h2 className="font-bold">Compte instructeur</h2>
+            <div className="mt-3 space-y-2 text-sm"><Row label="Rôle" value={profile.role} /><Row label="Identifiant interne" value={profile.username} /></div>
+            <p className="mt-4 text-xs leading-5 text-gray-400">La connexion utilise votre adresse email. L'identifiant interne reste technique et n'est pas nécessaire pour vous connecter.</p>
+          </div>
+          <WhatsAppPreferencesCard />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <label className="block"><span className="mb-1 block text-xs font-medium text-gray-500">{label}</span>{children}</label>;
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return <div className="flex justify-between rounded-lg bg-gray-50 px-3 py-2"><span className="text-gray-500">{label}</span><span className="font-medium">{value}</span></div>;
+}

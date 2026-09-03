@@ -38,13 +38,13 @@ export default function StudentFormationsPage() {
   return (
     <div className="container-app py-10">
       <DashboardNav role="student" />
-      <h2 className="mb-4 text-xl font-bold">Mes formations interactives</h2>
+      <h2 className="mb-4 text-xl font-bold">Mes cohortes live</h2>
 
       {loading ? (
         <p className="text-gray-500">Chargement...</p>
       ) : enrollments.length === 0 ? (
         <div className="card p-10 text-center text-gray-500">
-          Aucune formation interactive. <Link href="/formations" className="font-semibold text-brand-700">Explorer le catalogue</Link>
+          Aucune cohorte live. <Link href="/formations" className="font-semibold text-brand-700">Explorer le catalogue</Link>
         </div>
       ) : (
         <div className="flex flex-col gap-4">

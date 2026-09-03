@@ -1,3 +1,24 @@
+# Audit technique LearnEas — v45
+
+Date : 2026-09-04
+
+## Contrôles de livraison v45
+
+La v45 ajoute les cohortes, le mentorat 1:1 et les référentiels pays/téléphone demandés pour les marchés africains francophones. Avant archivage, les contrôles statiques suivants ont été exécutés :
+
+- compilation Python de `backend/` avec `compileall` ;
+- parsing TypeScript/TSX de 111 fichiers : 0 erreur syntaxique ;
+- audit responsive/mobile : 101 fichiers inspectés, aucune alerte bloquante ;
+- parsing YAML de `docker-compose.yml` et JSON de la configuration frontend ;
+- référentiel frontend : 233 pays/territoires, 29 marchés prioritaires, tous avec indicatif ;
+- référentiel backend : 233 pays et validation des alias historiques (RDC, Côte d’Ivoire, etc.) ;
+- validation E.164 côté serveur et rejet des indicatifs absents du référentiel LearnEas ;
+- contrôle statique des préfixes de migrations : aucun numéro dupliqué.
+
+Les tests Django et le build Next.js complets ne sont pas annoncés comme exécutés dans l’environnement de génération : Django et les dépendances `node_modules` n’y sont pas installés. Ils doivent être rejoués dans Docker/CI après extraction.
+
+---
+
 # Audit technique LearnEas — v28
 
 Date : 2026-08-31

@@ -46,6 +46,7 @@ class RegistrationRegressionTests(APITestCase):
             {
                 "username": "csrf_student",
                 "email": "csrf-student@example.com",
+                "country": "Côte d'Ivoire",
                 "password": "passpass123",
                 "password2": "passpass123",
             },
@@ -60,6 +61,7 @@ class RegistrationRegressionTests(APITestCase):
             {
                 "username": "another",
                 "email": "PERSON@EXAMPLE.COM",
+                "country": "Sénégal",
                 "password": "passpass123",
                 "password2": "passpass123",
             },
@@ -67,6 +69,46 @@ class RegistrationRegressionTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("email", response.data)
+
+    def test_registration_requires_country_from_reference_list(self):
+        missing = self.client.post(
+            "/api/auth/register/",
+            {
+                "email": "no-country@example.com",
+                "password": "passpass123",
+                "password2": "passpass123",
+            },
+            format="json",
+        )
+        self.assertEqual(missing.status_code, status.HTTP_400_BAD_REQUEST, missing.data)
+        self.assertIn("country", missing.data)
+
+        invalid = self.client.post(
+            "/api/auth/register/",
+            {
+                "email": "bad-country@example.com",
+                "country": "Pays inventé",
+                "password": "passpass123",
+                "password2": "passpass123",
+            },
+            format="json",
+        )
+        self.assertEqual(invalid.status_code, status.HTTP_400_BAD_REQUEST, invalid.data)
+        self.assertIn("country", invalid.data)
+
+    def test_registration_canonicalizes_country_alias(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            {
+                "email": "rdc@example.com",
+                "country": "RDC",
+                "password": "passpass123",
+                "password2": "passpass123",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(User.objects.get(email="rdc@example.com").country, "RD Congo")
 
 
 class AdminBackofficeRegressionTests(APITestCase):
@@ -108,6 +150,7 @@ class AdminBackofficeRegressionTests(APITestCase):
             {
                 "username": "blocked_user",
                 "email": "blocked@example.com",
+                "country": "Sénégal",
                 "password": "passpass123",
                 "password2": "passpass123",
             },

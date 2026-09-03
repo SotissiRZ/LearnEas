@@ -1,3 +1,27 @@
+# v45 — Cohortes live + mentorat 1:1
+
+- Transformation des formations live en **cohortes** avec nom de cohorte, fuseau IANA, minimum/maximum de participants et date limite d'inscription.
+- Fermeture automatique des inscriptions après la date limite, au démarrage de la cohorte ou lorsque les places sont épuisées ; les réservations de dernière place restent transactionnelles au checkout.
+- Export `.ics` du planning d'une cohorte pour l'ajouter à un calendrier externe.
+- Nouvelle marketplace publique **Mentorat 1:1** : offres publiables par les instructeurs, durée, tarif, langue, fuseau et politique de réservation/annulation.
+- Gestion des créneaux avec verrou transactionnel/contrainte SQL empêchant deux réservations actives du même rendez-vous.
+- Checkout payant du mentorat intégré au moteur LearnEas existant (EUR comptable, conversion/devise locale, CinetPay/Stripe/etc.) avec snapshot financier et commission plateforme.
+- Une réservation payante conserve le créneau 45 min avant checkout puis jusqu'à 2 h après création de la commande pour absorber les confirmations Mobile Money différées.
+- Création automatique d'une **salle vidéo LearnEas privée** par créneau ; l'apprenant confirmé n'obtient accès qu'à sa séance. Les conteneurs techniques sont exclus du catalogue et des certificats.
+- Espace apprenant pour suivre, payer, rejoindre ou annuler ses rendez-vous ; espace instructeur pour créer des offres, publier des créneaux, ouvrir la salle et clôturer la séance avec une note de suivi.
+- Application du délai minimum d'annulation côté apprenant ; aucun remboursement silencieux n'est déclenché par une simple annulation de rendez-vous.
+- Rappels WhatsApp v44 étendus aux rendez-vous de mentorat, pour l'apprenant et le mentor lorsque chacun a opté pour le canal.
+- Redirection de retour de paiement vers l'espace mentorat pour une commande composée uniquement de mentorat.
+- **Pays sans saisie libre** : inscription, profils apprenant/instructeur et paramètres légaux utilisent désormais un référentiel pays/territoires, avec les marchés d'Afrique francophone placés en tête.
+- **Téléphones sans indicatif saisi manuellement** : WhatsApp et retraits Mobile Money proposent un sélecteur pays/indicatif puis un champ pour le numéro national ; LearnEas reconstruit et valide le format E.164 côté serveur.
+- Les valeurs pays sont normalisées/validées côté API afin qu'un client ne puisse pas contourner les listes de l'interface.
+- Sécurisation du cycle mentorat/paiement : une commande externe encore en attente conserve le verrou du créneau, une commande définitivement échouée le libère, et une confirmation payée tardive ne perd pas silencieusement la réservation.
+- Les offres/créneaux ayant un historique de réservation ne peuvent plus être supprimés physiquement : ils doivent être dépubliés/désactivés afin de conserver la traçabilité financière et pédagogique.
+- Documentation : `docs/MENTORSHIP.md`.
+- **Migrations requises :** `formations.0009_cohorts_and_mentorship` et `payments.0011_mentorship_order_items`.
+
+---
+
 # v44 — WhatsApp transactionnel et relances automatiques
 
 - Intégration directe de Meta WhatsApp Cloud API avec version Graph API configurable.

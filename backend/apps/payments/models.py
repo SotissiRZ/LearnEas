@@ -151,6 +151,7 @@ class OrderItem(models.Model):
         COURSE = "course", "Cours"
         PDF = "pdf", "PDF"
         FORMATION = "formation", "Formation interactive"
+        MENTORING = "mentoring", "Mentorat"
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
     item_type = models.CharField(max_length=10, choices=ItemType.choices)
@@ -158,6 +159,10 @@ class OrderItem(models.Model):
     pdf_product = models.ForeignKey("catalog.PDFProduct", on_delete=models.SET_NULL, null=True, blank=True)
     formation = models.ForeignKey(
         "formations.InteractiveFormation", on_delete=models.SET_NULL, null=True, blank=True
+    )
+    mentorship_booking = models.ForeignKey(
+        "formations.MentorshipBooking", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="order_items",
     )
     # Snapshot du vendeur au moment de l'achat : indispensable pour que l'historique financier
     # reste correct même si le contenu change plus tard.
@@ -170,7 +175,7 @@ class OrderItem(models.Model):
     instructor_earning_amount = models.DecimalField(max_digits=8, decimal_places=2, default=0)
 
     def __str__(self):
-        return f"{self.item_type} · {self.course or self.pdf_product or self.formation}"
+        return f"{self.item_type} · {self.course or self.pdf_product or self.formation or self.mentorship_booking}"
 
 
 class FormationSeatReservation(models.Model):
