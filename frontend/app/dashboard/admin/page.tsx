@@ -1043,6 +1043,7 @@ function PaymentSystemAdmin({ supportEmail }: { supportEmail: string }) {
   const gatewayPresets = [
     { code: "stripe", name: "Stripe", description: "Cartes bancaires via Stripe Checkout", supported_currencies: ["MAD", "EUR", "USD"], sort_order: 0 },
     { code: "youcanpay", name: "YouCan Pay", description: "Paiement marocain via facture hébergée YouCan Pay", supported_currencies: ["MAD"], sort_order: 10 },
+    { code: "cinetpay", name: "CinetPay Mobile Money", description: "Orange Money, MTN MoMo, Moov, Wave et autres wallets selon le pays", supported_currencies: ["XOF"], sort_order: 15 },
     { code: "geniuspay", name: "GeniusPay", description: "Mobile Money et cartes en Afrique", supported_currencies: ["XOF", "EUR", "USD"], sort_order: 20 },
     { code: "manual", name: "Paiement manuel", description: "Validation manuelle par un administrateur", supported_currencies: ["EUR", "MAD"], sort_order: 90 },
   ] as const;
@@ -1083,7 +1084,7 @@ function PaymentSystemAdmin({ supportEmail }: { supportEmail: string }) {
     if (!preset) return;
     setBusy(true); setMessage(""); setError("");
     try {
-      await api.post("/payments/admin/gateways/", { ...preset, is_active: false, sandbox: true });
+      await api.post("/payments/admin/gateways/", { ...preset, is_active: false, sandbox: preset.code === "cinetpay" ? false : true });
       setNewGatewayCode("");
       await load();
     } catch (e) { setError(toError(e)); } finally { setBusy(false); }

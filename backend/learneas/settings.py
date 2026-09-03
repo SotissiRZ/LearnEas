@@ -251,12 +251,26 @@ GENIUSPAY_SANDBOX_API_KEY = config("GENIUSPAY_SANDBOX_API_KEY", default="")
 GENIUSPAY_SANDBOX_API_SECRET = config("GENIUSPAY_SANDBOX_API_SECRET", default="")
 GENIUSPAY_SANDBOX_WEBHOOK_SECRET = config("GENIUSPAY_SANDBOX_WEBHOOK_SECRET", default="")
 GENIUSPAY_SANDBOX_API_BASE = config("GENIUSPAY_SANDBOX_API_BASE", default="")
+
+# CinetPay — Mobile Money Afrique francophone. Les identifiants sandbox et production
+# sont volontairement séparés afin d'éviter toute charge réelle pendant les tests.
+CINETPAY_API_KEY = config("CINETPAY_API_KEY", default="")
+CINETPAY_SITE_ID = config("CINETPAY_SITE_ID", default="")
+CINETPAY_SECRET_KEY = config("CINETPAY_SECRET_KEY", default="")
+CINETPAY_API_BASE = config("CINETPAY_API_BASE", default="https://api-checkout.cinetpay.com/v2")
+CINETPAY_SANDBOX_API_KEY = config("CINETPAY_SANDBOX_API_KEY", default="")
+CINETPAY_SANDBOX_SITE_ID = config("CINETPAY_SANDBOX_SITE_ID", default="")
+CINETPAY_SANDBOX_SECRET_KEY = config("CINETPAY_SANDBOX_SECRET_KEY", default="")
+CINETPAY_SANDBOX_API_BASE = config("CINETPAY_SANDBOX_API_BASE", default="")
 PAYMENT_CURRENCY = config("PAYMENT_CURRENCY", default="EUR")
 
 # Répartition des ventes instructeurs / plateforme
 PLATFORM_COMMISSION_PERCENT = config("PLATFORM_COMMISSION_PERCENT", default=15, cast=int)
 MINIMUM_PAYOUT_AMOUNT = config("MINIMUM_PAYOUT_AMOUNT", default=10, cast=int)
 FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:3000")
+# URL publique du backend, indispensable aux webhooks de paiement (ex. Railway).
+# En local derrière Nginx, FRONTEND_URL convient comme valeur de repli car /api y est proxyfié.
+BACKEND_PUBLIC_URL = config("BACKEND_PUBLIC_URL", default=FRONTEND_URL)
 
 # ---------------------------------------------------------------------------
 # Email — console en développement (le lien de réinitialisation s'affiche dans les

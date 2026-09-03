@@ -2,7 +2,7 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from django.conf import settings
 import stripe
 
@@ -14,7 +14,7 @@ class ProviderError(Exception):
 
 
 def _request_json(url, method="GET", headers=None, data=None, timeout=12):
-    headers = {"Accept": "application/json", **(headers or {})}
+    headers = {"Accept": "application/json", "User-Agent": "LearnEas/1.0", **(headers or {})}
     body = None
     if data is not None:
         if headers.get("Content-Type") == "application/json":
@@ -72,6 +72,22 @@ def _genius_config(sandbox: bool) -> tuple[str, str, str]:
     return api_key, api_secret, base.rstrip("/")
 
 
+def _cinetpay_config(sandbox: bool) -> tuple[str, str, str, str]:
+    """Retourne (apikey, site_id, secret_hmac, api_base) pour CinetPay."""
+    default_base = getattr(settings, "CINETPAY_API_BASE", "https://api-checkout.cinetpay.com/v2")
+    if sandbox:
+        api_key = getattr(settings, "CINETPAY_SANDBOX_API_KEY", "")
+        site_id = getattr(settings, "CINETPAY_SANDBOX_SITE_ID", "")
+        secret_key = getattr(settings, "CINETPAY_SANDBOX_SECRET_KEY", "")
+        base = getattr(settings, "CINETPAY_SANDBOX_API_BASE", "") or default_base
+    else:
+        api_key = getattr(settings, "CINETPAY_API_KEY", "")
+        site_id = getattr(settings, "CINETPAY_SITE_ID", "")
+        secret_key = getattr(settings, "CINETPAY_SECRET_KEY", "")
+        base = default_base
+    return str(api_key).strip(), str(site_id).strip(), str(secret_key).strip(), str(base).rstrip("/")
+
+
 
 def _currency_scale(code: str) -> Decimal:
     """Facteur entre unité majeure et unité mineure configurée (MAD=100, XOF=1)."""
@@ -90,6 +106,20 @@ def _from_minor_units(amount, currency: str) -> Decimal:
     return Decimal(str(amount or 0)) / _currency_scale(currency)
 
 
+def normalize_provider_amount(code: str, amount: Decimal, currency: str) -> Decimal:
+    """Normalise le montant selon les contraintes du prestataire.
+
+    CinetPay impose un montant entier multiple de 5. Pour XOF/XAF, l'écart maximal
+    avec la conversion affichée est donc de 2 unités CFA. Le montant normalisé est
+    enregistré dans Order.total_amount afin que vérification et reçu restent cohérents.
+    """
+    value = Decimal(amount)
+    if code == "cinetpay" and str(currency).upper() in {"XOF", "XAF", "CDF", "GNF"}:
+        rounded = (value / Decimal("5")).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * Decimal("5")
+        return max(Decimal("5"), rounded) if value > 0 else Decimal("0")
+    return value
+
+
 def is_configured(code: str, *, sandbox: bool = False) -> bool:
     if code == "stripe":
         return bool(_stripe_key(sandbox))
@@ -98,6 +128,9 @@ def is_configured(code: str, *, sandbox: bool = False) -> bool:
     if code == "geniuspay":
         api_key, api_secret, _ = _genius_config(sandbox)
         return bool(api_key and api_secret)
+    if code == "cinetpay":
+        api_key, site_id, secret_key, _ = _cinetpay_config(sandbox)
+        return bool(api_key and site_id and secret_key)
     if code == "manual":
         return True
     return False
@@ -180,6 +213,46 @@ def create_checkout(order, user):
             raise ProviderError("GeniusPay n'a pas retourné de lien de paiement valide.")
         return checkout_url, str(reference)
 
+    if code == "cinetpay":
+        api_key, site_id, _secret_key, base = _cinetpay_config(sandbox)
+        if not api_key or not site_id:
+            raise ProviderError("CinetPay n'est pas configuré pour cet environnement.")
+        if order.currency.upper() not in {"XOF", "XAF", "CDF", "GNF"}:
+            raise ProviderError("CinetPay Mobile Money requiert une devise africaine prise en charge (XOF/XAF/CDF/GNF).")
+        amount = normalize_provider_amount("cinetpay", Decimal(order.total_amount), order.currency)
+        if amount != Decimal(order.total_amount):
+            raise ProviderError("Le montant CinetPay doit avoir été normalisé avant la création de la commande.")
+        backend_public = str(getattr(settings, "BACKEND_PUBLIC_URL", settings.FRONTEND_URL)).rstrip("/")
+        transaction_id = order.invoice_number.replace("-", "")
+        first_name = (getattr(user, "first_name", "") or "Client").strip()
+        last_name = (getattr(user, "last_name", "") or getattr(user, "username", "") or "LearnEas").strip()
+        payload = _request_json(
+            f"{base}/payment",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data={
+                "apikey": api_key,
+                "site_id": site_id,
+                "transaction_id": transaction_id,
+                "amount": int(amount),
+                "currency": order.currency.upper(),
+                "description": f"Commande LearnEas {order.invoice_number}",
+                "return_url": f"{backend_public}/api/payments/cinetpay/return/?order={order.id}",
+                "notify_url": f"{backend_public}/api/payments/cinetpay/webhook/",
+                "metadata": str(order.id),
+                "channels": "MOBILE_MONEY",
+                "customer_name": first_name,
+                "customer_surname": last_name,
+                "customer_email": getattr(user, "email", "") or "",
+            },
+        )
+        data = payload.get("data") or {}
+        checkout_url = data.get("payment_url")
+        if str(payload.get("code")) != "201" or not checkout_url:
+            message = payload.get("description") or payload.get("message") or "initialisation refusée"
+            raise ProviderError(f"CinetPay: {message}")
+        return str(checkout_url), transaction_id
+
     if code == "manual":
         raise ProviderError("Le paiement manuel doit être validé par un administrateur.")
     raise ProviderError("Moyen de paiement inconnu.")
@@ -207,6 +280,27 @@ def test_provider(code: str, *, sandbox: bool = False):
         # La liste des paiements est un diagnostic en lecture seule et n'initie aucune transaction.
         payload = _request_json(f"{base}/payments?per_page=1", headers={"X-API-Key": api_key, "X-API-Secret": api_secret})
         return {"ok": True, "detail": "Connexion GeniusPay valide.", "environment": "sandbox" if sandbox else "live", "reachable": bool(payload is not None)}
+    if code == "cinetpay":
+        api_key, site_id, _secret_key, base = _cinetpay_config(sandbox)
+        if not api_key or not site_id:
+            raise ProviderError("Clés CinetPay absentes pour cet environnement.")
+        # Diagnostic sans transaction : l'API de vérification répond également pour une
+        # référence inexistante, ce qui permet de tester réseau + credentials sans débiter.
+        payload = _request_json(
+            f"{base}/payment/check",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data={"apikey": api_key, "site_id": site_id, "transaction_id": "LEARNEAS_DIAGNOSTIC_000"},
+        )
+        api_code = str(payload.get("code") or "")
+        if api_code in {"609", "613", "624"}:
+            raise ProviderError(payload.get("description") or payload.get("message") or "Identifiants CinetPay invalides.")
+        return {
+            "ok": True,
+            "detail": "API CinetPay joignable et configuration acceptée pour le diagnostic non transactionnel.",
+            "environment": "sandbox" if sandbox else "live",
+            "api_code": api_code,
+        }
     if code == "manual":
         return {"ok": True, "detail": "Paiement manuel disponible (aucune API externe)."}
     raise ProviderError("Prestataire inconnu.")
@@ -237,6 +331,24 @@ def verify_payment(order):
             "paid": status in {"paid", "success", "completed"},
             "amount": Decimal(str(data.get("amount", "0"))),
             "currency": str(data.get("currency") or "").upper(),
+        }
+    if order.provider == "cinetpay":
+        api_key, site_id, _secret_key, base = _cinetpay_config(sandbox)
+        if not api_key or not site_id or not order.provider_reference:
+            raise ProviderError("CinetPay n'est pas configuré pour cet environnement ou la référence est absente.")
+        payload = _request_json(
+            f"{base}/payment/check",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data={"apikey": api_key, "site_id": site_id, "transaction_id": str(order.provider_reference)},
+        )
+        data = payload.get("data") or {}
+        return {
+            "paid": str(payload.get("code")) == "00" and str(data.get("status") or "").upper() == "ACCEPTED",
+            "amount": Decimal(str(data.get("amount", "0") or "0")),
+            "currency": str(data.get("currency") or "").upper(),
+            "status": str(data.get("status") or "").upper(),
+            "payment_method": str(data.get("payment_method") or ""),
         }
     if order.provider == "stripe":
         secret_key = _stripe_key(sandbox)

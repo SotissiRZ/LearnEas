@@ -7,14 +7,14 @@ import { useCart } from "@/hooks/useCart";
 import { useAuth } from "@/hooks/useAuth";
 import { api, ApiError } from "@/lib/api";
 import CurrencyPrice from "@/components/ui/CurrencyPrice";
-import { formatDisplayPrice, useCurrency } from "@/hooks/useCurrency";
+import { convertFromEur, formatCurrencyValue, formatDisplayPrice, useCurrency } from "@/hooks/useCurrency";
 
 type Currency = { id: number; code: string; name: string; symbol: string; exchange_rate: string; decimal_places: number; is_default: boolean };
 type Gateway = { id: number; code: string; name: string; description: string; supported_currencies: string[]; configured: boolean; sandbox: boolean };
 type PaymentConfig = { currencies: Currency[]; gateways: Gateway[]; default_currency: string; test_payments_enabled?: boolean };
 
 function GatewayIcon({ code }: { code: string }) {
-  if (code === "geniuspay") return <Smartphone size={20} />;
+  if (code === "geniuspay" || code === "cinetpay") return <Smartphone size={20} />;
   if (code === "youcanpay") return <WalletCards size={20} />;
   return <CreditCard size={20} />;
 }
@@ -55,6 +55,15 @@ export default function CheckoutPage() {
   }, [config, selectedDisplayCode, currency]);
 
   const selectedCurrency = config?.currencies.find((item) => item.code === currency);
+  const providerDisplayTotal = useMemo(() => {
+    if (!selectedCurrency) return null;
+    const converted = convertFromEur(total(), selectedCurrency);
+    if (provider === "cinetpay" && ["XOF", "XAF", "CDF", "GNF"].includes(selectedCurrency.code)) {
+      const normalized = converted > 0 ? Math.max(5, Math.round(converted / 5) * 5) : 0;
+      return formatCurrencyValue(normalized, selectedCurrency);
+    }
+    return formatCurrencyValue(converted, selectedCurrency);
+  }, [provider, selectedCurrency, total]);
   const availableGateways = useMemo(() => (config?.gateways || []).filter((gateway) => !gateway.supported_currencies.length || gateway.supported_currencies.includes(currency)), [config, currency]);
   const isFreeCart = total() <= 0;
 
@@ -147,13 +156,13 @@ export default function CheckoutPage() {
             provider === "__test__" ? (
               <p className="mt-5 rounded-lg border border-violet-100 bg-violet-50 p-3 text-sm text-violet-800"><strong>Mode test :</strong> aucune transaction bancaire ne sera créée. L'accès au contenu sera accordé comme après un paiement réussi.</p>
             ) : (
-              <p className="mt-5 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">LearnEas ne stocke jamais les numéros de carte. Les paiements externes sont finalisés sur la page sécurisée du prestataire activé.</p>
+              <p className="mt-5 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">{provider === "cinetpay" ? "Vous serez redirigé vers CinetPay pour choisir le wallet Mobile Money disponible dans votre pays (Orange Money, MTN MoMo, Moov, Wave selon disponibilité). Le montant CFA est arrondi au multiple de 5 requis par CinetPay." : "LearnEas ne stocke jamais les numéros de carte. Les paiements externes sont finalisés sur la page sécurisée du prestataire activé."}</p>
             )
           )}
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
           <button onClick={handlePay} disabled={loading || (!isFreeCart && (configLoading || !provider))} className="btn-primary mt-5 w-full">
             {loading ? <Loader2 className="animate-spin" size={18} /> : <ShieldCheck size={18} />}
-            {isFreeCart ? "Obtenir gratuitement" : provider === "__test__" ? <>Simuler le paiement · {selectedCurrency ? formatDisplayPrice(total(), selectedCurrency) : <CurrencyPrice value={total()} />}</> : <>Payer {selectedCurrency ? formatDisplayPrice(total(), selectedCurrency) : <CurrencyPrice value={total()} />}</>}
+            {isFreeCart ? "Obtenir gratuitement" : provider === "__test__" ? <>Simuler le paiement · {selectedCurrency ? formatDisplayPrice(total(), selectedCurrency) : <CurrencyPrice value={total()} />}</> : <>Payer {providerDisplayTotal || (selectedCurrency ? formatDisplayPrice(total(), selectedCurrency) : <CurrencyPrice value={total()} />)}</>}
           </button>
           <p className="mt-2 text-center text-xs text-gray-400">Paiement chiffré et sécurisé.</p>
         </div>

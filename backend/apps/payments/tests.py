@@ -12,7 +12,7 @@ from apps.catalog.models import Category, Course
 from apps.enrollments.models import CourseEnrollment
 from apps.formations.models import InteractiveFormation
 from .models import Order, OrderItem, FormationSeatReservation, Currency, PaymentGateway
-from .providers import _to_minor_units, _from_minor_units
+from .providers import _to_minor_units, _from_minor_units, normalize_provider_amount
 
 
 class PaymentAccessRegressionTests(APITestCase):
@@ -180,6 +180,34 @@ class PaymentAccessRegressionTests(APITestCase):
         )
         self.assertEqual(blocked.status_code, status.HTTP_409_CONFLICT, blocked.data)
 
+    @override_settings(
+        CINETPAY_SANDBOX_API_KEY="test_key",
+        CINETPAY_SANDBOX_SITE_ID="123456",
+        CINETPAY_SANDBOX_SECRET_KEY="test_secret",
+    )
+    @patch("apps.payments.views.create_checkout")
+    def test_cinetpay_checkout_uses_xof_and_normalizes_multiple_of_five(self, create_checkout_mock):
+        Currency.objects.update_or_create(
+            code="XOF",
+            defaults={"name": "Franc CFA BCEAO", "symbol": "F CFA", "exchange_rate": Decimal("655.957"), "decimal_places": 0, "is_active": True, "is_default": False},
+        )
+        PaymentGateway.objects.update_or_create(
+            code="cinetpay",
+            defaults={"name": "CinetPay Mobile Money", "is_active": True, "sandbox": True, "supported_currencies": ["XOF"]},
+        )
+        create_checkout_mock.return_value = ("https://checkout.cinetpay.test/payment/token", "LE123")
+        response = self.client.post(
+            "/api/payments/checkout/",
+            {"course_ids": [self.course.id], "pdf_ids": [], "formation_ids": [], "provider": "cinetpay", "currency": "XOF"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        order = Order.objects.get(pk=response.data["order"]["id"])
+        self.assertEqual(order.provider, Order.Provider.CINETPAY)
+        self.assertEqual(order.currency, "XOF")
+        self.assertEqual(order.total_amount % Decimal("5"), Decimal("0"))
+        self.assertEqual(order.total_amount, Decimal("65595"))
+
     @override_settings(DEBUG=False)
     def test_admin_cannot_mark_unverified_paid_order_as_paid_in_production(self):
         admin = User.objects.create_user(
@@ -263,12 +291,14 @@ class PaymentConfigurationTests(APITestCase):
         self.assertEqual(deleted.status_code, status.HTTP_409_CONFLICT, deleted.data)
 
     def test_minor_unit_conversion_respects_currency_precision(self):
-        Currency.objects.create(
-            code="XOF", name="Franc CFA", symbol="F CFA", exchange_rate=Decimal("65"),
-            decimal_places=0, is_active=True,
+        Currency.objects.update_or_create(
+            code="XOF", defaults={"name": "Franc CFA", "symbol": "F CFA", "exchange_rate": Decimal("65"),
+            "decimal_places": 0, "is_active": True, "is_default": False},
         )
         self.assertEqual(_to_minor_units(Decimal("15000"), "XOF"), 15000)
         self.assertEqual(_from_minor_units(15000, "XOF"), Decimal("15000"))
         self.assertEqual(_to_minor_units(Decimal("123.45"), "MAD"), 12345)
         self.assertEqual(_from_minor_units(12345, "MAD"), Decimal("123.45"))
+        self.assertEqual(normalize_provider_amount("cinetpay", Decimal("15002"), "XOF"), Decimal("15000"))
+        self.assertEqual(normalize_provider_amount("cinetpay", Decimal("15003"), "XOF"), Decimal("15005"))
 

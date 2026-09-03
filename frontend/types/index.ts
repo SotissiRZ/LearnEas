@@ -140,6 +140,7 @@ export interface AuthUser {
   role: "admin" | "instructor" | "student";
   technical_admin?: boolean;
   avatar: string | null;
+  country?: string;
   headline?: string;
   domain?: string;
 }

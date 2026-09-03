@@ -10,6 +10,7 @@ from django.core.mail import send_mail
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.cache import cache
+from django.http import HttpResponseRedirect
 from django.db import transaction
 from django.db.models import Sum, Count, Q
 from django.db.models.functions import TruncMonth
@@ -32,7 +33,10 @@ from .serializers import (
     OrderSerializer, CheckoutSerializer, PayoutProfileSerializer, InstructorPayoutSerializer,
     CurrencySerializer, PaymentGatewaySerializer,
 )
-from .providers import ProviderError, create_checkout, test_provider, verify_payment, is_configured, _from_minor_units
+from .providers import (
+    ProviderError, create_checkout, test_provider, verify_payment, is_configured,
+    _from_minor_units, normalize_provider_amount, _cinetpay_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +193,11 @@ class CheckoutView(APIView):
             # Aucune passerelle n'est contactée pour une acquisition gratuite.
             provider_code = Order.Provider.MANUAL
 
+        # Certains wallets imposent des contraintes de montant. CinetPay exige notamment
+        # un entier multiple de 5 ; le montant réellement facturé est donc figé ici et
+        # devient la source de vérité de la commande avant tout appel externe.
+        payment_total = normalize_provider_amount(provider_code, payment_total, currency.code)
+
         order = Order.objects.create(
             user=user,
             provider=provider_code,
@@ -292,7 +301,10 @@ class ConfirmPaymentView(APIView):
                 return Response({"detail": str(exc)}, status=502)
             expected = Decimal(order.total_amount)
             if not verification["paid"]:
-                return Response({"detail": "Le prestataire n'indique pas encore ce paiement comme payé."}, status=409)
+                provider_status = str(verification.get("status") or "").upper()
+                if provider_status in {"REFUSED", "CANCELLED", "CANCELED", "FAILED"}:
+                    return Response({"detail": "Le paiement a été refusé ou annulé par le prestataire."}, status=402)
+                return Response({"detail": "Le paiement est encore en attente de confirmation par le prestataire."}, status=409)
             if verification["currency"] != order.currency or abs(Decimal(verification["amount"]) - expected) > Decimal("0.01"):
                 return Response({"detail": "Le montant ou la devise confirmée par le prestataire ne correspond pas à la commande."}, status=409)
             CheckoutView()._fulfill(order)
@@ -586,6 +598,129 @@ class AdminEmailTestView(APIView):
             logger.exception("Échec du diagnostic email LearnEas")
             return Response({"ok": False, "detail": "Échec du test email. Consultez les journaux serveur pour le détail technique."}, status=400)
         return Response({"ok": bool(sent), "detail": f"Email de test envoyé à {recipient}."})
+
+
+class CinetPayReturnView(APIView):
+    """Point de retour navigateur CinetPay.
+
+    Aucune commande n'est délivrée ici : la page redirige seulement vers le frontend,
+    conformément à la recommandation CinetPay. Le frontend interroge ensuite l'endpoint
+    authentifié de confirmation, tandis que le webhook reste la source de vérité serveur.
+    """
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def _redirect(self, request):
+        transaction_id = str(
+            request.data.get("transaction_id")
+            or request.data.get("cpm_trans_id")
+            or request.query_params.get("transaction_id")
+            or request.query_params.get("cpm_trans_id")
+            or ""
+        ).strip()
+        order_id = str(request.query_params.get("order") or "").strip()
+        if not order_id and transaction_id:
+            order_id = str(
+                Order.objects.filter(provider=Order.Provider.CINETPAY, provider_reference=transaction_id)
+                .values_list("id", flat=True).first() or ""
+            )
+        frontend = str(settings.FRONTEND_URL).rstrip("/")
+        target = f"{frontend}/checkout/return"
+        if order_id:
+            target += f"?order={order_id}&provider=cinetpay"
+        return HttpResponseRedirect(target)
+
+    def get(self, request):
+        return self._redirect(request)
+
+    def post(self, request):
+        return self._redirect(request)
+
+
+class CinetPayWebhookView(APIView):
+    """Notification serveur CinetPay.
+
+    La notification est authentifiée par X-TOKEN/HMAC puis la transaction est
+    systématiquement relue via l'API CinetPay avant de délivrer le contenu.
+    CinetPay peut appeler plusieurs fois cette URL : le traitement est idempotent.
+    """
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [WebhookRateThrottle]
+
+    _hmac_fields = (
+        "cpm_site_id", "cpm_trans_id", "cpm_trans_date", "cpm_amount", "cpm_currency",
+        "signature", "payment_method", "cel_phone_num", "cpm_phone_prefixe", "cpm_language",
+        "cpm_version", "cpm_payment_config", "cpm_page_action", "cpm_custom",
+        "cpm_designation", "cpm_error_message",
+    )
+
+    def get(self, request):
+        # CinetPay ping l'URL en GET lors de certains diagnostics.
+        return Response({"received": True})
+
+    def _valid_hmac(self, request, secret_key: str) -> bool:
+        received = request.META.get("HTTP_X_TOKEN", "")
+        if not received or not secret_key:
+            return False
+        data = "".join(str(request.data.get(field) or "") for field in self._hmac_fields)
+        expected = hmac.new(secret_key.encode("utf-8"), data.encode("utf-8"), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected.lower(), str(received).lower())
+
+    def post(self, request):
+        transaction_id = str(request.data.get("cpm_trans_id") or "").strip()
+        site_id = str(request.data.get("cpm_site_id") or "").strip()
+        if not transaction_id or not site_id:
+            return Response({"detail": "Notification CinetPay incomplète."}, status=400)
+
+        # Déterminer l'environnement uniquement à partir du site_id attendu + HMAC.
+        environment = None
+        configured_any = False
+        for sandbox in (True, False):
+            _api_key, expected_site, secret_key, _base = _cinetpay_config(sandbox)
+            if expected_site and secret_key:
+                configured_any = True
+            if expected_site == site_id and self._valid_hmac(request, secret_key):
+                environment = sandbox
+                break
+        if environment is None:
+            if not configured_any:
+                return Response({"detail": "Webhook CinetPay non configuré."}, status=503)
+            return Response({"detail": "Signature CinetPay invalide."}, status=400)
+
+        order = Order.objects.filter(
+            provider=Order.Provider.CINETPAY,
+            provider_reference=transaction_id,
+            provider_sandbox=environment,
+        ).first()
+        if not order:
+            # Réponse 200 pour une notification authentique mais inconnue : CinetPay ne doit
+            # pas boucler indéfiniment sur une ancienne transaction d'un autre environnement.
+            return Response({"received": True, "matched": False})
+        if order.status == Order.Status.PAID:
+            return Response({"received": True, "paid": True, "duplicate": True})
+
+        try:
+            verification = verify_payment(order)
+        except ProviderError:
+            logger.exception("Échec de vérification CinetPay pour la commande %s", order.id)
+            return Response({"detail": "Vérification CinetPay temporairement indisponible."}, status=502)
+
+        if verification.get("paid"):
+            amount_ok = abs(Decimal(verification.get("amount", 0)) - Decimal(order.total_amount)) <= Decimal("0.01")
+            currency_ok = str(verification.get("currency") or "").upper() == order.currency
+            if amount_ok and currency_ok:
+                with transaction.atomic():
+                    locked = Order.objects.select_for_update().get(pk=order.pk)
+                    if locked.status != Order.Status.PAID:
+                        CheckoutView()._fulfill(locked)
+                return Response({"received": True, "paid": True})
+            logger.warning("CinetPay mismatch order=%s amount_ok=%s currency_ok=%s", order.id, amount_ok, currency_ok)
+            return Response({"detail": "Montant ou devise CinetPay incohérent."}, status=409)
+
+        # WAITING_FOR_CUSTOMER/REFUSED restent non délivrés. On ne marque pas FAILED ici :
+        # certains opérateurs notifient plusieurs états avant la confirmation finale.
+        return Response({"received": True, "paid": False, "status": verification.get("status", "")})
 
 
 class GeniusPayWebhookView(APIView):

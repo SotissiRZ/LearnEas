@@ -1,3 +1,19 @@
+# v42 — Mobile Money Afrique francophone (CinetPay)
+
+- Ajout d’un vrai driver **CinetPay Mobile Money** au moteur de paiement LearnEas, sans exposer les secrets au frontend.
+- Prise en charge initiale de **XOF** et **XAF**, activées avec le taux CFA fixe de **655,957 pour 1 EUR** et zéro décimale.
+- Les comptes dont le pays est Sénégal/Côte d’Ivoire/Mali/Burkina Faso/Bénin/Togo/Niger privilégient automatiquement XOF lors de la première visite ; Cameroun/Congo/Gabon/Tchad/RCA privilégient XAF. Le choix manuel de devise reste prioritaire et mémorisé.
+- Checkout CinetPay limité au canal `MOBILE_MONEY`, avec redirection vers le guichet sécurisé CinetPay et affichage du montant réellement facturé.
+- Normalisation automatique des montants CinetPay au multiple de 5 exigé par le prestataire, enregistrée dans la commande avant initialisation du paiement.
+- Webhook CinetPay sécurisé par **X-TOKEN HMAC SHA-256** puis vérification serveur via `/payment/check` avant toute délivrance de cours/PDF/formation.
+- Le webhook est idempotent et ne marque pas prématurément comme échoués les états d’attente opérateur.
+- Ajout d’une page de retour de paiement LearnEas qui vérifie la commande et attend la confirmation opérateur/webhook avant d’accorder l’accès.
+- Ajout des variables `CINETPAY_*` et `BACKEND_PUBLIC_URL` pour Railway/Vercel et les environnements locaux.
+- L’admin peut ajouter/activer CinetPay et définir ses devises. Le preset démarre en live désactivé/XOF ; les variables sandbox restent prévues pour un futur environnement de test CinetPay.
+- **Migration requise :** `payments.0010_cinetpay_mobile_money`.
+
+---
+
 # v41 — Vignette présentateur déplaçable pendant le partage d’écran
 
 - Le partage d’écran ne remplace plus visuellement le présentateur : LearnEas fabrique un **flux composite écran + caméra** envoyé aux autres participants.

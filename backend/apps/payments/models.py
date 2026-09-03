@@ -72,7 +72,7 @@ class PaymentGateway(models.Model):
         ordering = ["sort_order", "name"]
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(code__in=["stripe", "youcanpay", "geniuspay", "manual"]),
+                condition=models.Q(code__in=["stripe", "youcanpay", "geniuspay", "cinetpay", "manual"]),
                 name="pay_gateway_known_code",
             ),
         ]
@@ -80,9 +80,9 @@ class PaymentGateway(models.Model):
     def clean(self):
         super().clean()
         self.code = (self.code or "").lower().strip()
-        allowed = {"stripe", "youcanpay", "geniuspay", "manual"}
+        allowed = {"stripe", "youcanpay", "geniuspay", "cinetpay", "manual"}
         if self.code not in allowed:
-            raise ValidationError({"code": "Driver inconnu. Drivers disponibles : stripe, youcanpay, geniuspay, manual."})
+            raise ValidationError({"code": "Driver inconnu. Drivers disponibles : stripe, youcanpay, geniuspay, cinetpay, manual."})
         codes = sorted({str(code).strip().upper() for code in (self.supported_currencies or []) if str(code).strip()})
         invalid = [code for code in codes if len(code) != 3 or not code.isalpha()]
         if invalid:
@@ -114,6 +114,7 @@ class Order(models.Model):
         STRIPE = "stripe", "Stripe"
         YOUCANPAY = "youcanpay", "YouCan Pay"
         GENIUSPAY = "geniuspay", "GeniusPay"
+        CINETPAY = "cinetpay", "CinetPay Mobile Money"
         MANUAL = "manual", "Paiement manuel"
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="orders")

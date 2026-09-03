@@ -31,6 +31,33 @@ type CurrencyState = {
 
 const STORAGE_KEY = "learneas.display_currency";
 const COOKIE_KEY = "learneas_currency";
+
+const COUNTRY_CURRENCY: Record<string, string> = {
+  "Sénégal": "XOF",
+  "Côte d'Ivoire": "XOF",
+  "Mali": "XOF",
+  "Burkina Faso": "XOF",
+  "Bénin": "XOF",
+  "Togo": "XOF",
+  "Niger": "XOF",
+  "Cameroun": "XAF",
+  "Congo": "XAF",
+  "Gabon": "XAF",
+  "Tchad": "XAF",
+  "République centrafricaine": "XAF",
+};
+
+function readCountryPreferredCurrency(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem("learneas_user");
+    if (!raw) return null;
+    const user = JSON.parse(raw) as { country?: string };
+    return user.country ? COUNTRY_CURRENCY[user.country] || null : null;
+  } catch {
+    return null;
+  }
+}
 const FALLBACK_EUR: DisplayCurrency = {
   id: 0,
   code: "EUR",
@@ -92,7 +119,12 @@ export const useCurrency = create<CurrencyState>((set, get) => ({
         ? data.default_currency
         : currencies.find((item) => item.is_default)?.code || "EUR";
       const stored = readStoredCurrency();
-      const selectedCode = stored && currencies.some((item) => item.code === stored) ? stored : defaultCode;
+      const countryPreferred = readCountryPreferredCurrency();
+      const selectedCode = stored && currencies.some((item) => item.code === stored)
+        ? stored
+        : countryPreferred && currencies.some((item) => item.code === countryPreferred)
+          ? countryPreferred
+          : defaultCode;
       persistCurrency(selectedCode);
       set({ currencies, defaultCode, selectedCode, loading: false, hydrated: true, error: null });
     } catch {

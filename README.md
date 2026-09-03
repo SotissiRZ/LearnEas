@@ -115,7 +115,7 @@ Admin Django : **http://localhost/admin**
 
 ### Achat & accès
 - Panier persisté localement et checkout à passerelles configurables côté administrateur.
-- Drivers intégrés : **Stripe**, **YouCan Pay**, **GeniusPay** et **paiement manuel**. Les secrets restent exclusivement dans les variables d’environnement serveur.
+- Drivers intégrés : **Stripe**, **YouCan Pay**, **GeniusPay**, **CinetPay Mobile Money** et **paiement manuel**. Les secrets restent exclusivement dans les variables d’environnement serveur.
 - L’administrateur active/désactive les moyens de paiement, choisit leurs devises et leur mode test, et peut exécuter un diagnostic de connexion sans débiter un client.
 - Les devises (code ISO, symbole, taux, précision, devise de checkout par défaut) sont administrables sans redéploiement. **EUR est la devise comptable de base** des prix et revenus ; son taux vaut toujours 1.
 - Un **sélecteur de devise dans la navbar** permet à chaque visiteur de choisir sa devise d'affichage. Les prix sont convertis depuis l'EUR avec le taux actif configuré par l'administrateur, la préférence est mémorisée et le checkout reprend automatiquement cette devise.
@@ -124,6 +124,33 @@ Admin Django : **http://localhost/admin**
 - **Le contenu vidéo/PDF est verrouillé côté API tant que l'achat n'est pas confirmé** (pas juste côté
   affichage) — vérifié par tests réels (voir plus bas).
 - Leçons en "aperçu gratuit" consultables sans achat.
+
+### Mobile Money Afrique francophone (v42)
+
+LearnEas intègre désormais CinetPay comme premier connecteur Mobile Money de production. La comptabilité interne reste en EUR, tandis que XOF/XAF servent à l’affichage et au paiement local.
+
+Variables serveur :
+
+```env
+# URL publique du backend (Railway en production). CinetPay doit pouvoir joindre /api/payments/cinetpay/webhook/
+BACKEND_PUBLIC_URL=https://api.votre-domaine.com
+
+# Production
+CINETPAY_API_KEY=
+CINETPAY_SITE_ID=
+CINETPAY_SECRET_KEY=
+
+# Sandbox / identifiants de test
+CINETPAY_SANDBOX_API_KEY=
+CINETPAY_SANDBOX_SITE_ID=
+CINETPAY_SANDBOX_SECRET_KEY=
+```
+
+Après avoir renseigné les clés : **Administration → Paramètres → Paiements & devises → CinetPay Mobile Money**, activez la passerelle. Le checkout utilise le canal Mobile Money et CinetPay affiche les opérateurs disponibles selon le pays et la devise. Le preset v42 démarre en **live désactivé** avec XOF uniquement : la documentation CinetPay indique actuellement que ses sandboxes sont temporairement indisponibles, et un compte marchand CinetPay ne peut encaisser que dans la devise autorisée pour ce compte. Pour un service XAF distinct, configurez un compte/service marchand compatible avant d'ajouter XAF aux devises de la passerelle.
+
+En local, le guichet CinetPay peut être initialisé, mais le webhook ne pourra pas atteindre `localhost`. Pour tester le cycle complet, utilisez un tunnel HTTPS public vers Nginx/Django ou déployez temporairement le backend sur Railway puis définissez `BACKEND_PUBLIC_URL`.
+
+La délivrance du contenu ne dépend jamais du simple retour navigateur : LearnEas vérifie le webhook HMAC et relit le statut directement auprès de CinetPay avant de marquer la commande comme payée.
 
 ### Apprentissage
 - Espace d'apprentissage dédié (`/learn/[slug]`) : lecteur vidéo, sidebar curriculum, suivi de
@@ -176,7 +203,7 @@ redéploiement :
 - le pourcentage de commission de la plateforme sur les nouvelles ventes ;
 - le montant minimum autorisé pour une demande de versement instructeur.
 - les devises actives, leur taux par rapport à l’EUR et la devise de checkout par défaut ;
-- les passerelles Stripe / YouCan Pay / GeniusPay / paiement manuel, leurs devises compatibles et leur mode test ;
+- les passerelles Stripe / YouCan Pay / GeniusPay / **CinetPay Mobile Money** / paiement manuel, leurs devises compatibles et leur mode test ;
 - un diagnostic d’envoi email et un diagnostic non transactionnel de chaque passerelle de paiement.
 
 Les paramètres financiers enregistrés en base remplacent les valeurs d'environnement pour les

@@ -2,7 +2,7 @@ from rest_framework.routers import DefaultRouter
 from django.urls import path
 from .views import (
     OrderViewSet, CheckoutView, ConfirmPaymentView, PayoutProfileView,
-    InstructorFinanceView, InstructorPayoutViewSet, AdminOverviewView, StripeWebhookView, GeniusPayWebhookView, CurrencyViewSet, PaymentGatewayViewSet, PublicPaymentConfigView, AdminEmailTestView,
+    InstructorFinanceView, InstructorPayoutViewSet, AdminOverviewView, StripeWebhookView, GeniusPayWebhookView, CinetPayWebhookView, CinetPayReturnView, CurrencyViewSet, PaymentGatewayViewSet, PublicPaymentConfigView, AdminEmailTestView,
 )
 
 router = DefaultRouter()
@@ -15,6 +15,8 @@ urlpatterns = router.urls + [
     path("checkout/", CheckoutView.as_view(), name="checkout"),
     path("stripe/webhook/", StripeWebhookView.as_view(), name="stripe-webhook"),
     path("geniuspay/webhook/", GeniusPayWebhookView.as_view(), name="geniuspay-webhook"),
+    path("cinetpay/webhook/", CinetPayWebhookView.as_view(), name="cinetpay-webhook"),
+    path("cinetpay/return/", CinetPayReturnView.as_view(), name="cinetpay-return"),
     path("config/", PublicPaymentConfigView.as_view(), name="payment-config"),
     path("admin/test-email/", AdminEmailTestView.as_view(), name="admin-test-email"),
     path("orders/<int:order_id>/confirm/", ConfirmPaymentView.as_view(), name="confirm-payment"),

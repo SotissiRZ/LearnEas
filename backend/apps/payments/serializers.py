@@ -109,9 +109,9 @@ class PaymentGatewaySerializer(serializers.ModelSerializer):
 
     def validate_code(self, value):
         value = value.strip().lower()
-        allowed = {"stripe", "youcanpay", "geniuspay", "manual"}
+        allowed = {"stripe", "youcanpay", "geniuspay", "cinetpay", "manual"}
         if value not in allowed:
-            raise serializers.ValidationError("Driver inconnu. Drivers disponibles : stripe, youcanpay, geniuspay, manual.")
+            raise serializers.ValidationError("Driver inconnu. Drivers disponibles : stripe, youcanpay, geniuspay, cinetpay, manual.")
         return value
 
     def validate_supported_currencies(self, value):
