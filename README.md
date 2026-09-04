@@ -1,6 +1,7 @@
 # KalanPro
 
 > **v65 — UI KalanPro AI :** lanceur flottant déplaçable, mémorisé et contraint au viewport pour ne plus masquer les boutons d’action. Voir [`docs/AI_LAUNCHER_V65.md`](./docs/AI_LAUNCHER_V65.md).
+> **v68 — KalanPro AI Phase 2 (entretien) :** simulation guidée, score de préparation candidat, suivi post-entretien et scorecards recruteur pondérées. Voir [`docs/AI_PHASE2_V68.md`](./docs/AI_PHASE2_V68.md).
 > **v64 — KalanPro AI Phase 2 :** candidature assistée, analyse CV/offre, création réelle de cours brouillons, outils mentor/recruteur et capacités cumulées. Voir [`docs/AI_PHASE2_V64.md`](./docs/AI_PHASE2_V64.md).
 > **v63 — KalanPro AI Phase 2 (lot 1) :** outils structurés, recherche catalogue/emploi/progression, actions confirmées, brouillons pédagogiques et journal admin. Voir [`docs/AI_PHASE2_V63.md`](./docs/AI_PHASE2_V63.md).
 

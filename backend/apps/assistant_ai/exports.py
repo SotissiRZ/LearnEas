@@ -83,6 +83,41 @@ def draft_sections(draft: AIDraft) -> list[tuple[str, str | list[str]]]:
             vals = _strings(p.get(key))
             if vals:
                 sections.append((label, vals))
+    elif draft.kind == AIDraft.Kind.INTERVIEW_SCORE:
+        sections.append(("Score global de préparation", f"{int(p.get('overall_score') or 0)}/100"))
+        scores = p.get("scores") or {}
+        if isinstance(scores, dict) and scores:
+            sections.append(("Sous-scores", [f"{key}: {value}/100" for key, value in scores.items()]))
+        if p.get("response_summary"):
+            sections.append(("Synthèse", str(p.get("response_summary"))))
+        for key, label in (("strengths", "Points forts"), ("improvements", "Axes d'amélioration"), ("recommended_actions", "Actions recommandées")):
+            vals = _strings(p.get(key))
+            if vals:
+                sections.append((label, vals))
+    elif draft.kind == AIDraft.Kind.INTERVIEW_FOLLOWUP:
+        if p.get("subject"):
+            sections.append(("Objet", str(p.get("subject"))))
+        if p.get("message"):
+            sections.append(("Message de suivi", str(p.get("message"))))
+        if p.get("recommended_send_window"):
+            sections.append(("Fenêtre d'envoi recommandée", str(p.get("recommended_send_window"))))
+        vals = _strings(p.get("next_actions"))
+        if vals:
+            sections.append(("Prochaines actions", vals))
+    elif draft.kind == AIDraft.Kind.RECRUITER_SCORECARD:
+        sections.append(("Score global structuré", f"{int(p.get('overall_score') or 0)}/100"))
+        criteria = []
+        for raw in p.get("criteria") or []:
+            if isinstance(raw, dict):
+                criteria.append(f"{raw.get('name', 'Critère')} — {raw.get('score', 0)}/100 · poids {raw.get('weight', 0)}% · {raw.get('evidence', '')}")
+        if criteria:
+            sections.append(("Critères pondérés", criteria))
+        for key, label in (("strengths", "Points forts"), ("risks", "Points à vérifier"), ("next_steps", "Prochaines étapes")):
+            vals = _strings(p.get(key))
+            if vals:
+                sections.append((label, vals))
+        if p.get("interview_notes"):
+            sections.append(("Notes d'entretien", str(p.get("interview_notes"))))
     elif draft.kind == AIDraft.Kind.QUIZ:
         vals = []
         for i, raw in enumerate(p.get("questions") or [], 1):

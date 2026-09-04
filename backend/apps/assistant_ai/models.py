@@ -234,6 +234,9 @@ class AIDraft(models.Model):
         COVER_LETTER = "cover_letter", "Lettre de motivation"
         LEARNING_GAP_PLAN = "learning_gap_plan", "Plan de compétences"
         INTERVIEW_PREP = "interview_prep", "Préparation entretien"
+        INTERVIEW_SCORE = "interview_score", "Score de préparation entretien"
+        INTERVIEW_FOLLOWUP = "interview_followup", "Suivi post-entretien"
+        RECRUITER_SCORECARD = "recruiter_scorecard", "Scorecard entretien recruteur"
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ai_drafts")
     kind = models.CharField(max_length=30, choices=Kind.choices)

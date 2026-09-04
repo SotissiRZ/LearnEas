@@ -446,3 +446,79 @@ class AssistantAITests(TestCase):
         other_client = APIClient(); other_client.force_authenticate(other)
         denied = other_client.get(f"/api/ai/drafts/{draft.id}/export/?format=pdf")
         self.assertEqual(denied.status_code, 404)
+
+    def test_tool_definitions_have_valid_json_schema_shape(self):
+        from .tools import definitions_for
+        for tool in definitions_for(self.student):
+            self.assertEqual(tool.get("type"), "function")
+            function = tool.get("function") or {}
+            params = function.get("parameters") or {}
+            self.assertIsInstance(params.get("properties"), dict)
+            self.assertIsInstance(params.get("required"), list)
+
+    def test_candidate_interview_score_is_recomputed_server_side(self):
+        from apps.opportunities.models import EmployerProfile, Opportunity
+        from .models import AIMessage, AIDraft
+        from .tools import create_action_proposal
+        employer_user = User.objects.create_user(username="score-employer", email="score-employer@example.com", password="pass1234")
+        employer = EmployerProfile.objects.create(user=employer_user, company_name="Score K", country="Sénégal", status=EmployerProfile.Status.APPROVED)
+        opportunity = Opportunity.objects.create(employer=employer, title="Backend Python", description="Django REST", status=Opportunity.Status.PUBLISHED)
+        conversation = AIConversation.objects.create(user=self.student, title="Simulation entretien")
+        message = AIMessage.objects.create(conversation=conversation, role="assistant", content="Évaluation prête.")
+        action = create_action_proposal(self.student, conversation, message, "save_candidate_interview_score_draft", {
+            "opportunity_id": opportunity.id, "title": "Score entretien Backend",
+            "response_summary": "Réponses structurées mais exemples encore peu chiffrés.",
+            "relevance_score": 80, "evidence_score": 60, "clarity_score": 90, "role_fit_score": 70, "communication_score": 80,
+            "strengths": ["Clarté"], "improvements": ["Chiffrer les résultats"], "recommended_actions": ["Préparer deux STAR"],
+        })
+        self.assertEqual(action.request_payload["overall_score"], 75)
+        response = self.client.post(f"/api/ai/actions/{action.confirmation_token}/confirm/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        draft = AIDraft.objects.get(user=self.student, kind=AIDraft.Kind.INTERVIEW_SCORE)
+        self.assertEqual(draft.payload["overall_score"], 75)
+
+    def test_candidate_can_save_followup_without_sending_message(self):
+        from apps.opportunities.models import EmployerProfile, Opportunity
+        from .models import AIMessage, AIDraft
+        from .tools import create_action_proposal
+        employer_user = User.objects.create_user(username="follow-employer", email="follow-employer@example.com", password="pass1234")
+        employer = EmployerProfile.objects.create(user=employer_user, company_name="Follow K", country="Maroc", status=EmployerProfile.Status.APPROVED)
+        opportunity = Opportunity.objects.create(employer=employer, title="Data Analyst", description="SQL", status=Opportunity.Status.PUBLISHED)
+        conversation = AIConversation.objects.create(user=self.student, title="Suivi")
+        message = AIMessage.objects.create(conversation=conversation, role="assistant", content="Suivi prêt.")
+        action = create_action_proposal(self.student, conversation, message, "save_candidate_followup_draft", {
+            "opportunity_id": opportunity.id, "title": "Merci après entretien", "subject": "Merci pour notre échange",
+            "message": "Merci pour votre temps. Je reste très intéressé par le poste.",
+            "next_actions": ["Relire avant envoi"], "recommended_send_window": "Sous 24 heures",
+        })
+        response = self.client.post(f"/api/ai/actions/{action.confirmation_token}/confirm/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(AIDraft.objects.filter(user=self.student, kind=AIDraft.Kind.INTERVIEW_FOLLOWUP).exists())
+
+    def test_recruiter_scorecard_is_weighted_and_does_not_change_application_status(self):
+        from apps.opportunities.models import EmployerProfile, Opportunity, OpportunityApplication
+        from apps.opportunities.services import build_application_snapshot
+        from .models import AIMessage, AIDraft
+        from .tools import create_action_proposal
+        recruiter = User.objects.create_user(username="scorecard-recruiter", email="scorecard-recruiter@example.com", password="pass1234")
+        employer = EmployerProfile.objects.create(user=recruiter, company_name="Scorecard K", country="Côte d'Ivoire", status=EmployerProfile.Status.APPROVED)
+        opportunity = Opportunity.objects.create(employer=employer, title="Ingénieur API", description="Python", status=Opportunity.Status.PUBLISHED)
+        snapshot = build_application_snapshot(self.student, opportunity, share_portfolio=False)
+        application = OpportunityApplication.objects.create(opportunity=opportunity, candidate=self.student, share_portfolio=False, status=OpportunityApplication.Status.INTERVIEW, **snapshot)
+        client = APIClient(); client.force_authenticate(recruiter)
+        conversation = AIConversation.objects.create(user=recruiter, title="Scorecard")
+        message = AIMessage.objects.create(conversation=conversation, role="assistant", content="Scorecard prête.")
+        action = create_action_proposal(recruiter, conversation, message, "save_recruiter_scorecard_draft", {
+            "application_id": application.id, "title": "Entretien technique",
+            "criteria": [
+                {"name": "Technique", "weight": 60, "score": 80, "evidence": "Bonne maîtrise Django"},
+                {"name": "Communication", "weight": 40, "score": 70, "evidence": "Réponses claires"},
+            ],
+            "strengths": ["Django"], "risks": ["Peu d'exemples production"], "next_steps": ["Vérifier architecture"],
+        })
+        self.assertEqual(action.request_payload["overall_score"], 76)
+        response = client.post(f"/api/ai/actions/{action.confirmation_token}/confirm/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        application.refresh_from_db()
+        self.assertEqual(application.status, OpportunityApplication.Status.INTERVIEW)
+        self.assertTrue(AIDraft.objects.filter(user=recruiter, kind=AIDraft.Kind.RECRUITER_SCORECARD).exists())

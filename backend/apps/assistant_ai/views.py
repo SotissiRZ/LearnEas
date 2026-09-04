@@ -377,6 +377,7 @@ def drafts_view(request):
     if kind in {
         AIDraft.Kind.QUIZ, AIDraft.Kind.COURSE_OUTLINE, AIDraft.Kind.MENTOR_PLAN, AIDraft.Kind.INTERVIEW_RUBRIC,
         AIDraft.Kind.CV_IMPROVEMENT, AIDraft.Kind.COVER_LETTER, AIDraft.Kind.LEARNING_GAP_PLAN, AIDraft.Kind.INTERVIEW_PREP,
+        AIDraft.Kind.INTERVIEW_SCORE, AIDraft.Kind.INTERVIEW_FOLLOWUP, AIDraft.Kind.RECRUITER_SCORECARD,
     }:
         qs = qs.filter(kind=kind)
     rows = qs[:50]

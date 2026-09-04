@@ -1,3 +1,16 @@
+# KalanPro v68 — Simulation d’entretien, scorecards et suivi post-entretien
+
+- Simulation d’entretien candidat guidée par KalanPro AI : une question à la fois, feedback progressif et synthèse sur demande.
+- Nouveau score de préparation candidat calculé côté serveur à partir de 5 sous-scores pondérés : pertinence, preuves/exemples, clarté, adéquation au poste et communication.
+- Nouveau brouillon de suivi post-entretien : objet, message, fenêtre d’envoi recommandée et prochaines actions, sans envoi automatique.
+- Nouveau tool de lecture des candidatures du candidat déjà en phase entretien/offre.
+- Nouvelle scorecard recruteur pondérée ; le score global est recalculé côté KalanPro et ne modifie jamais automatiquement le statut RH.
+- Les scorecards et scores sont explicitement présentés comme aides structurantes, jamais comme prédiction d’embauche ou jugement sur la personne.
+- Les fichiers joints (CV, offre, portfolio, notes) peuvent continuer à servir de contexte pendant ces analyses.
+- Export PDF/Word étendu aux scores de préparation, suivis post-entretien et scorecards recruteur.
+- Correction du schéma function-calling de `search_opportunities` et ajout d’un test de validité JSON pour tous les tools.
+- Migration `assistant_ai.0007_interview_copilot`.
+
 # KalanPro v67 — Pièces jointes IA et exports carrière
 
 - KalanPro AI accepte désormais PDF, DOCX, TXT, CSV, Markdown, JSON, XLSX, PPTX et images PNG/JPEG/WebP.

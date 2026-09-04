@@ -148,7 +148,9 @@ def role_prompt(user) -> str:
         base = (
             "Tu es un tuteur KalanPro pour un apprenant. Explique d'abord l'idée essentielle avec des mots simples, puis donne un exemple. "
             "Quand c'est pertinent, termine par une petite question de vérification ou un exercice court. N'aide pas à tricher sur une évaluation en cours. "
-            "Pour l'emploi, utilise les outils KalanPro pour analyser le profil et ne soumets jamais une candidature sans confirmation explicite."
+            "Pour l'emploi, utilise les outils KalanPro pour analyser le profil et ne soumets jamais une candidature sans confirmation explicite. "
+            "Si l'utilisateur demande une simulation d'entretien, pose une seule question à la fois, attends sa réponse, puis donne un feedback bref. "
+            "À la fin ou sur demande, propose une évaluation structurée avec les outils de score de préparation et de suivi post-entretien."
         )
     capabilities = []
     if user.role == "admin" or MentorshipOffering.objects.filter(instructor=user).exists():
@@ -161,8 +163,8 @@ def role_prompt(user) -> str:
         employer = None
     if user.role == "admin" or (employer and employer.status == "approved"):
         capabilities.append(
-            "Ce compte dispose aussi d'un espace recruteur approuvé : tu peux analyser ses candidatures, préparer des grilles d'entretien et proposer une shortlist. "
-            "Tu ne dois jamais rejeter, embaucher ou faire une offre automatiquement."
+            "Ce compte dispose aussi d'un espace recruteur approuvé : tu peux analyser ses candidatures, préparer des grilles et scorecards d'entretien, proposer une shortlist et structurer des notes de suivi. "
+            "Les scores IA sont des aides à la décision et jamais une décision RH. Tu ne dois jamais rejeter, embaucher ou faire une offre automatiquement."
         )
     return base + (" " + " ".join(capabilities) if capabilities else "")
 
@@ -191,7 +193,8 @@ def build_messages(user, history: list[dict], question: str, chunks, page_text: 
         system += (
             "\nTu disposes d'outils KalanPro. Utilise-les pour rechercher des contenus, lire la progression, les certificats ou les opportunités "
             "au lieu d'inventer ces données. Toute action qui modifie des données doit passer par un outil d'action : elle sera seulement préparée, "
-            "puis exécutée après confirmation explicite de l'utilisateur. Ne prétends jamais qu'une action proposée est déjà exécutée."
+            "puis exécutée après confirmation explicite de l'utilisateur. Ne prétends jamais qu'une action proposée est déjà exécutée. "
+            "Les scores d'entretien et scorecards sont des indicateurs de préparation/structuration : ne les présente jamais comme une prédiction d'embauche ou une vérité sur la valeur d'une personne."
         )
     if cfg.custom_system_prompt.strip():
         system += "\nInstructions administrateur: " + cfg.custom_system_prompt.strip()
@@ -343,6 +346,20 @@ def _dry_run_tool_context(user, question: str, enabled: bool, resolved: dict | N
             pending_actions.append({"tool_name": "update_application_stage", "arguments": clean})
         except Exception:
             pass
+    elif any(term in q for term in ["scorecard", "noter l'entretien", "noter entretien", "évaluer le candidat", "evaluer le candidat"]) and numbers:
+        try:
+            clean = validate_write_tool(user, "save_recruiter_scorecard_draft", {
+                "application_id": numbers[0], "title": "Scorecard entretien",
+                "criteria": [
+                    {"name": "Compétences métier", "weight": 40, "score": 70, "evidence": "Démonstration locale"},
+                    {"name": "Communication", "weight": 30, "score": 70, "evidence": "Démonstration locale"},
+                    {"name": "Adéquation au poste", "weight": 30, "score": 70, "evidence": "Démonstration locale"},
+                ],
+                "strengths": [], "risks": [], "next_steps": ["Relire la scorecard avant toute décision RH"],
+            })
+            pending_actions.append({"tool_name": "save_recruiter_scorecard_draft", "arguments": clean})
+        except Exception:
+            pass
     elif context_opportunity_id and "cv" in q and any(term in q for term in ["améliore", "ameliore", "optimise", "optimiser"]):
         try:
             clean = validate_write_tool(user, "save_cv_improvement_draft", {
@@ -386,9 +403,35 @@ def _dry_run_tool_context(user, question: str, enabled: bool, resolved: dict | N
     elif "mentorat" in q and any(term in q for term in ["prochaine", "séance", "session", "rendez-vous"]):
         tool_name = "get_my_mentor_sessions"
         args = {"limit": 5}
+    elif context_opportunity_id and any(term in q for term in ["score mon entretien", "évalue mon entretien", "evalue mon entretien", "score de préparation", "score de preparation"]):
+        try:
+            clean = validate_write_tool(user, "save_candidate_interview_score_draft", {
+                "opportunity_id": context_opportunity_id, "title": "Score de préparation · offre actuelle",
+                "response_summary": "Évaluation de démonstration : branchez un fournisseur IA pour analyser vos réponses réelles.",
+                "relevance_score": 70, "evidence_score": 65, "clarity_score": 75, "role_fit_score": 70, "communication_score": 75,
+                "strengths": ["Réponse structurée"], "improvements": ["Ajouter des exemples chiffrés"],
+                "recommended_actions": ["Préparer deux exemples STAR supplémentaires"],
+            })
+            pending_actions.append({"tool_name": "save_candidate_interview_score_draft", "arguments": clean})
+        except Exception:
+            pass
+    elif context_opportunity_id and any(term in q for term in ["message de suivi", "relance après entretien", "relance apres entretien", "remercier après entretien", "remercier apres entretien"]):
+        try:
+            clean = validate_write_tool(user, "save_candidate_followup_draft", {
+                "opportunity_id": context_opportunity_id, "title": "Suivi post-entretien · offre actuelle",
+                "subject": "Merci pour notre entretien",
+                "message": "Merci pour le temps consacré à notre échange. Je reste très intéressé par l'opportunité et disponible pour toute information complémentaire.",
+                "next_actions": ["Relire le message avant envoi"], "recommended_send_window": "Dans les 24 heures après l'entretien",
+            })
+            pending_actions.append({"tool_name": "save_candidate_followup_draft", "arguments": clean})
+        except Exception:
+            pass
     elif "candidature" in q and any(term in q for term in ["reçue", "reçues", "candidat", "recruteur", "shortlist"]):
         tool_name = "get_my_recruiter_applications"
         args = {"limit": 10, "status": "any"}
+    elif any(term in q for term in ["mes entretiens", "entretiens à venir", "entretiens en cours"]):
+        tool_name = "get_my_interview_applications"
+        args = {"limit": 10}
     elif "progress" in q or "où j'en suis" in q:
         tool_name = "get_my_progress"
     elif "certificat" in q:

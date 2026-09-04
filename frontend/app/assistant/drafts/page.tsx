@@ -7,7 +7,7 @@ import GuardScreen from "@/components/ui/GuardScreen";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { api, ApiError, apiDownload } from "@/lib/api";
 
-type DraftKind = "quiz" | "course_outline" | "mentor_plan" | "interview_rubric" | "cv_improvement" | "cover_letter" | "learning_gap_plan" | "interview_prep";
+type DraftKind = "quiz" | "course_outline" | "mentor_plan" | "interview_rubric" | "cv_improvement" | "cover_letter" | "learning_gap_plan" | "interview_prep" | "interview_score" | "interview_followup" | "recruiter_scorecard";
 type AIDraft = {
   id: number;
   kind: DraftKind;
@@ -28,6 +28,9 @@ const meta: Record<DraftKind, { label: string; className: string }> = {
   cover_letter: { label: "Lettre de motivation", className: "bg-amber-50 text-amber-700" },
   learning_gap_plan: { label: "Plan de compétences", className: "bg-indigo-50 text-indigo-700" },
   interview_prep: { label: "Préparation entretien", className: "bg-rose-50 text-rose-700" },
+  interview_score: { label: "Score de préparation", className: "bg-emerald-50 text-emerald-700" },
+  interview_followup: { label: "Suivi post-entretien", className: "bg-orange-50 text-orange-700" },
+  recruiter_scorecard: { label: "Scorecard recruteur", className: "bg-purple-50 text-purple-700" },
 };
 
 export default function AssistantDraftsPage() {
@@ -62,7 +65,7 @@ function DraftIcon({ kind }: { kind: DraftKind }) {
   if (kind === "cv_improvement") return <FilePenLine size={18}/>;
   if (kind === "cover_letter") return <ScrollText size={18}/>;
   if (kind === "learning_gap_plan") return <GraduationCap size={18}/>;
-  if (kind === "interview_prep") return <BriefcaseBusiness size={18}/>;
+  if (kind === "interview_prep" || kind === "interview_score" || kind === "interview_followup") return <BriefcaseBusiness size={18}/>;
   return <ClipboardList size={18}/>;
 }
 
@@ -83,6 +86,9 @@ function DraftCard({ row }: { row: AIDraft }) {
     : row.kind === "cv_improvement" ? `${skills.length} compétence${skills.length > 1 ? "s" : ""} mise${skills.length > 1 ? "s" : ""} en avant`
     : row.kind === "cover_letter" ? "Lettre ciblée prête à relire"
     : row.kind === "learning_gap_plan" ? `${missingSkills.length} compétence${missingSkills.length > 1 ? "s" : ""} · ${actions.length} étape${actions.length > 1 ? "s" : ""}`
+    : row.kind === "interview_score" ? `Préparation : ${Number(row.payload.overall_score || 0)}/100`
+    : row.kind === "interview_followup" ? "Message de suivi prêt à relire"
+    : row.kind === "recruiter_scorecard" ? `Score structuré : ${Number(row.payload.overall_score || 0)}/100`
     : `${likelyQuestions.length} question${likelyQuestions.length > 1 ? "s" : ""} probable${likelyQuestions.length > 1 ? "s" : ""}`;
   return <article className="card p-5">
     <div className="flex items-start gap-3"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${info.className}`}><DraftIcon kind={row.kind}/></span><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.12em] text-slate-400">{info.label}</p><h2 className="truncate font-black text-navy-950">{row.title}</h2>{row.course_title && <p className="mt-1 text-xs text-slate-500">Cours : {row.course_title}</p>}</div></div>
@@ -95,6 +101,9 @@ function DraftCard({ row }: { row: AIDraft }) {
     {row.kind === "cv_improvement" && typeof row.payload.summary === "string" && <details className="mt-3 rounded-xl border border-slate-100 bg-white p-3"><summary className="cursor-pointer text-xs font-bold text-brand-600">Voir les améliorations CV</summary><p className="mt-3 whitespace-pre-wrap text-xs leading-5 text-slate-600">{row.payload.summary}</p>{Array.isArray(row.payload.recommendations) && row.payload.recommendations.length > 0 && <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-slate-600">{row.payload.recommendations.slice(0, 10).map((item, index) => <li key={index}>{String(item)}</li>)}</ul>}</details>}
     {row.kind === "learning_gap_plan" && actions.length > 0 && <details className="mt-3 rounded-xl border border-slate-100 bg-white p-3"><summary className="cursor-pointer text-xs font-bold text-brand-600">Voir le plan</summary><div className="mt-3 space-y-2">{actions.slice(0, 12).map((item, index) => { const value = item && typeof item === "object" ? item as Record<string, unknown> : {}; return <div key={index} className="rounded-lg bg-slate-50 p-2 text-xs text-slate-600"><span className="font-bold text-navy-950">{String(value.skill || "Compétence")}</span> · {String(value.action || "")}</div>; })}</div></details>}
     {row.kind === "interview_prep" && <details className="mt-3 rounded-xl border border-slate-100 bg-white p-3"><summary className="cursor-pointer text-xs font-bold text-brand-600">Voir la préparation</summary>{typeof row.payload.pitch === "string" && <p className="mt-3 whitespace-pre-wrap text-xs leading-5 text-slate-600">{row.payload.pitch}</p>}{likelyQuestions.length > 0 && <div className="mt-3"><p className="text-[10px] font-black uppercase tracking-[.1em] text-slate-400">Questions probables</p><ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-600">{likelyQuestions.slice(0, 12).map((item, index) => <li key={index}>{String(item)}</li>)}</ul></div>}</details>}
+    {row.kind === "interview_score" && <details className="mt-3 rounded-xl border border-slate-100 bg-white p-3"><summary className="cursor-pointer text-xs font-bold text-brand-600">Voir l’évaluation</summary><div className="mt-3 grid gap-2 sm:grid-cols-2">{row.payload.scores && typeof row.payload.scores === "object" && Object.entries(row.payload.scores as Record<string, unknown>).map(([label,value]) => <div key={label} className="rounded-lg bg-slate-50 p-2 text-xs"><span className="font-semibold text-navy-950">{label}</span><span className="float-right font-black text-brand-600">{Number(value)}/100</span></div>)}</div>{typeof row.payload.response_summary === "string" && row.payload.response_summary && <p className="mt-3 whitespace-pre-wrap text-xs leading-5 text-slate-600">{row.payload.response_summary}</p>}</details>}
+    {row.kind === "interview_followup" && <details className="mt-3 rounded-xl border border-slate-100 bg-white p-3"><summary className="cursor-pointer text-xs font-bold text-brand-600">Voir le suivi</summary>{typeof row.payload.subject === "string" && row.payload.subject && <p className="mt-3 text-xs font-bold text-navy-950">Objet : {row.payload.subject}</p>}{typeof row.payload.message === "string" && <p className="mt-3 whitespace-pre-wrap text-xs leading-5 text-slate-600">{row.payload.message}</p>}{typeof row.payload.recommended_send_window === "string" && row.payload.recommended_send_window && <p className="mt-3 text-[11px] text-slate-500">Moment recommandé : {row.payload.recommended_send_window}</p>}</details>}
+    {row.kind === "recruiter_scorecard" && <details className="mt-3 rounded-xl border border-slate-100 bg-white p-3"><summary className="cursor-pointer text-xs font-bold text-brand-600">Voir la scorecard</summary><div className="mt-3 space-y-2">{Array.isArray(row.payload.criteria) && row.payload.criteria.slice(0, 15).map((raw,index) => { const item = raw && typeof raw === "object" ? raw as Record<string, unknown> : {}; return <div key={index} className="rounded-lg bg-slate-50 p-2 text-xs text-slate-600"><div className="flex items-center justify-between gap-3"><span className="font-bold text-navy-950">{String(item.name || "Critère")}</span><span className="font-black text-brand-600">{Number(item.score || 0)}/100</span></div><p className="mt-1 text-[11px] text-slate-500">Poids {Number(item.weight || 0)}%</p>{item.evidence ? <p className="mt-1">{String(item.evidence)}</p> : null}</div>; })}</div></details>}
     <div className="mt-4 flex flex-wrap items-center gap-2"><button type="button" onClick={() => void apiDownload(`/ai/drafts/${row.id}/export/?format=pdf`, `kalanpro-${row.id}.pdf`)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:border-brand-200 hover:text-brand-600"><Download size={13}/> PDF</button><button type="button" onClick={() => void apiDownload(`/ai/drafts/${row.id}/export/?format=docx`, `kalanpro-${row.id}.docx`)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:border-brand-200 hover:text-brand-600"><Download size={13}/> Word</button></div>
     <p className="mt-3 text-[10px] text-slate-400">Mis à jour le {new Date(row.updated_at).toLocaleString("fr-FR")}</p>
   </article>;

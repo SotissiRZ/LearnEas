@@ -36,6 +36,7 @@ READ_TOOLS = {
     "get_my_recruiter_applications",
     "analyze_candidate_application",
     "recommend_learning_for_opportunity",
+    "get_my_interview_applications",
 }
 WRITE_TOOLS = {
     "add_course_to_wishlist",
@@ -51,6 +52,9 @@ WRITE_TOOLS = {
     "save_learning_gap_plan_draft",
     "save_candidate_interview_prep_draft",
     "update_candidate_profile",
+    "save_candidate_interview_score_draft",
+    "save_candidate_followup_draft",
+    "save_recruiter_scorecard_draft",
 }
 
 
@@ -94,7 +98,6 @@ BASE_TOOL_DEFINITIONS = [
     ),
     _tool(
         "search_opportunities",
-    "get_opportunity_details",
         "Cherche les emplois, stages, freelances et missions publiés dans KalanPro et calcule le score de correspondance du compte connecté.",
         {
             "query": {"type": "string"},
@@ -199,6 +202,42 @@ BASE_TOOL_DEFINITIONS = [
             "checklist": {"type": "array", "items": {"type": "string"}, "maxItems": 12},
         },
         ["opportunity_id", "title", "pitch"],
+    ),
+    _tool(
+        "get_my_interview_applications",
+        "Retourne les candidatures du compte connecté qui sont en entretien ou dans une étape post-entretien, avec l'offre associée. Lecture seule.",
+        {"limit": {"type": "integer", "minimum": 1, "maximum": 20}},
+    ),
+    _tool(
+        "save_candidate_interview_score_draft",
+        "Enregistre après confirmation une évaluation privée de préparation à l'entretien. Le score global est recalculé côté KalanPro à partir de sous-scores bornés; il ne constitue pas une décision de recrutement.",
+        {
+            "opportunity_id": {"type": "integer", "minimum": 1},
+            "title": {"type": "string"},
+            "response_summary": {"type": "string"},
+            "relevance_score": {"type": "integer", "minimum": 0, "maximum": 100},
+            "evidence_score": {"type": "integer", "minimum": 0, "maximum": 100},
+            "clarity_score": {"type": "integer", "minimum": 0, "maximum": 100},
+            "role_fit_score": {"type": "integer", "minimum": 0, "maximum": 100},
+            "communication_score": {"type": "integer", "minimum": 0, "maximum": 100},
+            "strengths": {"type": "array", "items": {"type": "string"}, "maxItems": 12},
+            "improvements": {"type": "array", "items": {"type": "string"}, "maxItems": 12},
+            "recommended_actions": {"type": "array", "items": {"type": "string"}, "maxItems": 12},
+        },
+        ["opportunity_id", "title", "relevance_score", "evidence_score", "clarity_score", "role_fit_score", "communication_score"],
+    ),
+    _tool(
+        "save_candidate_followup_draft",
+        "Prépare après confirmation un brouillon privé de message de suivi après entretien. N'envoie aucun email/message et ne modifie pas la candidature.",
+        {
+            "opportunity_id": {"type": "integer", "minimum": 1},
+            "title": {"type": "string"},
+            "subject": {"type": "string"},
+            "message": {"type": "string"},
+            "next_actions": {"type": "array", "items": {"type": "string"}, "maxItems": 10},
+            "recommended_send_window": {"type": "string"},
+        },
+        ["opportunity_id", "title", "message"],
     ),
     _tool(
         "add_course_to_wishlist",
@@ -360,6 +399,33 @@ RECRUITER_TOOL_DEFINITIONS = [
             "questions": {"type": "array", "items": {"type": "string"}, "maxItems": 15},
         },
         ["application_id", "title"],
+    ),
+    _tool(
+        "save_recruiter_scorecard_draft",
+        "Prépare après confirmation une scorecard privée d'entretien pour une candidature. Les critères sont pondérés et le score global est calculé côté KalanPro. Ne rejette, n'embauche et ne fait aucune offre.",
+        {
+            "application_id": {"type": "integer", "minimum": 1},
+            "title": {"type": "string"},
+            "criteria": {
+                "type": "array", "minItems": 1, "maxItems": 15,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "weight": {"type": "number", "minimum": 1, "maximum": 100},
+                        "score": {"type": "number", "minimum": 0, "maximum": 100},
+                        "evidence": {"type": "string"}
+                    },
+                    "required": ["name", "weight", "score"],
+                    "additionalProperties": False
+                }
+            },
+            "strengths": {"type": "array", "items": {"type": "string"}, "maxItems": 12},
+            "risks": {"type": "array", "items": {"type": "string"}, "maxItems": 12},
+            "next_steps": {"type": "array", "items": {"type": "string"}, "maxItems": 10},
+            "interview_notes": {"type": "string"}
+        },
+        ["application_id", "title", "criteria"],
     ),
     _tool(
         "update_application_stage",
@@ -762,6 +828,25 @@ def analyze_candidate_application(user, args: dict) -> dict:
     }
 
 
+def get_my_interview_applications(user, args: dict) -> dict:
+    limit = _limit(args, default=10, maximum=20)
+    statuses = [OpportunityApplication.Status.INTERVIEW, OpportunityApplication.Status.OFFER]
+    rows = (
+        OpportunityApplication.objects.select_related("opportunity__employer")
+        .filter(candidate=user, status__in=statuses)
+        .order_by("-updated_at")[:limit]
+    )
+    return {"items": [{
+        "application_id": row.id,
+        "status": row.status,
+        "opportunity_id": row.opportunity_id,
+        "opportunity": row.opportunity.title,
+        "company": row.opportunity.employer.company_name,
+        "updated_at": row.updated_at.isoformat(),
+        "path": f"/opportunities/{row.opportunity.slug}",
+    } for row in rows]}
+
+
 READ_DISPATCH = {
     "search_learning_catalog": search_learning_catalog,
     "get_my_progress": get_my_progress,
@@ -774,6 +859,7 @@ READ_DISPATCH = {
     "get_my_recruiter_applications": get_my_recruiter_applications,
     "analyze_candidate_application": analyze_candidate_application,
     "recommend_learning_for_opportunity": recommend_learning_for_opportunity,
+    "get_my_interview_applications": get_my_interview_applications,
 }
 
 
@@ -812,8 +898,104 @@ def action_label(name: str, args: dict) -> str:
         return f"Enregistrer le plan de compétences « {str(args.get('title') or 'Plan de progression')[:120]} »"
     if name == "save_candidate_interview_prep_draft":
         return f"Enregistrer la préparation d’entretien « {str(args.get('title') or 'Préparation entretien')[:120]} »"
+    if name in {"save_candidate_interview_score_draft", "save_candidate_followup_draft"}:
+        try:
+            opportunity_id = int(args.get("opportunity_id"))
+        except (TypeError, ValueError):
+            raise ValueError("Opportunité invalide.")
+        opportunity = Opportunity.objects.select_related("employer").filter(pk=opportunity_id, status=Opportunity.Status.PUBLISHED).first()
+        if not opportunity or opportunity.employer.status != EmployerProfile.Status.APPROVED:
+            raise ValueError("Opportunité publiée introuvable.")
+        if opportunity.employer.user_id == user.id:
+            raise PermissionError("Cette action candidat ne peut pas cibler votre propre offre.")
+        title = " ".join(str(args.get("title") or "").split())[:220]
+        if not title:
+            raise ValueError("Titre requis.")
+        if name == "save_candidate_interview_score_draft":
+            scores = {}
+            for key in ("relevance_score", "evidence_score", "clarity_score", "role_fit_score", "communication_score"):
+                try:
+                    value = int(args.get(key))
+                except (TypeError, ValueError):
+                    raise ValueError("Sous-score d'entretien invalide.")
+                scores[key] = min(max(value, 0), 100)
+            overall = round(
+                scores["relevance_score"] * 0.30 + scores["evidence_score"] * 0.25 +
+                scores["clarity_score"] * 0.20 + scores["role_fit_score"] * 0.15 +
+                scores["communication_score"] * 0.10
+            )
+            return {
+                "opportunity_id": opportunity.id, "opportunity_title": opportunity.title, "title": title,
+                "response_summary": str(args.get("response_summary") or "").strip()[:5000],
+                **scores, "overall_score": overall,
+                "strengths": _clean_string_list(args.get("strengths"), maximum=12, item_max=700),
+                "improvements": _clean_string_list(args.get("improvements"), maximum=12, item_max=700),
+                "recommended_actions": _clean_string_list(args.get("recommended_actions"), maximum=12, item_max=700),
+            }
+        message = str(args.get("message") or "").strip()[:7000]
+        if not message:
+            raise ValueError("Le message de suivi est requis.")
+        return {
+            "opportunity_id": opportunity.id, "opportunity_title": opportunity.title, "title": title,
+            "subject": " ".join(str(args.get("subject") or "").split())[:220],
+            "message": message,
+            "next_actions": _clean_string_list(args.get("next_actions"), maximum=10, item_max=700),
+            "recommended_send_window": " ".join(str(args.get("recommended_send_window") or "").split())[:200],
+        }
+
+    if name == "save_recruiter_scorecard_draft":
+        try:
+            application_id = int(args.get("application_id"))
+        except (TypeError, ValueError):
+            raise ValueError("Candidature invalide.")
+        application = _recruiter_application(user, application_id)
+        title = " ".join(str(args.get("title") or "").split())[:220]
+        raw_criteria = args.get("criteria") or []
+        if not title or not isinstance(raw_criteria, list) or not raw_criteria:
+            raise ValueError("Titre et critères d'entretien requis.")
+        clean_criteria = []
+        total_weight = Decimal("0")
+        weighted = Decimal("0")
+        for raw in raw_criteria[:15]:
+            if not isinstance(raw, dict):
+                continue
+            name_value = " ".join(str(raw.get("name") or "").split())[:180]
+            if not name_value:
+                continue
+            try:
+                weight = Decimal(str(raw.get("weight")))
+                score = Decimal(str(raw.get("score")))
+            except (InvalidOperation, TypeError, ValueError):
+                raise ValueError("Poids ou score invalide dans la scorecard.")
+            weight = min(max(weight, Decimal("1")), Decimal("100"))
+            score = min(max(score, Decimal("0")), Decimal("100"))
+            clean_criteria.append({
+                "name": name_value, "weight": float(weight), "score": float(score),
+                "evidence": str(raw.get("evidence") or "").strip()[:1200],
+            })
+            total_weight += weight
+            weighted += weight * score
+        if not clean_criteria or total_weight <= 0:
+            raise ValueError("Aucun critère de scorecard valide.")
+        overall = int(round(float(weighted / total_weight)))
+        return {
+            "application_id": application.id, "opportunity_id": application.opportunity_id,
+            "opportunity_title": application.opportunity.title, "candidate": application.candidate_name_snapshot,
+            "title": title, "criteria": clean_criteria, "overall_score": overall,
+            "strengths": _clean_string_list(args.get("strengths"), maximum=12, item_max=700),
+            "risks": _clean_string_list(args.get("risks"), maximum=12, item_max=700),
+            "next_steps": _clean_string_list(args.get("next_steps"), maximum=10, item_max=700),
+            "interview_notes": str(args.get("interview_notes") or "").strip()[:6000],
+        }
+
     if name == "update_candidate_profile":
         return "Mettre à jour mon profil candidat avec les suggestions IA"
+    if name == "save_candidate_interview_score_draft":
+        return f"Enregistrer mon score de préparation « {str(args.get('title') or 'Entretien')[:120]} »"
+    if name == "save_candidate_followup_draft":
+        return f"Enregistrer le suivi post-entretien « {str(args.get('title') or 'Suivi entretien')[:120]} »"
+    if name == "save_recruiter_scorecard_draft":
+        return f"Enregistrer la scorecard de la candidature #{args.get('application_id')}"
     return "Confirmer l'action KalanPro AI"
 
 
@@ -1289,6 +1471,47 @@ def execute_action(action: AIActionLog) -> dict:
                 changed.append(field)
         profile.save(update_fields=changed + ["updated_at"])
         result = {"profile_id": profile.id, "updated_fields": changed, "path": "/dashboard/student/opportunities"}
+
+    elif action.tool_name == "save_candidate_interview_score_draft":
+        draft = AIDraft.objects.create(
+            user=action.user, kind=AIDraft.Kind.INTERVIEW_SCORE, title=args["title"],
+            payload={
+                "opportunity_id": args["opportunity_id"], "opportunity": args["opportunity_title"],
+                "response_summary": args.get("response_summary", ""),
+                "scores": {
+                    "Pertinence": args["relevance_score"], "Preuves / exemples": args["evidence_score"],
+                    "Clarté": args["clarity_score"], "Adéquation au poste": args["role_fit_score"],
+                    "Communication": args["communication_score"],
+                },
+                "overall_score": args["overall_score"], "strengths": args.get("strengths", []),
+                "improvements": args.get("improvements", []), "recommended_actions": args.get("recommended_actions", []),
+            },
+        )
+        result = {"draft_id": draft.id, "kind": draft.kind, "overall_score": args["overall_score"], "path": "/assistant/drafts"}
+
+    elif action.tool_name == "save_candidate_followup_draft":
+        draft = AIDraft.objects.create(
+            user=action.user, kind=AIDraft.Kind.INTERVIEW_FOLLOWUP, title=args["title"],
+            payload={
+                "opportunity_id": args["opportunity_id"], "opportunity": args["opportunity_title"],
+                "subject": args.get("subject", ""), "message": args["message"],
+                "next_actions": args.get("next_actions", []), "recommended_send_window": args.get("recommended_send_window", ""),
+            },
+        )
+        result = {"draft_id": draft.id, "kind": draft.kind, "path": "/assistant/drafts"}
+
+    elif action.tool_name == "save_recruiter_scorecard_draft":
+        draft = AIDraft.objects.create(
+            user=action.user, kind=AIDraft.Kind.RECRUITER_SCORECARD, title=args["title"],
+            payload={
+                "application_id": args["application_id"], "opportunity_id": args["opportunity_id"],
+                "opportunity": args["opportunity_title"], "candidate": args["candidate"],
+                "criteria": args["criteria"], "overall_score": args["overall_score"],
+                "strengths": args.get("strengths", []), "risks": args.get("risks", []),
+                "next_steps": args.get("next_steps", []), "interview_notes": args.get("interview_notes", ""),
+            },
+        )
+        result = {"draft_id": draft.id, "kind": draft.kind, "overall_score": args["overall_score"], "path": "/assistant/drafts"}
 
     elif action.tool_name == "save_quiz_draft":
         draft = AIDraft.objects.create(user=action.user, kind=AIDraft.Kind.QUIZ, title=args["title"], course_id=args.get("course_id"), payload={"questions": args["questions"]})
