@@ -1,5 +1,9 @@
 # KalanPro
 
+> **v56 — Modèle économique & Tarifs :** nouvelle page `/pricing` pour apprenants, instructeurs, mentors et recruteurs, paramètres tarifaires administrables, commission mentor appliquée au checkout et liens Tarifs dans la navbar/footer.
+
+> **v53 — Navigation & performance :** menus déroulants au survol, filtres par domaines, optimisation SQL des catalogues, cache public court et hero WebP optimisé.
+
 > **v47 — Certificats vérifiables :** QR code public, recherche par numéro/UUID, preuves pédagogiques figées, historique de révocation/réémission et empreinte SHA-256.
 
 > **v41 — Visioconférence :** pendant un partage d’écran, la caméra du présentateur est affichée en vignette déplaçable et intégrée au flux présenté.
@@ -15,7 +19,7 @@ en **Django REST Framework + Next.js**, avec un nouveau paradigme :
 > On n'achète plus une vidéo isolée. On achète un **cours complet** (playlist entière avec toutes ses
 > vidéos organisées en modules) ou un **PDF** — vendu seul ou inclus dans un cours.
 
-Style visuel de plateforme de formation premium avec une identité propre (palette verte, cartes arrondies,
+Style visuel de plateforme de formation premium avec l’identité KalanPro (bleu nuit + orange, cartes arrondies,
 dashboards dédiés par rôle et espace de lecture immersif).
 
 ---

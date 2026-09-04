@@ -4,35 +4,31 @@ import {
   ArrowRight, BookOpen, BriefcaseBusiness, UsersRound, Search, Rocket,
   BadgeCheck, Wifi, Smartphone, Sparkles,
 } from "lucide-react";
-import { safeGet } from "@/lib/api";
-import { Category, Course, PDFProduct } from "@/types";
+import { safePublicGet } from "@/lib/serverPublicApi";
+import { Course, Domain, PDFProduct } from "@/types";
 import CourseCard from "@/components/course/CourseCard";
 import PdfCard from "@/components/pdf/PdfCard";
 import CategoryIcon from "@/components/ui/CategoryIcon";
 import ApiErrorBanner from "@/components/ui/ApiErrorBanner";
 
 export default async function HomePage() {
-  const [categoriesResult, featuredResult, pdfsResult] = await Promise.all([
-    safeGet<Category[]>("/catalog/categories/", []),
-    safeGet<Course[]>("/catalog/courses/featured/", []),
-    safeGet<{ results: PDFProduct[] }>("/catalog/pdfs/?ordering=-created_at", { results: [] }),
+  const [domainsResult, featuredResult, pdfsResult] = await Promise.all([
+    safePublicGet<Domain[]>("/catalog/domains/", [], 300),
+    safePublicGet<Course[]>("/catalog/courses/featured/", [], 60),
+    safePublicGet<{ results: PDFProduct[] }>("/catalog/pdfs/?ordering=-created_at", { results: [] }, 60),
   ]);
-  const categories = categoriesResult.data;
+  const domains = domainsResult.data;
   const featuredCourses = featuredResult.data;
   const pdfs = pdfsResult.data;
-  const hasError = !categoriesResult.ok || !featuredResult.ok || !pdfsResult.ok;
+  const hasError = !domainsResult.ok || !featuredResult.ok || !pdfsResult.ok;
 
   return (
     <div className="bg-white">
-      {hasError && <div className="container-app pt-5"><ApiErrorBanner message={categoriesResult.error || featuredResult.error || pdfsResult.error} /></div>}
+      {hasError && <div className="container-app pt-5"><ApiErrorBanner message={domainsResult.error || featuredResult.error || pdfsResult.error} /></div>}
 
       <section className="relative overflow-hidden bg-navy-950 text-white">
         <div className="absolute inset-0 bg-hero-radial" />
-        <div className="absolute inset-y-0 right-0 hidden w-[52%] lg:block">
-          <Image src="/images/hero-background.png" alt="KalanPro, apprendre sans limites" fill priority sizes="52vw" className="object-cover object-center opacity-70" />
-          <div className="absolute inset-0 bg-gradient-to-r from-navy-950 via-navy-950/40 to-navy-950/10" />
-        </div>
-        <div className="container-app relative z-10 grid min-h-[560px] items-center gap-10 py-14 lg:grid-cols-[1.05fr_.95fr] lg:py-20">
+        <div className="container-app relative z-10 grid min-h-[590px] items-center gap-9 py-12 lg:grid-cols-[1.02fr_.98fr] lg:gap-12 lg:py-16">
           <div className="max-w-2xl">
             <span className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/75">
               <Sparkles size={14} className="text-brand-400" /> Pensé pour l'Afrique francophone
@@ -54,10 +50,27 @@ export default async function HomePage() {
               <span className="flex items-center gap-1.5"><BadgeCheck size={14} className="text-brand-400" /> Certificats vérifiables</span>
             </div>
           </div>
-          <div className="hidden lg:block" aria-hidden="true" />
+
+          <div className="relative min-h-[300px] overflow-hidden rounded-[26px] border border-white/10 bg-navy-900 shadow-[0_24px_70px_rgba(0,0,0,.28)] sm:min-h-[390px] lg:min-h-[500px] lg:rounded-[34px]">
+            <Image
+              src="/images/hero-kalanpro.webp"
+              alt="Apprenants KalanPro collaborant autour de leurs ordinateurs"
+              fill
+              priority
+              sizes="(max-width: 1024px) 100vw, 46vw"
+              className="object-cover object-center"
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-navy-950/25 via-transparent to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-navy-950/70 to-transparent" />
+            <div className="absolute bottom-5 left-5 right-5 flex flex-wrap gap-2 text-[11px] font-bold text-white/90 sm:text-xs">
+              <span className="rounded-full border border-white/15 bg-navy-950/65 px-3 py-1.5 backdrop-blur">Formation</span>
+              <span className="rounded-full border border-white/15 bg-navy-950/65 px-3 py-1.5 backdrop-blur">Mentorat</span>
+              <span className="rounded-full border border-white/15 bg-navy-950/65 px-3 py-1.5 backdrop-blur">Emploi</span>
+            </div>
+          </div>
         </div>
 
-        <div className="container-app relative z-20 -mt-2 pb-8 lg:-mt-8">
+        <div className="container-app relative z-20 pb-8 lg:-mt-3">
           <div className="grid gap-4 md:grid-cols-3">
             <FeatureCard
               icon={<BookOpen size={24} />}
@@ -114,18 +127,18 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {categories.length > 0 && (
+      {domains.length > 0 && (
         <section className="container-app py-14">
           <div className="mb-7 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-            <div><p className="kalan-eyebrow">Explorer</p><h2 className="kalan-section-title mt-2">Parcourir par catégorie</h2></div>
+            <div><p className="kalan-eyebrow">Explorer</p><h2 className="kalan-section-title mt-2">Choisir un domaine</h2></div>
             <Link href="/courses" className="flex items-center gap-1 text-sm font-bold text-brand-600">Toutes les formations <ArrowRight size={16} /></Link>
           </div>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            {categories.map((c) => (
-              <Link key={c.id} href={`/courses?category=${c.slug}`} className="card group flex flex-col items-center gap-2 p-5 text-center transition hover:-translate-y-1 hover:border-brand-200 hover:shadow-soft">
-                <div className="grid h-11 w-11 place-items-center rounded-xl bg-brand-50 text-brand-600 transition group-hover:bg-brand-500 group-hover:text-white"><CategoryIcon name={c.icon} size={22} /></div>
-                <span className="text-sm font-bold text-navy-950">{c.name}</span>
-                <span className="text-xs text-slate-400">{c.courses_count} cours</span>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            {domains.filter((domain) => domain.slug !== "autres-domaines").map((domain) => (
+              <Link key={domain.id} href={`/courses?domain=${domain.slug}`} className="card group flex flex-col items-center gap-2 p-5 text-center transition hover:-translate-y-1 hover:border-brand-200 hover:shadow-soft">
+                <div className="grid h-11 w-11 place-items-center rounded-xl bg-brand-50 text-brand-600 transition group-hover:bg-brand-500 group-hover:text-white"><CategoryIcon name={domain.icon} size={22} /></div>
+                <span className="text-sm font-bold text-navy-950">{domain.name}</span>
+                <span className="text-xs text-slate-400">{domain.courses_count || 0} cours</span>
               </Link>
             ))}
           </div>

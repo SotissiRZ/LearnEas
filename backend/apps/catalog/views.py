@@ -2,7 +2,7 @@ import json
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from celery.result import AsyncResult
 from rest_framework import viewsets, permissions, filters, status
 from rest_framework.decorators import action
@@ -10,19 +10,35 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.enrollments.models import CourseEnrollment, PDFPurchase
-from .models import Category, Course, Section, Lesson, PDFResource, PDFProduct
+from .models import Domain, Category, Course, Section, Lesson, PDFResource, PDFProduct
 from .permissions import IsInstructorOrAdmin, IsInstructorOrAdminOnly, IsAdminRoleOrReadOnly
 from .tasks import normalize_lesson_video, prepare_lesson_streaming
 from apps.common.hls_media import sign_hls_path
 from .serializers import (
-    CategorySerializer, CourseListSerializer, CourseDetailSerializer, CourseWriteSerializer,
+    DomainSerializer, CategorySerializer, CourseListSerializer, CourseDetailSerializer, CourseWriteSerializer,
     SectionWriteSerializer, LessonWriteSerializer, LessonDirectCompleteSerializer, PDFResourceWriteSerializer,
     PDFProductListSerializer, PDFProductDetailSerializer, PDFProductWriteSerializer,
 )
 
 
+class DomainViewSet(viewsets.ModelViewSet):
+    queryset = Domain.objects.annotate(
+        published_courses_count=Count(
+            "categories__courses",
+            filter=Q(categories__courses__published=True),
+            distinct=True,
+        )
+    )
+    serializer_class = DomainSerializer
+    permission_classes = [IsAdminRoleOrReadOnly]
+    lookup_field = "slug"
+    pagination_class = None
+
+
 class CategoryViewSet(viewsets.ModelViewSet):
-    queryset = Category.objects.all()
+    queryset = Category.objects.select_related("domain").annotate(
+        published_courses_count=Count("courses", filter=Q(courses__published=True), distinct=True)
+    )
     serializer_class = CategorySerializer
     permission_classes = [IsAdminRoleOrReadOnly]
     lookup_field = "slug"
@@ -49,15 +65,20 @@ class CourseViewSet(viewsets.ModelViewSet):
     queryset = Course.objects.select_related("instructor", "category").filter(published=True)
     permission_classes = [IsInstructorOrAdmin]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["level", "language", "is_free", "category__slug", "instructor__id"]
+    filterset_fields = [
+        "level", "language", "is_free", "category__slug", "category__domain__slug", "instructor__id"
+    ]
     search_fields = ["title", "subtitle", "description"]
     ordering_fields = ["created_at", "price", "rating_avg", "students_count", "total_duration_minutes"]
     lookup_field = "slug"
 
     def get_queryset(self):
-        qs = Course.objects.select_related("instructor", "category").prefetch_related(
-            "sections__lessons", "pdf_resources"
-        )
+        # Une liste catalogue n'a besoin ni des leçons ni des PDF internes. Les précharger sur
+        # chaque carte multipliait inutilement le volume SQL et Python et était la principale
+        # source de lenteur du catalogue. On ne charge ces relations que pour le détail.
+        qs = Course.objects.select_related("instructor", "category", "category__domain")
+        if self.action in ("retrieve",):
+            qs = qs.prefetch_related("sections__lessons", "pdf_resources")
         user = self.request.user
         if user.is_authenticated and user.role in ("instructor", "admin"):
             if self.action in ("my_courses",):
@@ -334,13 +355,15 @@ class PDFProductViewSet(viewsets.ModelViewSet):
     """Catalogue de PDF vendus SEULS (indépendamment des cours vidéo)."""
     permission_classes = [IsInstructorOrAdmin]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["level", "language", "is_free", "category__slug", "instructor__id"]
+    filterset_fields = [
+        "level", "language", "is_free", "category__slug", "category__domain__slug", "instructor__id"
+    ]
     search_fields = ["title", "description"]
     ordering_fields = ["created_at", "price", "rating_avg", "downloads_count"]
     lookup_field = "slug"
 
     def get_queryset(self):
-        qs = PDFProduct.objects.select_related("instructor", "category")
+        qs = PDFProduct.objects.select_related("instructor", "category", "category__domain")
         user = self.request.user
         if user.is_authenticated and user.role == "admin":
             return qs

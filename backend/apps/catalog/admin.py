@@ -1,5 +1,13 @@
 from django.contrib import admin
-from .models import Category, Course, Section, Lesson, PDFResource, PDFProduct
+from .models import Domain, Category, Course, Section, Lesson, PDFResource, PDFProduct
+
+
+@admin.register(Domain)
+class DomainAdmin(admin.ModelAdmin):
+    list_display = ("name", "slug", "order", "icon")
+    list_editable = ("order",)
+    search_fields = ("name", "description")
+    prepopulated_fields = {"slug": ("name",)}
 
 
 class LessonInline(admin.TabularInline):
@@ -14,7 +22,8 @@ class SectionInline(admin.TabularInline):
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ("name", "slug", "icon")
+    list_display = ("name", "domain", "slug", "icon")
+    list_filter = ("domain",)
     prepopulated_fields = {"slug": ("name",)}
 
 

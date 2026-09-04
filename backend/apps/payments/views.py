@@ -59,12 +59,20 @@ def _platform_finance_settings():
         )
 
 
-def _split_revenue(price):
-    commission_percent, _ = _platform_finance_settings()
-    pct = commission_percent / Decimal("100")
+def _split_revenue(price, commission_percent=None):
+    if commission_percent is None:
+        commission_percent, _ = _platform_finance_settings()
+    pct = Decimal(str(commission_percent)) / Decimal("100")
     price = Decimal(price)
     fee = (price * pct).quantize(MONEY, rounding=ROUND_HALF_UP)
     return fee, (price - fee).quantize(MONEY, rounding=ROUND_HALF_UP)
+
+
+def _mentor_commission_percent():
+    try:
+        return Decimal(str(PlatformSettings.load().mentor_commission_percent))
+    except Exception:
+        return _platform_finance_settings()[0]
 
 
 def _release_failed_order_reservations(order):
@@ -269,7 +277,7 @@ class CheckoutView(APIView):
             # couvrir les wallets Mobile Money dont la confirmation peut être différée.
             booking.expires_at = mentorship_payment_expiry
             booking.save(update_fields=["expires_at", "updated_at"])
-            fee, earning = _split_revenue(booking.price_snapshot)
+            fee, earning = _split_revenue(booking.price_snapshot, _mentor_commission_percent())
             OrderItem.objects.create(
                 order=order,
                 item_type=OrderItem.ItemType.MENTORING,

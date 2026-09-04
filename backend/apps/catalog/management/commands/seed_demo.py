@@ -4,7 +4,7 @@ from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from apps.catalog.models import Category, Course, Section, Lesson, PDFResource, PDFProduct
+from apps.catalog.models import Domain, Category, Course, Section, Lesson, PDFResource, PDFProduct
 from apps.formations.models import InteractiveFormation, FormationSession, MentorshipOffering
 from apps.reviews.models import Review
 from apps.enrollments.models import CourseEnrollment
@@ -75,13 +75,19 @@ class Command(BaseCommand):
             demo_employer.reviewed_at = timezone.now()
             demo_employer.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
 
-        self.stdout.write("Création des catégories...")
-        cat_web = self._category("Développement Web", "Code2")
-        cat_data = self._category("Data & IA", "BrainCircuit")
-        cat_design = self._category("Design & Infographie", "PenTool")
-        cat_gestion = self._category("Gestion de projet", "ClipboardList")
-        cat_reseaux = self._category("Réseaux & Systèmes", "Network")
-        cat_bureautique = self._category("Bureautique", "FileSpreadsheet")
+        self.stdout.write("Création des domaines et catégories...")
+        dom_tech = self._domain("Technologie & Numérique", "Code2", 10)
+        dom_data = self._domain("Data & IA", "BrainCircuit", 20)
+        dom_design = self._domain("Design & Création", "Palette", 30)
+        dom_business = self._domain("Business & Gestion", "BriefcaseBusiness", 40)
+        dom_productivity = self._domain("Bureautique & Productivité", "FileSpreadsheet", 50)
+
+        cat_web = self._category("Développement Web", "Code2", dom_tech)
+        cat_data = self._category("Data & IA", "BrainCircuit", dom_data)
+        cat_design = self._category("Design & Infographie", "PenTool", dom_design)
+        cat_gestion = self._category("Gestion de projet", "ClipboardList", dom_business)
+        cat_reseaux = self._category("Réseaux & Systèmes", "Network", dom_tech)
+        cat_bureautique = self._category("Bureautique", "FileSpreadsheet", dom_productivity)
 
         self.stdout.write("Création des cours (playlists complètes)...")
         c1 = self._course(
@@ -471,8 +477,30 @@ class Command(BaseCommand):
         user.save()
         return user
 
-    def _category(self, name, icon):
-        cat, _ = Category.objects.get_or_create(name=name, defaults={"icon": icon})
+    def _domain(self, name, icon, order):
+        domain, _ = Domain.objects.get_or_create(name=name, defaults={"icon": icon, "order": order})
+        changed = False
+        if domain.icon != icon:
+            domain.icon = icon
+            changed = True
+        if domain.order != order:
+            domain.order = order
+            changed = True
+        if changed:
+            domain.save(update_fields=["icon", "order"])
+        return domain
+
+    def _category(self, name, icon, domain=None):
+        cat, _ = Category.objects.get_or_create(name=name, defaults={"icon": icon, "domain": domain})
+        changed = False
+        if cat.icon != icon:
+            cat.icon = icon
+            changed = True
+        if domain and cat.domain_id != domain.id:
+            cat.domain = domain
+            changed = True
+        if changed:
+            cat.save(update_fields=["icon", "domain"])
         return cat
 
     def _course(self, instructor, category, title, subtitle, description, learn, requirements,

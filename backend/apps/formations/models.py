@@ -101,7 +101,8 @@ class InteractiveFormation(models.Model):
 
     @property
     def students_count(self):
-        return self.enrollments.count()
+        annotated = getattr(self, "_students_count", None)
+        return annotated if annotated is not None else self.enrollments.count()
 
     @property
     def seats_left(self):

@@ -5,14 +5,16 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import override_settings
+from django.test.utils import CaptureQueriesContext
 from pypdf import PdfWriter
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import User
 from apps.enrollments.models import CourseEnrollment
-from .models import Category, Course, Section, Lesson, PDFResource, PDFProduct
+from .models import Domain, Category, Course, Section, Lesson, PDFResource, PDFProduct
 
 
 def pdf_bytes(page_count=3):
@@ -440,3 +442,62 @@ class InstructorContentCreationTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         product = PDFProduct.objects.get(pk=response.data["id"])
         self.assertFalse(product.featured)
+
+
+class CatalogDomainFilterTests(APITestCase):
+    def setUp(self):
+        self.instructor = User.objects.create_user(
+            username="domaintrainer", email="domaintrainer@example.com", password="passpass123", role=User.Role.INSTRUCTOR
+        )
+        self.tech = Domain.objects.create(name="Technologie & Numérique", slug="technologie-numerique", order=10)
+        self.design = Domain.objects.create(name="Design & Création", slug="design-creation", order=20)
+        self.web = Category.objects.create(name="Développement Web Domain", domain=self.tech)
+        self.ui = Category.objects.create(name="Design UI Domain", domain=self.design)
+        self.course_web = Course.objects.create(
+            instructor=self.instructor, category=self.web, title="Cours Web Domain", description="Web", price=10, published=True
+        )
+        self.course_ui = Course.objects.create(
+            instructor=self.instructor, category=self.ui, title="Cours UI Domain", description="UI", price=10, published=True
+        )
+
+    def test_domains_endpoint_exposes_published_course_count(self):
+        response = self.client.get("/api/catalog/domains/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        rows = {row["slug"]: row for row in response.data}
+        self.assertEqual(rows["technologie-numerique"]["courses_count"], 1)
+        self.assertEqual(rows["design-creation"]["courses_count"], 1)
+
+    def test_course_catalog_can_filter_by_domain_slug(self):
+        response = self.client.get("/api/catalog/courses/?category__domain__slug=design-creation")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        results = response.data["results"]
+        self.assertEqual([row["slug"] for row in results], [self.course_ui.slug])
+        self.assertEqual(results[0]["category"]["domain"]["slug"], "design-creation")
+
+    def test_category_endpoint_includes_domain(self):
+        response = self.client.get("/api/catalog/categories/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        row = next(item for item in response.data if item["slug"] == self.web.slug)
+        self.assertEqual(row["domain"]["slug"], "technologie-numerique")
+
+    def test_course_list_query_count_does_not_grow_per_card(self):
+        with CaptureQueriesContext(connection) as initial:
+            first = self.client.get("/api/catalog/courses/")
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+
+        for index in range(8):
+            Course.objects.create(
+                instructor=self.instructor,
+                category=self.web,
+                title=f"Cours perf {index}",
+                description="Performance",
+                price=10,
+                published=True,
+            )
+
+        with CaptureQueriesContext(connection) as expanded:
+            second = self.client.get("/api/catalog/courses/")
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        # Le nombre de requêtes doit rester essentiellement constant : auparavant les compteurs
+        # catégorie/instructeur et les prefetch de leçons ajoutaient des requêtes par carte.
+        self.assertLessEqual(len(expanded), len(initial) + 1)

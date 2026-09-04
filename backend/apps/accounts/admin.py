@@ -19,6 +19,14 @@ class PlatformSettingsAdmin(admin.ModelAdmin):
         ("Identité", {"fields": ("site_name", "support_email")}),
         ("Accès", {"fields": ("registration_enabled", "instructor_applications_enabled")}),
         ("Finance", {"fields": ("platform_commission_percent", "minimum_payout_amount")}),
+        ("Tarifs & modèle économique", {"fields": (
+            "pricing_enabled",
+            "instructor_pro_monthly_eur", "instructor_pro_commission_percent",
+            "mentor_commission_percent",
+            "employer_free_active_jobs", "employer_single_post_eur",
+            "employer_pro_monthly_eur", "employer_pro_active_jobs",
+            "employer_business_monthly_eur", "employer_business_active_jobs",
+        )}),
         ("WhatsApp", {"fields": (
             "whatsapp_enabled", "whatsapp_template_language",
             "whatsapp_payment_template_name", "whatsapp_live_template_name",

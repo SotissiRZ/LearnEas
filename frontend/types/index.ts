@@ -1,10 +1,21 @@
+export interface Domain {
+  id: number;
+  name: string;
+  slug: string;
+  icon: string;
+  description: string;
+  order: number;
+  courses_count?: number;
+}
+
 export interface Category {
   id: number;
   name: string;
   slug: string;
   icon: string;
   description: string;
-  courses_count: number;
+  domain: Domain | null;
+  courses_count?: number;
 }
 
 export interface Instructor {
@@ -15,7 +26,7 @@ export interface Instructor {
   headline: string;
   domain: string;
   years_experience: number;
-  courses_count: number;
+  courses_count?: number;
 }
 
 export type Level = "beginner" | "intermediate" | "expert";

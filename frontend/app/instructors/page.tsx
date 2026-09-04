@@ -1,23 +1,16 @@
-import { api } from "@/lib/api";
+import { safePublicGet } from "@/lib/serverPublicApi";
 import { Course, Paginated } from "@/types";
 import { Users, BookOpen, BriefcaseBusiness, Sparkles } from "lucide-react";
 import ContactInstructorButton from "@/components/chat/ContactInstructorButton";
 
-async function safeGet<T>(path: string, fallback: T): Promise<T> {
-  try {
-    return await api.get<T>(path);
-  } catch {
-    return fallback;
-  }
-}
-
 export default async function InstructorsPage() {
-  const data = await safeGet<Paginated<Course>>("/catalog/courses/?ordering=-students_count", {
+  const result = await safePublicGet<Paginated<Course>>("/catalog/courses/?ordering=-students_count", {
     count: 0,
     next: null,
     previous: null,
     results: [],
-  });
+  }, 60);
+  const data = result.data;
 
   const instructorsMap = new Map<
     number,

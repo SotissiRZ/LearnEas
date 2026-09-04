@@ -4,7 +4,39 @@ from django.utils.text import slugify
 from django.core.validators import MinValueValidator, MaxValueValidator
 
 
+class Domain(models.Model):
+    """Grand domaine métier utilisé pour regrouper plusieurs catégories du catalogue."""
+
+    name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(max_length=120, unique=True, blank=True)
+    icon = models.CharField(
+        max_length=50, default="Layers3",
+        help_text="Nom d'icône lucide-react (ex: Code2, BrainCircuit, Palette, BriefcaseBusiness)",
+    )
+    description = models.CharField(max_length=255, blank=True)
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "name"]
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
+
 class Category(models.Model):
+    domain = models.ForeignKey(
+        Domain,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="categories",
+        help_text="Domaine principal utilisé pour les filtres du catalogue.",
+    )
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=120, unique=True, blank=True)
     icon = models.CharField(

@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { CalendarClock, Clock3, GraduationCap } from "lucide-react";
-import { safeGet } from "@/lib/api";
+import { safePublicGet } from "@/lib/serverPublicApi";
 import { MentorshipOffering, Paginated } from "@/types";
 import CurrencyPrice from "@/components/ui/CurrencyPrice";
 import ApiErrorBanner from "@/components/ui/ApiErrorBanner";
 
 export default async function MentorshipPage() {
-  const result = await safeGet<Paginated<MentorshipOffering> | MentorshipOffering[]>("/mentorship/offerings/?ordering=price", []);
+  const result = await safePublicGet<Paginated<MentorshipOffering> | MentorshipOffering[]>("/mentorship/offerings/?ordering=price", [], 30);
   const offers = Array.isArray(result.data) ? result.data : result.data.results;
   return (
     <div className="container-app py-10">

@@ -1,11 +1,11 @@
 from django.conf import settings
 from django.db import transaction
 from rest_framework import serializers
-from apps.accounts.serializers import UserPublicSerializer
+from apps.accounts.serializers import UserPublicCompactSerializer, UserPublicSerializer
 from apps.common.fields import RelativeImageField, RelativeFileField, ProtectedFileField
 from apps.common.media_metadata import extract_pdf_page_count, validate_upload_limits
 from apps.common.hls_media import sign_hls_path
-from .models import Category, Course, Section, Lesson, PDFResource, PDFProduct
+from .models import Domain, Category, Course, Section, Lesson, PDFResource, PDFProduct
 
 
 def _is_admin(user) -> bool:
@@ -30,15 +30,47 @@ def _validate_owner(request, owner_id: int, field_name: str):
         raise serializers.ValidationError({field_name: "Vous ne pouvez modifier que votre propre contenu."})
 
 
-class CategorySerializer(serializers.ModelSerializer):
+class DomainCompactSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Domain
+        fields = ["id", "name", "slug", "icon", "description", "order"]
+
+
+class DomainSerializer(DomainCompactSerializer):
     courses_count = serializers.SerializerMethodField()
+
+    class Meta(DomainCompactSerializer.Meta):
+        fields = DomainCompactSerializer.Meta.fields + ["courses_count"]
+
+    def get_courses_count(self, obj):
+        annotated = getattr(obj, "published_courses_count", None)
+        if annotated is not None:
+            return annotated
+        return Course.objects.filter(published=True, category__domain=obj).count()
+
+
+class CategoryCompactSerializer(serializers.ModelSerializer):
+    domain = DomainCompactSerializer(read_only=True)
 
     class Meta:
         model = Category
-        fields = ["id", "name", "slug", "icon", "description", "courses_count"]
+        fields = ["id", "name", "slug", "icon", "description", "domain"]
+
+
+class CategorySerializer(serializers.ModelSerializer):
+    courses_count = serializers.SerializerMethodField()
+    domain = DomainCompactSerializer(read_only=True)
+    domain_id = serializers.PrimaryKeyRelatedField(
+        source="domain", queryset=Domain.objects.all(), write_only=True, required=False, allow_null=True
+    )
+
+    class Meta:
+        model = Category
+        fields = ["id", "name", "slug", "icon", "description", "domain", "domain_id", "courses_count"]
 
     def get_courses_count(self, obj):
-        return obj.courses.filter(published=True).count()
+        annotated = getattr(obj, "published_courses_count", None)
+        return annotated if annotated is not None else obj.courses.filter(published=True).count()
 
 
 class LessonSerializer(serializers.ModelSerializer):
@@ -126,8 +158,8 @@ class PDFResourceSerializer(serializers.ModelSerializer):
 
 class CourseListSerializer(serializers.ModelSerializer):
     """Vue catalogue / cartes cours (style Udemy)."""
-    instructor = UserPublicSerializer(read_only=True)
-    category = CategorySerializer(read_only=True)
+    instructor = UserPublicCompactSerializer(read_only=True)
+    category = CategoryCompactSerializer(read_only=True)
     effective_price = serializers.SerializerMethodField()
     thumbnail = RelativeImageField(read_only=True)
 
@@ -148,6 +180,7 @@ class CourseListSerializer(serializers.ModelSerializer):
 
 
 class CourseDetailSerializer(CourseListSerializer):
+    instructor = UserPublicSerializer(read_only=True)
     sections = SectionSerializer(many=True, read_only=True)
     pdf_resources = PDFResourceSerializer(many=True, read_only=True)
     is_enrolled = serializers.SerializerMethodField()
@@ -375,8 +408,8 @@ class PDFResourceWriteSerializer(serializers.ModelSerializer):
 
 
 class PDFProductListSerializer(serializers.ModelSerializer):
-    instructor = UserPublicSerializer(read_only=True)
-    category = CategorySerializer(read_only=True)
+    instructor = UserPublicCompactSerializer(read_only=True)
+    category = CategoryCompactSerializer(read_only=True)
     cover_image = RelativeImageField(read_only=True)
 
     class Meta:

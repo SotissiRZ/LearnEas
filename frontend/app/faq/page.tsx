@@ -1,14 +1,11 @@
-import { api } from "@/lib/api";
+import { safePublicGet } from "@/lib/serverPublicApi";
 import { HelpCircle } from "lucide-react";
 
 interface FAQItem { id: number; question: string; answer: string; }
 
-async function safeGet<T>(path: string, fallback: T): Promise<T> {
-  try { return await api.get<T>(path); } catch { return fallback; }
-}
-
 export default async function FaqPage() {
-  const data = await safeGet<{ results: FAQItem[] } | FAQItem[]>("/faq/", { results: [] } as any);
+  const result = await safePublicGet<{ results: FAQItem[] } | FAQItem[]>("/faq/", { results: [] } as any, 300);
+  const data = result.data;
   const items: FAQItem[] = (data as any).results || (data as any);
 
   return (

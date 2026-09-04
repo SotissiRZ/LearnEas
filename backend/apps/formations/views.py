@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from django.http import FileResponse, HttpResponse
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Prefetch, Q
 from django.utils import timezone
 from rest_framework import viewsets, permissions, filters, status
 from rest_framework.decorators import action
@@ -92,15 +92,19 @@ def _close_stale_attendances(session, max_idle_seconds=45):
 class InteractiveFormationViewSet(viewsets.ModelViewSet):
     permission_classes = [IsInstructorOrAdmin]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["level", "language", "category__slug", "status", "instructor__id"]
+    filterset_fields = [
+        "level", "language", "category__slug", "category__domain__slug", "status", "instructor__id"
+    ]
     search_fields = ["title", "description"]
     ordering_fields = ["created_at", "price", "start_date"]
     lookup_field = "slug"
 
     def get_queryset(self):
         qs = InteractiveFormation.objects.select_related(
-            "instructor", "co_instructor", "category"
-        ).prefetch_related("sessions").filter(kind=FormationKind.COHORT)
+            "instructor", "co_instructor", "category", "category__domain"
+        ).annotate(_students_count=Count("enrollments", distinct=True)).filter(kind=FormationKind.COHORT)
+        if self.action in ("retrieve", "my_formations"):
+            qs = qs.prefetch_related("sessions")
         user = self.request.user
         if self.action == "my_formations" and user.is_authenticated:
             return qs.filter(Q(instructor=user) | Q(co_instructor=user)).distinct()
@@ -786,7 +790,12 @@ class MentorshipOfferingViewSet(viewsets.ModelViewSet):
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        qs = MentorshipOffering.objects.select_related("instructor", "room_formation").prefetch_related("slots__bookings")
+        mentorship_slots = MentorshipSlot.objects.select_related("offering").prefetch_related(
+            "bookings__order_items__order"
+        )
+        qs = MentorshipOffering.objects.select_related("instructor", "room_formation").prefetch_related(
+            Prefetch("slots", queryset=mentorship_slots)
+        )
         user = self.request.user
         if self.action == "mine" and user.is_authenticated:
             return qs.filter(instructor=user)

@@ -17,7 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="flex min-h-screen flex-col font-sans">
         <AppHydrator />
         <Navbar />
-        <div className="h-[72px] shrink-0" aria-hidden="true" />
+        <div className="h-20 shrink-0" aria-hidden="true" />
         <main className="flex-1">{children}</main>
         <Footer />
       </body>

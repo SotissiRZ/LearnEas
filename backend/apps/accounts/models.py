@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
@@ -45,6 +46,19 @@ class PlatformSettings(models.Model):
     platform_commission_percent = models.PositiveSmallIntegerField(default=15)
     minimum_payout_amount = models.DecimalField(max_digits=10, decimal_places=2, default=10)
 
+    # Modèle économique / tarifs publics. Les montants sont stockés en EUR, devise
+    # comptable de référence, puis convertis côté frontend via la devise choisie.
+    pricing_enabled = models.BooleanField(default=True)
+    instructor_pro_monthly_eur = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("15.09"))
+    instructor_pro_commission_percent = models.PositiveSmallIntegerField(default=8)
+    mentor_commission_percent = models.PositiveSmallIntegerField(default=15)
+    employer_free_active_jobs = models.PositiveSmallIntegerField(default=1)
+    employer_single_post_eur = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("11.43"))
+    employer_pro_monthly_eur = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("30.34"))
+    employer_pro_active_jobs = models.PositiveSmallIntegerField(default=5)
+    employer_business_monthly_eur = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("76.07"))
+    employer_business_active_jobs = models.PositiveSmallIntegerField(default=20)
+
     # Identité juridique / conformité
     legal_company_name = models.CharField(max_length=180, blank=True, default="KalanPro")
     legal_address = models.TextField(blank=True)
@@ -90,6 +104,11 @@ class PlatformSettings(models.Model):
     def save(self, *args, **kwargs):
         self.pk = 1
         self.platform_commission_percent = min(max(int(self.platform_commission_percent), 0), 100)
+        self.instructor_pro_commission_percent = min(max(int(self.instructor_pro_commission_percent), 0), 100)
+        self.mentor_commission_percent = min(max(int(self.mentor_commission_percent), 0), 100)
+        self.employer_free_active_jobs = max(int(self.employer_free_active_jobs), 0)
+        self.employer_pro_active_jobs = max(int(self.employer_pro_active_jobs), 1)
+        self.employer_business_active_jobs = max(int(self.employer_business_active_jobs), 1)
         super().save(*args, **kwargs)
 
     @classmethod

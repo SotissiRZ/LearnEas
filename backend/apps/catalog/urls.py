@@ -1,10 +1,11 @@
 from rest_framework.routers import DefaultRouter
 from .views import (
-    CategoryViewSet, CourseViewSet, SectionViewSet, LessonViewSet,
+    DomainViewSet, CategoryViewSet, CourseViewSet, SectionViewSet, LessonViewSet,
     PDFResourceViewSet, PDFProductViewSet,
 )
 
 router = DefaultRouter()
+router.register("domains", DomainViewSet, basename="domain")
 router.register("categories", CategoryViewSet, basename="category")
 router.register("courses", CourseViewSet, basename="course")
 router.register("sections", SectionViewSet, basename="section")

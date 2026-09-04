@@ -82,7 +82,9 @@ services:
   frontend:
     image: node:20-slim
     working_dir: /app
-    command: sh -c "npm install --no-audit --no-fund && npm run dev"
+    # Le volume node_modules est persistant : inutile de refaire `npm install` à chaque restart.
+    # Turbopack (script npm dev) réduit aussi fortement la compilation à froid des routes en local.
+    command: sh -c "test -x node_modules/.bin/next || npm ci --no-audit --no-fund; npm run dev"
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000/api

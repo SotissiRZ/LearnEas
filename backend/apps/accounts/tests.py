@@ -141,6 +141,20 @@ class AdminBackofficeRegressionTests(APITestCase):
         self.assertEqual(self.student.role, User.Role.INSTRUCTOR)
         self.assertFalse(self.student.is_active)
 
+    def test_public_platform_settings_expose_pricing_without_authentication(self):
+        from .models import PlatformSettings
+        config = PlatformSettings.load()
+        config.instructor_pro_monthly_eur = "15.09"
+        config.employer_pro_active_jobs = 5
+        config.save()
+        self.client.force_authenticate(user=None)
+        response = self.client.get("/api/auth/platform-settings/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data["pricing_enabled"])
+        self.assertEqual(response.data["platform_commission_percent"], config.platform_commission_percent)
+        self.assertEqual(response.data["employer_pro_active_jobs"], 5)
+        self.assertIn("instructor_pro_monthly_eur", response.data)
+
     def test_platform_settings_disable_registration(self):
         from .models import PlatformSettings
         config = PlatformSettings.load()

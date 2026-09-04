@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { Category } from "@/types";
+import { Category, Domain } from "@/types";
 
 const LEVELS = [
   { value: "", label: "Tous niveaux" },
@@ -19,25 +19,84 @@ const SORTS = [
 ];
 
 export default function CourseFilters({
+  domains,
   categories,
   current,
+  showPrice = true,
+  showSort = true,
+  showCounts = true,
 }: {
+  domains: Domain[];
   categories: Category[];
   current: Record<string, string | undefined>;
+  showPrice?: boolean;
+  showSort?: boolean;
+  showCounts?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  function navigate(params: URLSearchParams) {
+    params.delete("page");
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
+
   function update(key: string, value: string) {
     const params = new URLSearchParams(searchParams.toString());
     if (value) params.set(key, value);
     else params.delete(key);
-    router.push(`${pathname}?${params.toString()}`);
+    navigate(params);
   }
+
+  function updateDomain(value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) params.set("domain", value);
+    else params.delete("domain");
+    // Une catégorie appartient à un seul domaine : on évite de conserver une combinaison
+    // incompatible lorsque l'utilisateur change de domaine.
+    params.delete("category");
+    navigate(params);
+  }
+
+  function clearAll() {
+    const params = new URLSearchParams(searchParams.toString());
+    ["domain", "category", "level", "is_free", "ordering", "page"].forEach((key) => params.delete(key));
+    navigate(params);
+  }
+
+  const visibleCategories = current.domain
+    ? categories.filter((category) => category.domain?.slug === current.domain)
+    : categories;
+  const hasFilters = Boolean(current.domain || current.category || current.level || current.is_free || current.ordering);
 
   return (
     <div className="flex flex-col gap-6 text-sm">
+      <div>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="font-semibold text-gray-700">Domaine</p>
+          {hasFilters && <button type="button" onClick={clearAll} className="text-[11px] font-bold text-brand-600 hover:text-brand-700">Réinitialiser</button>}
+        </div>
+        <div className="flex flex-col gap-1">
+          <button
+            onClick={() => updateDomain("")}
+            className={`rounded-lg px-2 py-1.5 text-left ${!current.domain ? "bg-brand-50 font-semibold text-brand-700" : "hover:bg-gray-50"}`}
+          >
+            Tous les domaines
+          </button>
+          {domains.map((domain) => (
+            <button
+              key={domain.id}
+              onClick={() => updateDomain(domain.slug)}
+              className={`rounded-lg px-2 py-1.5 text-left ${current.domain === domain.slug ? "bg-brand-50 font-semibold text-brand-700" : "hover:bg-gray-50"}`}
+            >
+              {domain.name}{showCounts && typeof domain.courses_count === "number" && <span className="text-gray-400"> ({domain.courses_count})</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div>
         <p className="mb-2 font-semibold text-gray-700">Catégorie</p>
         <div className="flex flex-col gap-1">
@@ -47,13 +106,13 @@ export default function CourseFilters({
           >
             Toutes
           </button>
-          {categories.map((c) => (
+          {visibleCategories.map((category) => (
             <button
-              key={c.id}
-              onClick={() => update("category", c.slug)}
-              className={`rounded-lg px-2 py-1.5 text-left ${current.category === c.slug ? "bg-brand-50 font-semibold text-brand-700" : "hover:bg-gray-50"}`}
+              key={category.id}
+              onClick={() => update("category", category.slug)}
+              className={`rounded-lg px-2 py-1.5 text-left ${current.category === category.slug ? "bg-brand-50 font-semibold text-brand-700" : "hover:bg-gray-50"}`}
             >
-              {c.name} <span className="text-gray-400">({c.courses_count})</span>
+              {category.name}{showCounts && typeof category.courses_count === "number" && <span className="text-gray-400"> ({category.courses_count})</span>}
             </button>
           ))}
         </div>
@@ -66,32 +125,36 @@ export default function CourseFilters({
           onChange={(e) => update("level", e.target.value)}
           className="w-full rounded-lg border border-gray-200 px-2 py-2"
         >
-          {LEVELS.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+          {LEVELS.map((level) => <option key={level.value} value={level.value}>{level.label}</option>)}
         </select>
       </div>
 
-      <div>
-        <p className="mb-2 font-semibold text-gray-700">Prix</p>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={current.is_free === "true"}
-            onChange={(e) => update("is_free", e.target.checked ? "true" : "")}
-          />
-          Gratuit uniquement
-        </label>
-      </div>
+      {showPrice && (
+        <div>
+          <p className="mb-2 font-semibold text-gray-700">Prix</p>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={current.is_free === "true"}
+              onChange={(e) => update("is_free", e.target.checked ? "true" : "")}
+            />
+            Gratuit uniquement
+          </label>
+        </div>
+      )}
 
-      <div>
-        <p className="mb-2 font-semibold text-gray-700">Trier par</p>
-        <select
-          value={current.ordering || "-created_at"}
-          onChange={(e) => update("ordering", e.target.value)}
-          className="w-full rounded-lg border border-gray-200 px-2 py-2"
-        >
-          {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
-      </div>
+      {showSort && (
+        <div>
+          <p className="mb-2 font-semibold text-gray-700">Trier par</p>
+          <select
+            value={current.ordering || "-created_at"}
+            onChange={(e) => update("ordering", e.target.value)}
+            className="w-full rounded-lg border border-gray-200 px-2 py-2"
+          >
+            {SORTS.map((sort) => <option key={sort.value} value={sort.value}>{sort.label}</option>)}
+          </select>
+        </div>
+      )}
     </div>
   );
 }

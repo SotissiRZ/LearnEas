@@ -1,6 +1,6 @@
 from rest_framework import serializers
-from apps.accounts.serializers import UserPublicSerializer
-from apps.catalog.serializers import CategorySerializer
+from apps.accounts.serializers import UserPublicCompactSerializer
+from apps.catalog.serializers import CategoryCompactSerializer
 from apps.common.fields import RelativeImageField
 from .models import (
     InteractiveFormation, FormationSession, FormationEnrollment, FormationAttendance, FormationSessionInvite,
@@ -87,9 +87,9 @@ class FormationSessionWriteSerializer(serializers.ModelSerializer):
 
 
 class InteractiveFormationListSerializer(serializers.ModelSerializer):
-    instructor = UserPublicSerializer(read_only=True)
-    co_instructor = UserPublicSerializer(read_only=True)
-    category = CategorySerializer(read_only=True)
+    instructor = UserPublicCompactSerializer(read_only=True)
+    co_instructor = UserPublicCompactSerializer(read_only=True)
+    category = CategoryCompactSerializer(read_only=True)
     students_count = serializers.ReadOnlyField()
     seats_left = serializers.ReadOnlyField()
     is_full = serializers.ReadOnlyField()
@@ -230,18 +230,34 @@ class MentorshipSlotSerializer(serializers.ModelSerializer):
         from datetime import timedelta
 
         now = timezone.now()
-        confirmed_exists = obj.bookings.filter(status=MentorshipBooking.Status.CONFIRMED).exists()
-        pending_exists = obj.bookings.filter(status=MentorshipBooking.Status.PENDING_PAYMENT).filter(
-            Q(expires_at__isnull=True)
-            | Q(expires_at__gt=now)
-            | Q(order_items__order__status__in=["pending", "paid"])
-        ).exists()
+        prefetched = getattr(obj, "_prefetched_objects_cache", {}).get("bookings")
+        if prefetched is not None:
+            bookings = list(prefetched)
+            confirmed_exists = any(booking.status == MentorshipBooking.Status.CONFIRMED for booking in bookings)
+            pending_exists = False
+            for booking in bookings:
+                if booking.status != MentorshipBooking.Status.PENDING_PAYMENT:
+                    continue
+                order_alive = any(
+                    item.order.status in ("pending", "paid")
+                    for item in booking.order_items.all()
+                )
+                if booking.expires_at is None or booking.expires_at > now or order_alive:
+                    pending_exists = True
+                    break
+        else:
+            confirmed_exists = obj.bookings.filter(status=MentorshipBooking.Status.CONFIRMED).exists()
+            pending_exists = obj.bookings.filter(status=MentorshipBooking.Status.PENDING_PAYMENT).filter(
+                Q(expires_at__isnull=True)
+                | Q(expires_at__gt=now)
+                | Q(order_items__order__status__in=["pending", "paid"])
+            ).exists()
         notice = timedelta(hours=obj.offering.booking_notice_hours)
         return bool(obj.is_active and obj.starts_at > now + notice and not confirmed_exists and not pending_exists)
 
 
 class MentorshipOfferingListSerializer(serializers.ModelSerializer):
-    instructor = UserPublicSerializer(read_only=True)
+    instructor = UserPublicCompactSerializer(read_only=True)
     next_slots = serializers.SerializerMethodField()
 
     class Meta:
@@ -255,13 +271,19 @@ class MentorshipOfferingListSerializer(serializers.ModelSerializer):
     def get_next_slots(self, obj):
         from django.utils import timezone
         view = self.context.get("view")
-        qs = obj.slots.filter(starts_at__gt=timezone.now()).order_by("starts_at")
+        now = timezone.now()
+        prefetched = getattr(obj, "_prefetched_objects_cache", {}).get("slots")
         # L'espace mentor voit aussi ses créneaux désactivés / déjà réservés pour pouvoir
         # gérer leur état sans perdre l'historique. Le catalogue public reste limité aux actifs.
-        if getattr(view, "action", "") == "mine":
-            slots = qs[:50]
+        if prefetched is not None:
+            slots = sorted((slot for slot in prefetched if slot.starts_at > now), key=lambda slot: slot.starts_at)
+            if getattr(view, "action", "") == "mine":
+                slots = slots[:50]
+            else:
+                slots = [slot for slot in slots if slot.is_active][:12]
         else:
-            slots = qs.filter(is_active=True)[:12]
+            qs = obj.slots.filter(starts_at__gt=now).order_by("starts_at")
+            slots = qs[:50] if getattr(view, "action", "") == "mine" else qs.filter(is_active=True)[:12]
         return MentorshipSlotSerializer(slots, many=True, context=self.context).data
 
 

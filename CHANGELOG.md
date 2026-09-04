@@ -1,3 +1,33 @@
+# v56 — Modèle économique & page Tarifs
+
+- Nouvelle page publique `/pricing` avec une grille distincte pour apprenants, instructeurs, mentors et entreprises/recruteurs.
+- Ajout de `Tarifs` dans la navbar desktop/mobile et dans le footer.
+- Modèle de lancement : apprenant pay-as-you-go sans abonnement obligatoire, commission marketplace pour créateurs/mentors et forfaits B2B recrutement.
+- Paramètres commerciaux administrables depuis le back-office : Pro instructeur, commission Pro, commission mentor, annonce recruteur à l'unité, Pro/Business et quotas d'offres.
+- Les montants commerciaux restent stockés en EUR et sont convertis par le sélecteur de devise existant (XOF/XAF compris lorsqu'ils sont actifs).
+- La commission mentor devient indépendante et est réellement utilisée lors du split de revenus au checkout.
+- Les offres Pro/Business sont explicitement présentées comme offres commerciales sur demande tant que la facturation récurrente automatique n'est pas branchée.
+- Migration : `accounts.0008_pricing_model`.
+- Documentation : `docs/PRICING_BUSINESS_MODEL.md`.
+
+# v55 — Menus navbar auto-repliables
+
+- Les menus déroulants desktop sont désormais contrôlés par état React.
+- Ouverture au survol et au focus clavier.
+- Fermeture automatique lorsque le curseur quitte la zone complète du menu.
+- Fermeture immédiate lorsqu’un lien du panneau est sélectionné.
+- Fermeture au clic extérieur et avec la touche Échap.
+- Suppression du comportement `focus-within` qui pouvait laisser un menu affiché après navigation.
+
+# v54 — Navbar élargie et hero visuel corrigé
+
+- Navbar desktop portée à un conteneur dédié jusqu’à 1680 px afin de conserver les libellés, la recherche, la devise, le panier et les actions d’authentification sur une seule ligne.
+- Les libellés desktop sont `whitespace-nowrap`; le menu mobile prend le relais avant que la navigation ne devienne trop dense.
+- Hauteur de navigation portée à 80 px et espace de layout synchronisé.
+- Hero de l’accueil restructuré en deux vraies colonnes : contenu à gauche, image KalanPro visible à droite.
+- Nouvelle image hero légère (`hero-kalanpro.webp`, ~39 Ko) avec affichage responsive y compris sur mobile.
+- Suppression de l’ancien fond hero recadré qui rendait l’illustration presque invisible.
+
 # v52 — KalanPro branding & interface
 
 - Renommage public de la plateforme en KalanPro.
@@ -832,3 +862,38 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Ajout de tests de régression sur les en-têtes de streaming et le refus de navigation directe.
 
 > Limite technique : un navigateur doit recevoir les octets d’une vidéo pour la lire. Sans DRM (Widevine/FairPlay/PlayReady), aucun site web ne peut empêcher absolument un utilisateur technique de capturer le flux réseau ou l’écran. v36 supprime et durcit les mécanismes de téléchargement ordinaires sans casser la lecture.
+
+---
+
+# v53 — Navigation par survol, domaines et performance catalogue
+
+## Navigation
+
+- La barre de navigation desktop utilise désormais des menus déroulants au **survol** et au focus clavier, dans l'esprit des grandes consoles SaaS.
+- **Formations** ouvre un méga-menu vers Cours vidéo, PDF & Guides, Cohortes live et les principaux domaines.
+- **Mentorat** et **Opportunités** possèdent également leurs sous-menus dédiés.
+- Sur mobile, les mêmes informations restent accessibles via des groupes `<details>` repliables.
+
+## Domaines et filtres
+
+- Ajout d'une taxonomie métier `Domain` distincte des catégories : Technologie & Numérique, Data & IA, Design & Création, Business & Gestion, Bureautique & Productivité, etc.
+- Nouvelle API publique `/api/catalog/domains/` et nouvelle migration `catalog.0006_domain_category_domain`.
+- Les Cours, PDF et Cohortes peuvent être filtrés par **domaine**, puis par catégorie.
+- Les filtres sont disponibles sur desktop **et** mobile.
+- L'administration KalanPro permet maintenant de créer, ordonner, modifier et supprimer les domaines, puis d'affecter chaque catégorie à un domaine.
+
+## Performance
+
+- Suppression de plusieurs N+1 sur les listes Cours, PDF, Cohortes et Mentorat.
+- Les cartes catalogue utilisent des serializers compacts et ne calculent plus inutilement le nombre de cours de chaque instructeur.
+- Les listes de cours ne préchargent plus sections/leçons/PDF quand ces données ne sont pas affichées.
+- Les cohortes utilisent un compteur d'inscrits annoté en SQL plutôt que plusieurs `COUNT()` par carte.
+- Les créneaux de mentorat et leurs réservations sont préchargés en une fois.
+- Ajout d'un cache serveur court pour les données publiques de catalogue malgré la CSP dynamique : listes 30–60 s, taxonomies 5 min.
+- L'image hero passe d'environ **1,3 Mo à ~44 Ko WebP**.
+- En développement Docker, `node_modules` n'est plus réinstallé à chaque redémarrage et Next.js utilise **Turbopack**.
+
+## Tests
+
+- Ajout de tests backend pour l'API Domain, le filtrage par domaine et la non-régression du nombre de requêtes SQL sur la liste de cours.
+- Audit mobile et tests statiques de sécurité frontend conservés.

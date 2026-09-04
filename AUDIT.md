@@ -224,3 +224,17 @@ Ces points ne sont pas des bugs corrigibles uniquement dans le dépôt :
 - Préfixes de migrations : aucun doublon détecté.
 - Invariants vérifiés : `apps.projects` installé, routes `/api/projects/` présentes, migration `projects.0001_initial` présente, blocage Nginx des artefacts de remise privés présent.
 - Django n'étant pas installé dans l'environnement d'audit, `manage.py check`, les tests Django et le build Next.js complet doivent être exécutés dans les conteneurs du projet avant mise en production.
+
+
+## Validation v53 — Navigation, domaines et performance
+
+- Navigation desktop : menus hover/focus pour Formations, Mentorat et Opportunités ; version mobile repliable.
+- Taxonomie Domain : migration `catalog.0006_domain_category_domain`, endpoint public et filtres Cours/PDF/Cohortes.
+- Performance backend : suppression des N+1 principaux sur catalogue, cohortes et mentorat ; serializers de liste compacts et annotations SQL.
+- Performance frontend : cache serveur court des données publiques, image hero WebP d’environ 44 Ko, Turbopack en développement et réutilisation du volume `node_modules`.
+- Compilation syntaxique Python : OK.
+- Parsing/transpilation des fichiers TS/TSX modifiés : OK.
+- YAML/JSON : OK.
+- Audit mobile : OK, aucune alerte bloquante.
+- Tests statiques de sécurité frontend : 4/4 OK.
+- `manage.py test`, build Next.js complet et Playwright restent des release gates à exécuter dans Docker/CI.

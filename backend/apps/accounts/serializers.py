@@ -8,21 +8,28 @@ from .models import PlatformSettings, InstructorApplication
 User = get_user_model()
 
 
-class UserPublicSerializer(serializers.ModelSerializer):
-    """Utilisé pour afficher un instructeur sur une fiche cours."""
+class UserPublicCompactSerializer(serializers.ModelSerializer):
+    """Profil public léger pour les cartes catalogue (aucune requête agrégée)."""
     full_name = serializers.SerializerMethodField()
-    courses_count = serializers.SerializerMethodField()
     avatar = RelativeImageField(read_only=True)
 
     class Meta:
         model = User
         fields = [
             "id", "full_name", "avatar", "bio", "headline",
-            "domain", "years_experience", "courses_count",
+            "domain", "years_experience",
         ]
 
     def get_full_name(self, obj):
         return obj.get_full_name() or obj.username
+
+
+class UserPublicSerializer(UserPublicCompactSerializer):
+    """Profil public détaillé utilisé sur une fiche où le compteur est utile."""
+    courses_count = serializers.SerializerMethodField()
+
+    class Meta(UserPublicCompactSerializer.Meta):
+        fields = UserPublicCompactSerializer.Meta.fields + ["courses_count"]
 
     def get_courses_count(self, obj):
         return obj.courses.filter(published=True).count() if hasattr(obj, "courses") else 0
@@ -179,6 +186,11 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "site_name", "support_email", "registration_enabled",
             "instructor_applications_enabled", "platform_commission_percent",
             "minimum_payout_amount",
+            "pricing_enabled", "instructor_pro_monthly_eur",
+            "instructor_pro_commission_percent", "mentor_commission_percent",
+            "employer_free_active_jobs", "employer_single_post_eur",
+            "employer_pro_monthly_eur", "employer_pro_active_jobs",
+            "employer_business_monthly_eur", "employer_business_active_jobs",
             "legal_company_name", "legal_address", "legal_country",
             "legal_registration_number", "legal_tax_number", "privacy_email",
             "terms_updated_at", "privacy_updated_at", "refund_policy_days",
@@ -209,6 +221,26 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
         if value < 0 or value > 100:
             raise serializers.ValidationError("La commission doit être comprise entre 0 et 100 %.")
         return value
+
+    def validate_instructor_pro_commission_percent(self, value):
+        if value < 0 or value > 100:
+            raise serializers.ValidationError("La commission Pro doit être comprise entre 0 et 100 %.")
+        return value
+
+    def validate_mentor_commission_percent(self, value):
+        if value < 0 or value > 100:
+            raise serializers.ValidationError("La commission mentor doit être comprise entre 0 et 100 %.")
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        for field in (
+            "instructor_pro_monthly_eur", "employer_single_post_eur",
+            "employer_pro_monthly_eur", "employer_business_monthly_eur",
+        ):
+            if field in attrs and attrs[field] < 0:
+                raise serializers.ValidationError({field: "Le montant ne peut pas être négatif."})
+        return attrs
 
     def validate_certificate_default_threshold_percent(self, value):
         if value < 0 or value > 100:

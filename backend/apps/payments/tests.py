@@ -362,6 +362,27 @@ class MentorshipPaymentRegressionTests(APITestCase):
         self.assertEqual(item.platform_fee_amount, Decimal("3.00"))
         self.assertEqual(item.instructor_earning_amount, Decimal("17.00"))
 
+    @override_settings(TEST_PAYMENTS_ENABLED=True)
+    def test_mentorship_uses_dedicated_configurable_commission(self):
+        from apps.accounts.models import PlatformSettings
+
+        config = PlatformSettings.load()
+        config.mentor_commission_percent = 10
+        config.save()
+        response = self.client.post(
+            "/api/payments/checkout/",
+            {
+                "course_ids": [], "pdf_ids": [], "formation_ids": [],
+                "mentorship_booking_ids": [self.booking.id],
+                "provider": "stripe", "currency": "EUR", "test_payment": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        item = OrderItem.objects.get(order_id=response.data["order"]["id"], mentorship_booking=self.booking)
+        self.assertEqual(item.platform_fee_amount, Decimal("2.00"))
+        self.assertEqual(item.instructor_earning_amount, Decimal("18.00"))
+
     @override_settings(STRIPE_SECRET_KEY="sk_test_fake")
     @patch("apps.payments.views.create_checkout")
     def test_external_checkout_extends_slot_hold_to_two_hours(self, create_checkout_mock):
