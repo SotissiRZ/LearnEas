@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Bot, BriefcaseBusiness, ChevronLeft, ClipboardList, FilePenLine, FileQuestion, GraduationCap, Layers3, Loader2, ScrollText, Users } from "lucide-react";
+import { Bot, BriefcaseBusiness, ChevronLeft, ClipboardList, Download, FilePenLine, FileQuestion, GraduationCap, Layers3, Loader2, ScrollText, Users } from "lucide-react";
 import GuardScreen from "@/components/ui/GuardScreen";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, apiDownload } from "@/lib/api";
 
 type DraftKind = "quiz" | "course_outline" | "mentor_plan" | "interview_rubric" | "cv_improvement" | "cover_letter" | "learning_gap_plan" | "interview_prep";
 type AIDraft = {
@@ -95,6 +95,7 @@ function DraftCard({ row }: { row: AIDraft }) {
     {row.kind === "cv_improvement" && typeof row.payload.summary === "string" && <details className="mt-3 rounded-xl border border-slate-100 bg-white p-3"><summary className="cursor-pointer text-xs font-bold text-brand-600">Voir les améliorations CV</summary><p className="mt-3 whitespace-pre-wrap text-xs leading-5 text-slate-600">{row.payload.summary}</p>{Array.isArray(row.payload.recommendations) && row.payload.recommendations.length > 0 && <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-slate-600">{row.payload.recommendations.slice(0, 10).map((item, index) => <li key={index}>{String(item)}</li>)}</ul>}</details>}
     {row.kind === "learning_gap_plan" && actions.length > 0 && <details className="mt-3 rounded-xl border border-slate-100 bg-white p-3"><summary className="cursor-pointer text-xs font-bold text-brand-600">Voir le plan</summary><div className="mt-3 space-y-2">{actions.slice(0, 12).map((item, index) => { const value = item && typeof item === "object" ? item as Record<string, unknown> : {}; return <div key={index} className="rounded-lg bg-slate-50 p-2 text-xs text-slate-600"><span className="font-bold text-navy-950">{String(value.skill || "Compétence")}</span> · {String(value.action || "")}</div>; })}</div></details>}
     {row.kind === "interview_prep" && <details className="mt-3 rounded-xl border border-slate-100 bg-white p-3"><summary className="cursor-pointer text-xs font-bold text-brand-600">Voir la préparation</summary>{typeof row.payload.pitch === "string" && <p className="mt-3 whitespace-pre-wrap text-xs leading-5 text-slate-600">{row.payload.pitch}</p>}{likelyQuestions.length > 0 && <div className="mt-3"><p className="text-[10px] font-black uppercase tracking-[.1em] text-slate-400">Questions probables</p><ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-600">{likelyQuestions.slice(0, 12).map((item, index) => <li key={index}>{String(item)}</li>)}</ul></div>}</details>}
+    <div className="mt-4 flex flex-wrap items-center gap-2"><button type="button" onClick={() => void apiDownload(`/ai/drafts/${row.id}/export/?format=pdf`, `kalanpro-${row.id}.pdf`)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:border-brand-200 hover:text-brand-600"><Download size={13}/> PDF</button><button type="button" onClick={() => void apiDownload(`/ai/drafts/${row.id}/export/?format=docx`, `kalanpro-${row.id}.docx`)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:border-brand-200 hover:text-brand-600"><Download size={13}/> Word</button></div>
     <p className="mt-3 text-[10px] text-slate-400">Mis à jour le {new Date(row.updated_at).toLocaleString("fr-FR")}</p>
   </article>;
 }

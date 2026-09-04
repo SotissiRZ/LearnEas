@@ -384,7 +384,7 @@ def validate_upload_signature(file_obj, *, suffix: str, field: str, max_bytes: i
         if not head.startswith(_ZIP_MAGICS):
             raise serializers.ValidationError({field: "Le contenu du fichier ne correspond pas à une archive ZIP/Office valide."})
         _validate_zip_structure(file_obj, suffix=suffix, field=field, max_bytes=max_bytes)
-    if suffix in {".txt", ".csv"} and b"\x00" in head:
+    if suffix in {".txt", ".csv", ".md", ".json"} and b"\x00" in head:
         raise serializers.ValidationError({field: "Ce fichier texte contient des données binaires inattendues."})
     if suffix == ".vtt":
         text_head = head.lstrip(b"\xef\xbb\xbf \t\r\n")

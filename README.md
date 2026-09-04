@@ -535,3 +535,8 @@ Le bouton KalanPro AI est visible sur les pages publiques, y compris l'accueil. 
 ### KalanPro AI — Phase 2 avancée (v64)
 
 L'assistant peut désormais analyser le CV du compte face à une offre, préparer une candidature interne avec confirmation, créer un vrai cours en brouillon, préparer les séances de mentorat et assister un recruteur approuvé sur ses propres candidatures. Les actions finales sensibles (rejet, embauche, offre, publication) ne sont jamais automatisées. Voir `docs/AI_PHASE2_V64.md`.
+
+
+## KalanPro AI — fichiers et exports (v67)
+
+L'assistant accepte des pièces jointes privées (PDF, DOCX, TXT, CSV, MD, JSON, XLSX, PPTX, PNG/JPEG/WebP), les conserve dans la conversation et peut utiliser leur contenu comme contexte. Les images nécessitent `AI_VISION_ENABLED=True` pour une analyse visuelle réelle. Les brouillons carrière sont exportables en PDF et Word. Voir `docs/AI_ATTACHMENTS_V67.md`.

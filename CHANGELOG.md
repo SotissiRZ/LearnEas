@@ -1,3 +1,16 @@
+# KalanPro v67 — Pièces jointes IA et exports carrière
+
+- KalanPro AI accepte désormais PDF, DOCX, TXT, CSV, Markdown, JSON, XLSX, PPTX et images PNG/JPEG/WebP.
+- Les fichiers sont privés, persistants par conversation et téléchargeables/supprimables par leur propriétaire.
+- Extraction serveur bornée du texte avec validation de signature, protections ZIP et analyse malware existante pour PDF/Office.
+- Vision image optionnelle via `AI_VISION_ENABLED=True`, avec repli texte si le fournisseur ne supporte pas le multimodal.
+- Les pièces jointes sont utilisables dans les conversations suivantes sans ré-upload.
+- Les brouillons carrière peuvent être exportés en PDF et Word.
+- KalanPro AI peut proposer une mise à jour structurée du profil candidat, toujours soumise à confirmation.
+- Les pièces jointes non envoyées restent réutilisables après une panne du fournisseur IA.
+- Nouveaux réglages admin : activation, taille maximale, nombre de fichiers par message et plafond de texte extrait.
+- Migration `assistant_ai.0006_attachments`.
+
 # v66 — Copilote carrière IA
 
 - Amélioration CV en brouillon privé avec confirmation, sans écraser le profil ou le fichier original.

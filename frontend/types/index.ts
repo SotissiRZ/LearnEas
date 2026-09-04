@@ -527,11 +527,28 @@ export interface AIQuota {
   unlimited: boolean;
 }
 
+export interface AIAttachment {
+  id: number;
+  name: string;
+  mime_type: string;
+  extension: string;
+  size_bytes: number;
+  extraction_status: "ready" | "image" | "no_text" | "failed" | string;
+  extraction_error?: string;
+  is_image: boolean;
+  download_path: string;
+  created_at: string;
+}
+
 export interface AIStatus {
   enabled: boolean;
   rag_enabled: boolean;
   history_enabled: boolean;
   tools_enabled: boolean;
+  attachments_enabled?: boolean;
+  max_attachment_mb?: number;
+  max_attachments_per_message?: number;
+  vision_enabled?: boolean;
   dry_run: boolean;
   provider_ready: boolean;
   model: string;
@@ -567,6 +584,7 @@ export interface AIMessage {
   content: string;
   sources: AISource[];
   actions?: AIAction[];
+  attachments?: AIAttachment[];
   provider?: string;
   model?: string;
   feedback?: "helpful" | "unhelpful" | "";
@@ -591,6 +609,7 @@ export interface AIAdminSettings {
   rag_enabled: boolean;
   history_enabled: boolean;
   tools_enabled: boolean;
+  attachments_enabled: boolean;
   student_enabled: boolean;
   instructor_enabled: boolean;
   admin_enabled: boolean;
@@ -600,6 +619,9 @@ export interface AIAdminSettings {
   admin_monthly_limit: number;
   max_history_messages: number;
   max_context_chunks: number;
+  max_attachment_mb: number;
+  max_attachments_per_message: number;
+  max_attachment_text_chars: number;
   max_output_tokens: number;
   temperature: string | number;
   input_cost_per_million_eur: string | number;

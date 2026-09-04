@@ -252,6 +252,40 @@ export async function apiUploadWithProgress<T>(
   return result.data as T;
 }
 
+/** Télécharge un fichier privé en réutilisant le jeton d'accès mémoire et le refresh HttpOnly. */
+export async function apiDownload(path: string, filename: string): Promise<void> {
+  const attempt = async (token: string | null) => fetch(`${API_URL}${path}`, {
+    method: "GET",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: "include",
+    cache: "no-store",
+  });
+  let res: Response;
+  try {
+    res = await attempt(getToken());
+    if (res.status === 401 && typeof window !== "undefined") {
+      const renewed = await refreshAccessToken();
+      if (renewed) res = await attempt(renewed);
+    }
+  } catch {
+    throw new ApiError("Impossible de télécharger le fichier. Vérifiez votre connexion.");
+  }
+  if (!res.ok) {
+    let data: unknown = null;
+    try { data = await res.json(); } catch { /* non JSON */ }
+    throw buildErrorMessage(res.status, data);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename || "kalanpro-document";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 /**
  * Pour les Server Components : tente l'appel API et retourne `fallback` en cas d'échec,
  * SANS masquer l'information. `ok: false` signale une vraie panne (API injoignable) à distinguer

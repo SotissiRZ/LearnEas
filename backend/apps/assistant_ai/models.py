@@ -1,7 +1,9 @@
 import uuid
+from pathlib import Path
 from decimal import Decimal
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class AISettings(models.Model):
@@ -9,6 +11,7 @@ class AISettings(models.Model):
     rag_enabled = models.BooleanField(default=True)
     history_enabled = models.BooleanField(default=True)
     tools_enabled = models.BooleanField(default=True)
+    attachments_enabled = models.BooleanField(default=True)
     student_enabled = models.BooleanField(default=True)
     instructor_enabled = models.BooleanField(default=True)
     admin_enabled = models.BooleanField(default=True)
@@ -18,6 +21,9 @@ class AISettings(models.Model):
     admin_monthly_limit = models.PositiveIntegerField(default=500)
     max_history_messages = models.PositiveSmallIntegerField(default=12)
     max_context_chunks = models.PositiveSmallIntegerField(default=6)
+    max_attachment_mb = models.PositiveSmallIntegerField(default=12)
+    max_attachments_per_message = models.PositiveSmallIntegerField(default=5)
+    max_attachment_text_chars = models.PositiveIntegerField(default=12000)
     max_output_tokens = models.PositiveIntegerField(default=1200)
     temperature = models.DecimalField(max_digits=3, decimal_places=2, default=0.30)
     input_cost_per_million_eur = models.DecimalField(max_digits=10, decimal_places=4, default=0, help_text="Coût estimé du modèle pour 1M tokens d'entrée.")
@@ -36,6 +42,9 @@ class AISettings(models.Model):
         self.admin_monthly_limit = max(int(self.admin_monthly_limit), 0)
         self.max_history_messages = min(max(int(self.max_history_messages), 2), 40)
         self.max_context_chunks = min(max(int(self.max_context_chunks), 1), 12)
+        self.max_attachment_mb = min(max(int(self.max_attachment_mb), 1), 25)
+        self.max_attachments_per_message = min(max(int(self.max_attachments_per_message), 1), 8)
+        self.max_attachment_text_chars = min(max(int(self.max_attachment_text_chars), 2000), 30000)
         self.max_output_tokens = min(max(int(self.max_output_tokens), 128), 8000)
         self.temperature = min(max(Decimal(str(self.temperature or 0)), Decimal("0")), Decimal("1"))
         self.input_cost_per_million_eur = max(Decimal(str(self.input_cost_per_million_eur or 0)), Decimal("0"))
@@ -131,6 +140,46 @@ class AIKnowledgeChunk(models.Model):
 
     def __str__(self):
         return f"{self.get_source_type_display()} · {self.title} · {self.chunk_index}"
+
+
+def ai_attachment_upload_to(instance, filename):
+    suffix = Path(str(filename or "fichier")).suffix.lower()[:12]
+    return f"ai/attachments/{instance.user_id}/{timezone.now():%Y/%m}/{uuid.uuid4().hex}{suffix}"
+
+
+class AIAttachment(models.Model):
+    class ExtractionStatus(models.TextChoices):
+        READY = "ready", "Texte extrait"
+        IMAGE = "image", "Image"
+        NO_TEXT = "no_text", "Aucun texte extractible"
+        FAILED = "failed", "Extraction échouée"
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ai_attachments")
+    conversation = models.ForeignKey(AIConversation, on_delete=models.CASCADE, null=True, blank=True, related_name="attachments")
+    message = models.ForeignKey(AIMessage, on_delete=models.SET_NULL, null=True, blank=True, related_name="attachments")
+    file = models.FileField(upload_to=ai_attachment_upload_to)
+    original_name = models.CharField(max_length=220)
+    mime_type = models.CharField(max_length=120, blank=True)
+    extension = models.CharField(max_length=16)
+    size_bytes = models.PositiveIntegerField(default=0)
+    extracted_text = models.TextField(blank=True)
+    extraction_status = models.CharField(max_length=20, choices=ExtractionStatus.choices, default=ExtractionStatus.NO_TEXT)
+    extraction_error = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["user", "created_at"], name="ai_attach_user_date_idx"),
+            models.Index(fields=["conversation", "created_at"], name="ai_attach_conv_date_idx"),
+        ]
+
+    @property
+    def is_image(self):
+        return self.extension in {".png", ".jpg", ".jpeg", ".webp"}
+
+    def __str__(self):
+        return f"{self.user_id} · {self.original_name}"
 
 
 class AIUsage(models.Model):

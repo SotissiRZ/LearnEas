@@ -1,14 +1,15 @@
 from django.contrib import admin
-from .models import AISettings, AIConversation, AIMessage, AIKnowledgeChunk, AIUsage, AIEvaluationCase, AIActionLog, AIDraft
+from .models import AISettings, AIConversation, AIMessage, AIKnowledgeChunk, AIUsage, AIEvaluationCase, AIActionLog, AIDraft, AIAttachment
 
 
 @admin.register(AISettings)
 class AISettingsAdmin(admin.ModelAdmin):
     fieldsets = (
-        ("Activation", {"fields": ("enabled", "rag_enabled", "history_enabled", "tools_enabled")}),
+        ("Activation", {"fields": ("enabled", "rag_enabled", "history_enabled", "tools_enabled", "attachments_enabled")}),
         ("Profils", {"fields": ("student_enabled", "instructor_enabled", "admin_enabled")}),
         ("Quotas mensuels", {"fields": ("student_monthly_limit", "instructor_monthly_limit", "admin_monthly_limit")}),
         ("Modèle", {"fields": ("default_model", "temperature", "max_output_tokens", "max_history_messages", "max_context_chunks", "input_cost_per_million_eur", "output_cost_per_million_eur")}),
+        ("Pièces jointes", {"fields": ("max_attachment_mb", "max_attachments_per_message", "max_attachment_text_chars")}),
         ("Instructions", {"fields": ("custom_system_prompt",)}),
     )
     def has_add_permission(self, request):
@@ -71,3 +72,11 @@ class AIDraftAdmin(admin.ModelAdmin):
     list_filter = ("kind", "updated_at")
     search_fields = ("title", "user__email", "course__title")
     readonly_fields = ("payload", "created_at", "updated_at")
+
+
+@admin.register(AIAttachment)
+class AIAttachmentAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "original_name", "extension", "size_bytes", "extraction_status", "conversation", "created_at")
+    list_filter = ("extension", "extraction_status", "created_at")
+    search_fields = ("user__email", "original_name")
+    readonly_fields = ("file", "original_name", "mime_type", "extension", "size_bytes", "extracted_text", "extraction_status", "extraction_error", "created_at")

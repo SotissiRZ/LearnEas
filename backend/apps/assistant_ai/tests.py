@@ -379,3 +379,70 @@ class AssistantAITests(TestCase):
         response = self.client.post(f"/api/ai/actions/{action.confirmation_token}/confirm/", {}, format="json")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(AIDraft.objects.filter(user=self.student, kind=AIDraft.Kind.LEARNING_GAP_PLAN).exists())
+
+    def test_user_can_upload_text_file_and_attach_it_to_chat(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from .models import AIAttachment
+        upload = SimpleUploadedFile("notes.txt", b"KalanPro attachment secret marker: ALPHA-742.", content_type="text/plain")
+        response = self.client.post("/api/ai/attachments/", {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, 201)
+        attachment_id = response.data["id"]
+        self.assertEqual(response.data["extraction_status"], "ready")
+        chat = self.client.post("/api/ai/chat/", {
+            "message": "Analyse le fichier joint.", "attachment_ids": [attachment_id]
+        }, format="json")
+        self.assertEqual(chat.status_code, 200)
+        row = AIAttachment.objects.get(pk=attachment_id)
+        self.assertIsNotNone(row.message_id)
+        self.assertIn("ALPHA-742", row.extracted_text)
+        detail = self.client.get(f"/api/ai/conversations/{chat.data['conversation_id']}/")
+        self.assertEqual(detail.status_code, 200)
+        user_messages = [m for m in detail.data["messages"] if m["role"] == "user"]
+        self.assertEqual(user_messages[0]["attachments"][0]["id"], attachment_id)
+
+    def test_attachment_rejects_unsupported_extension(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        upload = SimpleUploadedFile("danger.exe", b"MZ-not-allowed", content_type="application/octet-stream")
+        response = self.client.post("/api/ai/attachments/", {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, 400)
+
+    def test_attachment_download_is_private_to_owner(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        upload = SimpleUploadedFile("private.txt", b"private", content_type="text/plain")
+        response = self.client.post("/api/ai/attachments/", {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, 201)
+        attachment_id = response.data["id"]
+        other = User.objects.create_user(username="attachment-other", email="attachment-other@example.com", password="pass1234")
+        other_client = APIClient(); other_client.force_authenticate(other)
+        denied = other_client.get(f"/api/ai/attachments/{attachment_id}/download/")
+        self.assertEqual(denied.status_code, 404)
+
+    def test_candidate_profile_update_requires_confirmation(self):
+        from apps.opportunities.models import CandidateProfile
+        from .models import AIMessage
+        from .tools import create_action_proposal
+        profile = CandidateProfile.objects.create(user=self.student, headline="Avant", summary="Résumé", skills=["Python"])
+        conversation = AIConversation.objects.create(user=self.student, title="Profil")
+        message = AIMessage.objects.create(conversation=conversation, role="assistant", content="Je propose une mise à jour.")
+        action = create_action_proposal(self.student, conversation, message, "update_candidate_profile", {
+            "headline": "Développeur Backend Python", "summary": "APIs et qualité logicielle", "skills": ["Python", "Django"],
+            "desired_roles": ["Développeur Backend"], "years_experience": 2, "availability": "open",
+        })
+        profile.refresh_from_db()
+        self.assertEqual(profile.headline, "Avant")
+        response = self.client.post(f"/api/ai/actions/{action.confirmation_token}/confirm/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        profile.refresh_from_db()
+        self.assertEqual(profile.headline, "Développeur Backend Python")
+        self.assertIn("Django", profile.skills)
+
+    def test_draft_export_is_scoped_to_owner(self):
+        from .models import AIDraft
+        draft = AIDraft.objects.create(user=self.student, kind=AIDraft.Kind.COVER_LETTER, title="Lettre test", payload={"content": "Bonjour KalanPro"})
+        pdf = self.client.get(f"/api/ai/drafts/{draft.id}/export/?format=pdf")
+        self.assertEqual(pdf.status_code, 200)
+        self.assertEqual(pdf["Content-Type"], "application/pdf")
+        other = User.objects.create_user(username="draft-other", email="draft-other@example.com", password="pass1234")
+        other_client = APIClient(); other_client.force_authenticate(other)
+        denied = other_client.get(f"/api/ai/drafts/{draft.id}/export/?format=pdf")
+        self.assertEqual(denied.status_code, 404)

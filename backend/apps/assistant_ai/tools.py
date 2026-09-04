@@ -29,6 +29,7 @@ READ_TOOLS = {
     "get_my_progress",
     "get_my_certificates",
     "search_opportunities",
+    "get_opportunity_details",
     "analyze_my_cv_against_opportunity",
     "get_my_instructor_content",
     "get_my_mentor_sessions",
@@ -49,6 +50,7 @@ WRITE_TOOLS = {
     "save_cover_letter_draft",
     "save_learning_gap_plan_draft",
     "save_candidate_interview_prep_draft",
+    "update_candidate_profile",
 }
 
 
@@ -92,6 +94,7 @@ BASE_TOOL_DEFINITIONS = [
     ),
     _tool(
         "search_opportunities",
+    "get_opportunity_details",
         "Cherche les emplois, stages, freelances et missions publiés dans KalanPro et calcule le score de correspondance du compte connecté.",
         {
             "query": {"type": "string"},
@@ -100,6 +103,12 @@ BASE_TOOL_DEFINITIONS = [
             "country": {"type": "string"},
             "limit": {"type": "integer", "minimum": 1, "maximum": 10},
         },
+    ),
+    _tool(
+        "get_opportunity_details",
+        "Retourne les détails publics structurés d'une opportunité KalanPro publiée : description, missions, exigences et compétences. Utile pour comparer un fichier CV joint à une offre.",
+        {"opportunity_id": {"type": "integer", "minimum": 1}},
+        ["opportunity_id"],
     ),
     _tool(
         "analyze_my_cv_against_opportunity",
@@ -198,6 +207,22 @@ BASE_TOOL_DEFINITIONS = [
         ["course_id"],
     ),
 ]
+
+PROFILE_TOOL_DEFINITIONS = [
+    _tool(
+        "update_candidate_profile",
+        "Prépare une mise à jour structurée du profil candidat KalanPro. Ne modifie le profil qu'après confirmation explicite de l'utilisateur.",
+        {
+            "headline": {"type": "string"},
+            "summary": {"type": "string"},
+            "skills": {"type": "array", "items": {"type": "string"}, "maxItems": 60},
+            "desired_roles": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+            "years_experience": {"type": "integer", "minimum": 0, "maximum": 60},
+            "availability": {"type": "string", "enum": ["immediate", "2_weeks", "1_month", "open", "unavailable"]},
+        },
+    ),
+]
+
 
 INSTRUCTOR_TOOL_DEFINITIONS = [
     _tool(
@@ -372,7 +397,7 @@ def capabilities_for(user) -> list[str]:
 
 
 def definitions_for(user) -> list[dict]:
-    tools = list(BASE_TOOL_DEFINITIONS)
+    tools = list(BASE_TOOL_DEFINITIONS) + list(PROFILE_TOOL_DEFINITIONS)
     capabilities = set(capabilities_for(user))
     if "instructor" in capabilities:
         tools.extend(INSTRUCTOR_TOOL_DEFINITIONS)
@@ -564,6 +589,24 @@ def _extract_resume_excerpt(profile: CandidateProfile | None, max_chars: int = 6
         return "", "Le CV n'a pas pu être lu automatiquement."
 
 
+def get_opportunity_details(user, args: dict) -> dict:
+    try:
+        opportunity_id = int(args.get("opportunity_id"))
+    except (TypeError, ValueError):
+        raise ValueError("Opportunité invalide.")
+    opportunity = Opportunity.objects.select_related("employer").filter(pk=opportunity_id, status=Opportunity.Status.PUBLISHED).first()
+    if not opportunity or not opportunity.is_open or opportunity.employer.status != EmployerProfile.Status.APPROVED:
+        raise ValueError("Opportunité publiée et ouverte introuvable.")
+    return {
+        "id": opportunity.id, "title": opportunity.title, "company": opportunity.employer.company_name,
+        "description": opportunity.description[:12000], "responsibilities": list(opportunity.responsibilities or [])[:30],
+        "requirements": list(opportunity.requirements or [])[:30], "skills_required": list(opportunity.skills_required or [])[:30],
+        "skills_optional": list(opportunity.skills_optional or [])[:30], "experience_level": opportunity.experience_level,
+        "work_mode": opportunity.work_mode, "contract_type": opportunity.contract_type, "country": opportunity.country, "city": opportunity.city,
+        "path": f"/opportunities/{opportunity.slug}",
+    }
+
+
 def analyze_my_cv_against_opportunity(user, args: dict) -> dict:
     try:
         opportunity_id = int(args.get("opportunity_id"))
@@ -724,6 +767,7 @@ READ_DISPATCH = {
     "get_my_progress": get_my_progress,
     "get_my_certificates": get_my_certificates,
     "search_opportunities": search_opportunities,
+    "get_opportunity_details": get_opportunity_details,
     "analyze_my_cv_against_opportunity": analyze_my_cv_against_opportunity,
     "get_my_instructor_content": get_my_instructor_content,
     "get_my_mentor_sessions": get_my_mentor_sessions,
@@ -768,6 +812,8 @@ def action_label(name: str, args: dict) -> str:
         return f"Enregistrer le plan de compétences « {str(args.get('title') or 'Plan de progression')[:120]} »"
     if name == "save_candidate_interview_prep_draft":
         return f"Enregistrer la préparation d’entretien « {str(args.get('title') or 'Préparation entretien')[:120]} »"
+    if name == "update_candidate_profile":
+        return "Mettre à jour mon profil candidat avec les suggestions IA"
     return "Confirmer l'action KalanPro AI"
 
 
@@ -972,6 +1018,32 @@ def validate_write_tool(user, name: str, args: dict) -> dict:
             "questions_to_ask": _clean_string_list(args.get("questions_to_ask"), maximum=10, item_max=900),
             "checklist": _clean_string_list(args.get("checklist"), maximum=12, item_max=500),
         }
+
+    if name == "update_candidate_profile":
+        clean = {}
+        if "headline" in args:
+            clean["headline"] = " ".join(str(args.get("headline") or "").split())[:180]
+        if "summary" in args:
+            clean["summary"] = str(args.get("summary") or "").strip()[:5000]
+        if "skills" in args:
+            clean["skills"] = _clean_string_list(args.get("skills"), maximum=60, item_max=100)
+        if "desired_roles" in args:
+            clean["desired_roles"] = _clean_string_list(args.get("desired_roles"), maximum=20, item_max=120)
+        if "years_experience" in args:
+            try:
+                years = int(args.get("years_experience"))
+            except (TypeError, ValueError):
+                raise ValueError("Nombre d'années d'expérience invalide.")
+            clean["years_experience"] = min(max(years, 0), 60)
+        if "availability" in args:
+            availability = str(args.get("availability") or "")
+            allowed = {value for value, _ in CandidateProfile.Availability.choices}
+            if availability not in allowed:
+                raise ValueError("Disponibilité invalide.")
+            clean["availability"] = availability
+        if not clean:
+            raise ValueError("Aucune modification de profil n'a été proposée.")
+        return clean
 
     if user.role not in {"instructor", "admin"}:
         raise PermissionError("Action réservée aux instructeurs.")
@@ -1207,6 +1279,16 @@ def execute_action(action: AIActionLog) -> dict:
             },
         )
         result = {"draft_id": draft.id, "kind": draft.kind, "title": draft.title, "path": "/assistant/drafts"}
+
+    elif action.tool_name == "update_candidate_profile":
+        profile, _ = CandidateProfile.objects.get_or_create(user=action.user)
+        changed = []
+        for field in ("headline", "summary", "skills", "desired_roles", "years_experience", "availability"):
+            if field in args:
+                setattr(profile, field, args[field])
+                changed.append(field)
+        profile.save(update_fields=changed + ["updated_at"])
+        result = {"profile_id": profile.id, "updated_fields": changed, "path": "/dashboard/student/opportunities"}
 
     elif action.tool_name == "save_quiz_draft":
         draft = AIDraft.objects.create(user=action.user, kind=AIDraft.Kind.QUIZ, title=args["title"], course_id=args.get("course_id"), payload={"questions": args["questions"]})

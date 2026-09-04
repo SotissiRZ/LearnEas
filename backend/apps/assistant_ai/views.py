@@ -1,4 +1,7 @@
+from pathlib import Path
+from datetime import timedelta
 from django.conf import settings
+from django.http import FileResponse, HttpResponse
 from django.db.models import Count, Avg, Sum
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -6,11 +9,13 @@ from rest_framework.decorators import action, api_view, permission_classes, thro
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
-from .models import AIConversation, AIMessage, AISettings, AIUsage, AIKnowledgeChunk, AIEvaluationCase, AIActionLog, AIDraft
+from .models import AIConversation, AIMessage, AISettings, AIUsage, AIKnowledgeChunk, AIEvaluationCase, AIActionLog, AIDraft, AIAttachment
 from .serializers import AIConversationListSerializer, AIConversationDetailSerializer, AISettingsSerializer
 from .services import answer, quota_state, role_enabled, estimate_cost_eur
+from .attachments import validate_ai_attachment, extract_attachment_text, attachment_mime_type, serialize_attachment, attachment_context
 from .tools import capabilities_for, create_action_proposal, serialize_action, execute_action, reject_action
 from .evaluation import seed_evaluation_cases, run_evaluation
+from .exports import build_pdf, build_docx, export_filename
 
 
 class AIThrottle(UserRateThrottle):
@@ -34,7 +39,7 @@ class AIConversationViewSet(viewsets.ModelViewSet):
             qs = qs.filter(archived=(archived == "true"))
         qs = qs.annotate(messages_count=Count("messages"))
         if self.action == "retrieve":
-            qs = qs.prefetch_related("messages")
+            qs = qs.prefetch_related("messages__attachments")
         return qs
 
     def get_serializer_class(self):
@@ -60,12 +65,84 @@ def status_view(request):
         "rag_enabled": cfg.rag_enabled,
         "history_enabled": cfg.history_enabled,
         "tools_enabled": cfg.tools_enabled,
+        "attachments_enabled": cfg.attachments_enabled,
+        "max_attachment_mb": cfg.max_attachment_mb,
+        "max_attachments_per_message": cfg.max_attachments_per_message,
+        "vision_enabled": bool(getattr(settings, "AI_VISION_ENABLED", False)),
         "dry_run": bool(getattr(settings, "AI_DRY_RUN", False)),
         "provider_ready": bool(getattr(settings, "AI_API_KEY", "") and (cfg.default_model or getattr(settings, "AI_CHAT_MODEL", ""))),
         "model": cfg.default_model or getattr(settings, "AI_CHAT_MODEL", ""),
         "capabilities": capabilities_for(request.user),
         "quota": quota_state(request.user, cfg),
     })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AIThrottle])
+def attachment_upload_view(request):
+    cfg = AISettings.load()
+    if not cfg.enabled or not role_enabled(request.user, cfg) or not cfg.attachments_enabled:
+        return Response({"detail": "Les pièces jointes IA ne sont pas activées pour ce profil."}, status=status.HTTP_403_FORBIDDEN)
+    recent_unattached = AIAttachment.objects.filter(
+        user=request.user, message__isnull=True, created_at__gte=timezone.now() - timedelta(days=1)
+    ).count()
+    if recent_unattached >= 20:
+        return Response({"detail": "Trop de fichiers en attente. Supprimez les pièces jointes inutilisées ou réessayez plus tard."}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+    upload = request.FILES.get("file")
+    if not upload:
+        return Response({"file": ["Sélectionnez un fichier."]}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        suffix = validate_ai_attachment(upload, cfg)
+        text, extraction_status, extraction_error = extract_attachment_text(upload, suffix, int(cfg.max_attachment_text_chars))
+    except Exception as exc:
+        # Les ValidationError DRF conservent leur message précis.
+        if hasattr(exc, "detail"):
+            return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"file": [str(exc)[:300]]}, status=status.HTTP_400_BAD_REQUEST)
+
+    conversation = None
+    conversation_id = request.data.get("conversation_id")
+    if conversation_id:
+        conversation = AIConversation.objects.filter(pk=conversation_id, user=request.user).first()
+        if not conversation:
+            return Response({"conversation_id": ["Conversation introuvable."]}, status=status.HTTP_404_NOT_FOUND)
+        if conversation.attachments.count() >= 40:
+            return Response({"file": ["Cette conversation contient déjà trop de pièces jointes. Créez une nouvelle conversation."]}, status=status.HTTP_400_BAD_REQUEST)
+
+    row = AIAttachment.objects.create(
+        user=request.user, conversation=conversation, file=upload,
+        original_name=Path(str(getattr(upload, "name", "fichier"))).name[:220],
+        mime_type=attachment_mime_type(upload, suffix), extension=suffix,
+        size_bytes=int(getattr(upload, "size", 0) or 0), extracted_text=text,
+        extraction_status=extraction_status, extraction_error=extraction_error,
+    )
+    return Response(serialize_attachment(row), status=status.HTTP_201_CREATED)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def attachment_delete_view(request, attachment_id: int):
+    row = AIAttachment.objects.filter(pk=attachment_id, user=request.user).first()
+    if not row:
+        return Response({"detail": "Pièce jointe introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    row.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def attachment_download_view(request, attachment_id: int):
+    row = AIAttachment.objects.filter(pk=attachment_id, user=request.user).first()
+    if not row:
+        return Response({"detail": "Pièce jointe introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    try:
+        row.file.open("rb")
+        response = FileResponse(row.file, as_attachment=True, filename=row.original_name, content_type=row.mime_type or "application/octet-stream")
+        response["Cache-Control"] = "private, no-store"
+        return response
+    except Exception:
+        return Response({"detail": "Le fichier est temporairement indisponible."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 @api_view(["POST"])
@@ -80,8 +157,11 @@ def chat_view(request):
         return Response({"detail": "Votre quota IA mensuel est atteint.", "quota": quota}, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
     question = str(request.data.get("message") or "").strip()
+    attachment_preview = request.data.get("attachment_ids") or []
+    if not question and isinstance(attachment_preview, list) and attachment_preview:
+        question = "Analyse les fichiers joints et résume les points importants."
     if not question:
-        return Response({"message": ["Ce champ est obligatoire."]}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"message": ["Écrivez un message ou joignez au moins un fichier."]}, status=status.HTTP_400_BAD_REQUEST)
     if len(question) > 4000:
         return Response({"message": ["Le message ne peut pas dépasser 4000 caractères."]}, status=status.HTTP_400_BAD_REQUEST)
     page_context = request.data.get("page_context") or {}
@@ -90,6 +170,18 @@ def chat_view(request):
     response_style = str(request.data.get("response_style") or "normal")
     if response_style not in {"short", "normal", "detailed"}:
         response_style = "normal"
+
+    raw_attachment_ids = request.data.get("attachment_ids") or []
+    if raw_attachment_ids and not cfg.attachments_enabled:
+        return Response({"attachment_ids": ["Les pièces jointes IA sont désactivées."]}, status=status.HTTP_400_BAD_REQUEST)
+    if not isinstance(raw_attachment_ids, list):
+        return Response({"attachment_ids": ["Une liste d'identifiants est attendue."]}, status=status.HTTP_400_BAD_REQUEST)
+    if len(raw_attachment_ids) > int(cfg.max_attachments_per_message):
+        return Response({"attachment_ids": [f"Maximum {cfg.max_attachments_per_message} fichiers par message."]}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        attachment_ids = list(dict.fromkeys(int(value) for value in raw_attachment_ids))
+    except (TypeError, ValueError):
+        return Response({"attachment_ids": ["Identifiant de fichier invalide."]}, status=status.HTTP_400_BAD_REQUEST)
 
     conversation_id = request.data.get("conversation_id")
     created_new = not bool(conversation_id)
@@ -100,17 +192,54 @@ def chat_view(request):
     else:
         conversation = AIConversation.objects.create(user=request.user, title=question[:80])
 
+    attachments = []
+    if attachment_ids:
+        attachments = list(AIAttachment.objects.filter(pk__in=attachment_ids, user=request.user).order_by("created_at"))
+        if len(attachments) != len(attachment_ids):
+            if created_new and not conversation.messages.exists():
+                conversation.delete()
+            return Response({"attachment_ids": ["Une ou plusieurs pièces jointes sont introuvables."]}, status=status.HTTP_404_NOT_FOUND)
+        for row in attachments:
+            if row.message_id and row.conversation_id != conversation.id:
+                if created_new and not conversation.messages.exists():
+                    conversation.delete()
+                return Response({"attachment_ids": ["Une pièce jointe appartient déjà à une autre conversation."]}, status=status.HTTP_400_BAD_REQUEST)
+            if row.conversation_id and row.conversation_id != conversation.id:
+                if created_new and not conversation.messages.exists():
+                    conversation.delete()
+                return Response({"attachment_ids": ["Une pièce jointe appartient à une autre conversation."]}, status=status.HTTP_400_BAD_REQUEST)
+
     user_message = AIMessage.objects.create(conversation=conversation, role=AIMessage.Role.USER, content=question)
+    for row in attachments:
+        row.conversation = conversation
+        row.message = user_message
+        row.save(update_fields=["conversation", "message"])
     if cfg.history_enabled:
-        history_rows = list(conversation.messages.exclude(pk=user_message.pk).order_by("-created_at")[:cfg.max_history_messages])
+        history_rows = list(conversation.messages.exclude(pk=user_message.pk).prefetch_related("attachments").order_by("-created_at")[:cfg.max_history_messages])
         history_rows.reverse()
-        history = [{"role": row.role, "content": row.content} for row in history_rows]
+        history = []
+        for row in history_rows:
+            content = row.content
+            previous_attachments = list(row.attachments.all())
+            if previous_attachments:
+                content += "\n\nPIÈCES JOINTES DE CE TOUR:\n" + attachment_context(previous_attachments, total_chars=6000)
+            history.append({"role": row.role, "content": content})
     else:
         history = []
 
     try:
-        result = answer(request.user, question, history, page_context, response_style, cfg)
+        result = answer(request.user, question, history, page_context, response_style, cfg, attachments=attachments)
     except Exception as exc:
+        # Rendre les pièces jointes réutilisables après une panne fournisseur.
+        # Sans cela, une nouvelle conversation supprimée en cas d'erreur cascade aussi
+        # les fichiers et le prochain retry du frontend reçoit un 404.
+        for row in attachments:
+            row.message = None
+            if created_new:
+                row.conversation = None
+                row.save(update_fields=["message", "conversation"])
+            else:
+                row.save(update_fields=["message"])
         user_message.delete()
         if created_new and not conversation.messages.exists():
             conversation.delete()
@@ -163,6 +292,7 @@ def chat_view(request):
         "message": {"id": message.id, "role": message.role, "content": message.content, "sources": sources, "actions": actions, "provider": message.provider, "model": message.model, "created_at": message.created_at},
         "quota": quota_state(request.user, cfg),
         "context": result["context_preview"],
+        "attachments": [serialize_attachment(row) for row in attachments],
     })
 
 
@@ -211,6 +341,32 @@ def action_reject_view(request, token):
         action.message.actions = actions
         action.message.save(update_fields=["actions"])
     return Response({"action": serialized})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def draft_export_view(request, draft_id: int):
+    draft = AIDraft.objects.filter(pk=draft_id, user=request.user).first()
+    if not draft:
+        return Response({"detail": "Brouillon IA introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    fmt = str(request.query_params.get("format") or "pdf").strip().lower()
+    try:
+        if fmt == "docx":
+            data = build_docx(draft)
+            content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            filename = export_filename(draft, "docx")
+        elif fmt == "pdf":
+            data = build_pdf(draft)
+            content_type = "application/pdf"
+            filename = export_filename(draft, "pdf")
+        else:
+            return Response({"format": ["Formats acceptés : pdf ou docx."]}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception:
+        return Response({"detail": "L'export du brouillon a échoué."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    response = HttpResponse(data, content_type=content_type)
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Cache-Control"] = "private, no-store"
+    return response
 
 
 @api_view(["GET"])
@@ -342,4 +498,5 @@ def admin_metrics_view(request):
         "actions_executed": AIActionLog.objects.filter(status=AIActionLog.Status.EXECUTED).count(),
         "actions_failed": AIActionLog.objects.filter(status=AIActionLog.Status.FAILED).count(),
         "drafts": AIDraft.objects.count(),
+        "attachments": AIAttachment.objects.count(),
     })

@@ -426,6 +426,7 @@ AI_PROVIDER_NAME = config("AI_PROVIDER_NAME", default="Compatible API")
 AI_HTTP_TIMEOUT = config("AI_HTTP_TIMEOUT", default=60, cast=int)
 AI_DRY_RUN = config("AI_DRY_RUN", default=DEBUG, cast=bool)
 AI_INDEX_ASYNC = config("AI_INDEX_ASYNC", default=not DEBUG, cast=bool)
+AI_VISION_ENABLED = config("AI_VISION_ENABLED", default=False, cast=bool)
 
 CELERY_BEAT_SCHEDULE = {
     "whatsapp-live-reminders-every-5-minutes": {

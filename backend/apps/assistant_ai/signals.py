@@ -4,7 +4,7 @@ from django.db import transaction
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from apps.catalog.models import Course, Lesson, PDFResource, PDFProduct
-from .models import AIKnowledgeChunk
+from .models import AIKnowledgeChunk, AIAttachment
 from .rag import index_object
 
 logger = logging.getLogger(__name__)
@@ -45,3 +45,12 @@ def index_saved_content(sender, instance, **kwargs):
 @receiver(post_delete, sender=PDFProduct)
 def delete_indexed_content(sender, instance, **kwargs):
     AIKnowledgeChunk.objects.filter(source_type=MODEL_TYPES[sender], source_id=instance.pk).delete()
+
+
+@receiver(post_delete, sender=AIAttachment)
+def delete_attachment_file(sender, instance, **kwargs):
+    try:
+        if instance.file:
+            instance.file.delete(save=False)
+    except Exception:
+        logger.exception("Impossible de supprimer le fichier de pièce jointe IA %s", instance.pk)

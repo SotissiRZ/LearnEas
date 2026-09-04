@@ -7,14 +7,15 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import {
   Bot, ChevronLeft, ExternalLink, History, Loader2, Maximize2, MessageSquarePlus,
   Minimize2, Send, Sparkles, Trash2, X, ThumbsUp, ThumbsDown, Check, Ban, ShieldCheck, Wrench,
+  Paperclip, FileText, Image as ImageIcon,
 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, apiUploadWithProgress, apiDownload } from "@/lib/api";
 import { AI_CONTEXT_EVENT, AIPageContext, currentAIContext, inferAIContext } from "@/lib/aiContext";
 import { useAuth } from "@/hooks/useAuth";
-import type { AIAction, AIConversation, AIMessage, AIQuota, AIStatus } from "@/types";
+import type { AIAction, AIAttachment, AIConversation, AIMessage, AIQuota, AIStatus } from "@/types";
 
 type Props = { embedded?: boolean; panelActions?: ReactNode };
-type ChatResult = { conversation_id: number; message: AIMessage; quota: AIQuota; context: Record<string, unknown> };
+type ChatResult = { conversation_id: number; message: AIMessage; quota: AIQuota; context: Record<string, unknown>; attachments?: AIAttachment[] };
 
 function unwrap<T>(value: { results?: T[] } | T[]): T[] {
   return Array.isArray(value) ? value : value.results || [];
@@ -32,8 +33,12 @@ export function AssistantWorkspace({ embedded = false, panelActions }: Props) {
   const [busy, setBusy] = useState(false);
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [error, setError] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState<AIAttachment[]>([]);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [pageContext, setPageContext] = useState<AIPageContext>(() => currentAIContext(pathname));
   const endRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => setPageContext(currentAIContext(pathname)), [pathname]);
   useEffect(() => {
@@ -60,7 +65,47 @@ export function AssistantWorkspace({ embedded = false, panelActions }: Props) {
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
 
+  function discardPendingAttachments() {
+    const rows = pendingAttachments;
+    setPendingAttachments([]);
+    rows.forEach((row) => { void api.del(`/ai/attachments/${row.id}/`).catch(() => undefined); });
+  }
+
+  async function uploadFiles(fileList: FileList | File[]) {
+    if (!status?.attachments_enabled || uploadingAttachment) return;
+    const maxCount = status.max_attachments_per_message || 5;
+    const available = Math.max(0, maxCount - pendingAttachments.length);
+    const files = Array.from(fileList).slice(0, available);
+    if (!files.length) {
+      setError(`Maximum ${maxCount} fichiers par message.`);
+      return;
+    }
+    setUploadingAttachment(true); setError(""); setUploadProgress(0);
+    try {
+      for (const file of files) {
+        const maxBytes = (status.max_attachment_mb || 12) * 1024 * 1024;
+        if (file.size > maxBytes) throw new ApiError(`${file.name} dépasse la limite de ${status.max_attachment_mb || 12} Mo.`);
+        const form = new FormData();
+        form.append("file", file);
+        if (activeId) form.append("conversation_id", String(activeId));
+        const row = await apiUploadWithProgress<AIAttachment>("/ai/attachments/", form, setUploadProgress);
+        setPendingAttachments((current) => [...current, row]);
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Le fichier n'a pas pu être chargé.");
+    } finally {
+      setUploadingAttachment(false); setUploadProgress(0);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function removePendingAttachment(row: AIAttachment) {
+    setPendingAttachments((current) => current.filter((item) => item.id !== row.id));
+    try { await api.del(`/ai/attachments/${row.id}/`); } catch { /* suppression locale suffisante pour l'UX */ }
+  }
+
   async function openConversation(id: number) {
+    discardPendingAttachments();
     setLoadingConversation(true); setError("");
     try {
       const value = await api.get<AIConversation>(`/ai/conversations/${id}/`);
@@ -69,7 +114,7 @@ export function AssistantWorkspace({ embedded = false, panelActions }: Props) {
     finally { setLoadingConversation(false); }
   }
 
-  function newConversation() { setActiveId(null); setMessages([]); setDraft(""); setError(""); }
+  function newConversation() { discardPendingAttachments(); setActiveId(null); setMessages([]); setDraft(""); setError(""); }
 
   async function removeConversation(id: number) {
     if (!confirm("Supprimer cette conversation IA ?")) return;
@@ -81,10 +126,12 @@ export function AssistantWorkspace({ embedded = false, panelActions }: Props) {
   }
 
   async function send() {
-    const text = draft.trim();
-    if (!text || busy) return;
+    const typed = draft.trim();
+    const text = typed || (pendingAttachments.length ? "Analyse les fichiers joints et réponds à partir de leur contenu." : "");
+    if (!text || busy || uploadingAttachment) return;
+    const attachmentsForMessage = [...pendingAttachments];
     setBusy(true); setError(""); setDraft("");
-    const optimistic: AIMessage = { id: -Date.now(), role: "user", content: text, sources: [], created_at: new Date().toISOString() };
+    const optimistic: AIMessage = { id: -Date.now(), role: "user", content: text, sources: [], attachments: attachmentsForMessage, created_at: new Date().toISOString() };
     setMessages((rows) => [...rows, optimistic]);
     try {
       const result = await api.post<ChatResult>("/ai/chat/", {
@@ -92,7 +139,9 @@ export function AssistantWorkspace({ embedded = false, panelActions }: Props) {
         message: text,
         response_style: style,
         page_context: pageContext,
+        attachment_ids: attachmentsForMessage.map((row) => row.id),
       });
+      setPendingAttachments([]);
       setActiveId(result.conversation_id);
       setMessages((rows) => [...rows.filter((m) => m.id !== optimistic.id), optimistic, result.message]);
       setStatus((current) => current ? { ...current, quota: result.quota } : current);
@@ -138,9 +187,15 @@ export function AssistantWorkspace({ embedded = false, panelActions }: Props) {
         <footer className="border-t border-slate-200 bg-white p-3 sm:p-4">
           {error && <div className="mb-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
           {status && !status.dry_run && !status.provider_ready && <div className="mx-auto mb-2 max-w-3xl rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{user.role === "admin" ? "Le fournisseur IA n’est pas encore configuré : renseignez la clé et le modèle côté serveur." : "KalanPro AI est temporairement indisponible pendant sa configuration."}</div>}
-          <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm focus-within:border-brand-300 focus-within:ring-2 focus-within:ring-brand-100">
-            <textarea value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} rows={2} maxLength={4000} placeholder="Posez une question sur votre cours, votre progression ou votre contenu…" className="min-h-[48px] flex-1 resize-none border-0 bg-transparent px-2 py-2 text-sm outline-none placeholder:text-slate-400" />
-            <button disabled={!draft.trim() || busy || (!!status && !status.dry_run && !status.provider_ready) || (status?.quota && !status.quota.unlimited && status.quota.remaining <= 0)} onClick={() => void send()} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-500 text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Envoyer"><Send size={17}/></button>
+          <div className="mx-auto max-w-3xl">
+            {pendingAttachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2">{pendingAttachments.map((row) => <div key={row.id} className="flex max-w-full items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-600"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white text-brand-600">{row.is_image ? <ImageIcon size={14}/> : <FileText size={14}/>}</span><button type="button" onClick={() => void apiDownload(row.download_path.replace("/api", ""), row.name)} className="max-w-[180px] truncate font-semibold hover:text-brand-600" title={row.name}>{row.name}</button><span className="hidden text-[10px] text-slate-400 sm:inline">{Math.max(1, Math.round(row.size_bytes / 1024))} Ko</span><button type="button" onClick={() => void removePendingAttachment(row)} className="rounded-md p-1 text-slate-400 hover:bg-red-50 hover:text-red-500" aria-label={`Retirer ${row.name}`}><X size={12}/></button></div>)}</div>}
+            {uploadingAttachment && <div className="mb-2 flex items-center gap-2 text-xs text-slate-500"><Loader2 size={13} className="animate-spin"/> Chargement du fichier… {uploadProgress > 0 ? `${uploadProgress}%` : ""}</div>}
+            <div onDragOver={(e) => { if (status?.attachments_enabled) e.preventDefault(); }} onDrop={(e) => { if (!status?.attachments_enabled) return; e.preventDefault(); void uploadFiles(e.dataTransfer.files); }} className="flex items-end gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm focus-within:border-brand-300 focus-within:ring-2 focus-within:ring-brand-100">
+              {status?.attachments_enabled && <><input ref={fileInputRef} type="file" multiple accept=".pdf,.docx,.txt,.csv,.md,.json,.xlsx,.pptx,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(e) => { if (e.target.files) void uploadFiles(e.target.files); }}/><button type="button" disabled={uploadingAttachment || pendingAttachments.length >= (status.max_attachments_per_message || 5)} onClick={() => fileInputRef.current?.click()} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-slate-500 transition hover:bg-brand-50 hover:text-brand-600 disabled:opacity-40" aria-label="Joindre un fichier" title={`Joindre un fichier · ${status.max_attachment_mb || 12} Mo max`}><Paperclip size={17}/></button></>}
+              <textarea value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} rows={2} maxLength={4000} placeholder="Posez une question ou joignez un CV, PDF, document…" className="min-h-[48px] flex-1 resize-none border-0 bg-transparent px-2 py-2 text-sm outline-none placeholder:text-slate-400" />
+              <button disabled={(!draft.trim() && !pendingAttachments.length) || busy || uploadingAttachment || (!!status && !status.dry_run && !status.provider_ready) || (status?.quota && !status.quota.unlimited && status.quota.remaining <= 0)} onClick={() => void send()} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-500 text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Envoyer"><Send size={17}/></button>
+            </div>
+            {status?.attachments_enabled && <p className="mt-1.5 text-center text-[10px] text-slate-400">PDF, Word, TXT, CSV, Markdown, JSON, Excel, PowerPoint et images · {status.max_attachment_mb || 12} Mo max/fichier{status.vision_enabled ? " · analyse visuelle activée" : " · images analysables si le modèle vision est activé"}</p>}
           </div>
           <p className="mx-auto mt-2 max-w-3xl text-center text-[10px] text-slate-400">L'IA peut se tromper. Les sources KalanPro utilisées sont affichées sous la réponse lorsqu'elles sont disponibles.</p>
         </footer>
@@ -320,7 +375,7 @@ function Welcome({ userRole, capabilities, onPrompt }: { userRole: string; capab
   else if (capabilities.includes("mentor")) prompts = ["Prépare ma prochaine séance de mentorat", "Montre-moi mes séances confirmées", "Crée un plan d’accompagnement et demande ma confirmation"];
   else if (userRole === "instructor") prompts = ["Crée un vrai cours brouillon sur mon domaine et demande ma confirmation", "Montre-moi mes contenus instructeur", "Crée 5 questions de quiz à partir du cours ouvert"];
   else prompts = ["Analyse mon CV face à l’offre ouverte et propose des améliorations", "Quelles compétences me manquent et quelles formations KalanPro peuvent les combler ?", "Prépare ma lettre de motivation ou mon entretien pour l’offre ouverte"];
-  return <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center py-10 text-center"><span className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-brand-500 to-orange-400 text-white shadow-lg"><Sparkles size={25}/></span><h2 className="mt-4 text-xl font-black text-navy-950">Que voulez-vous accomplir ?</h2><p className="mt-2 max-w-lg text-sm leading-6 text-slate-500">Je peux utiliser votre contexte KalanPro, vos contenus autorisés et les outils liés à vos espaces actifs.</p><div className="mt-6 grid w-full gap-2 sm:grid-cols-3">{prompts.map((prompt) => <button key={prompt} onClick={() => onPrompt(prompt)} className="rounded-2xl border border-slate-200 bg-white p-3 text-left text-xs font-semibold leading-5 text-slate-600 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700">{prompt}</button>)}</div></div>;
+  return <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center py-10 text-center"><span className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-brand-500 to-orange-400 text-white shadow-lg"><Sparkles size={25}/></span><h2 className="mt-4 text-xl font-black text-navy-950">Que voulez-vous accomplir ?</h2><p className="mt-2 max-w-lg text-sm leading-6 text-slate-500">Je peux utiliser votre contexte KalanPro, vos contenus autorisés, vos outils métier et les fichiers que vous joignez.</p><div className="mt-6 grid w-full gap-2 sm:grid-cols-3">{prompts.map((prompt) => <button key={prompt} onClick={() => onPrompt(prompt)} className="rounded-2xl border border-slate-200 bg-white p-3 text-left text-xs font-semibold leading-5 text-slate-600 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700">{prompt}</button>)}</div></div>;
 }
 
 function MessageBubble({ message }: { message: AIMessage }) {
@@ -328,7 +383,20 @@ function MessageBubble({ message }: { message: AIMessage }) {
   const [feedback, setFeedback] = useState<"helpful" | "unhelpful" | "">(message.feedback || "");
   const [ratingBusy, setRatingBusy] = useState(false);
   const [actions, setActions] = useState<AIAction[]>(message.actions || []);
+  const [messageAttachments, setMessageAttachments] = useState<AIAttachment[]>(message.attachments || []);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+
+
+  async function removeHistoricAttachment(row: AIAttachment) {
+    if (assistant || message.id <= 0) return;
+    if (!confirm(`Supprimer définitivement « ${row.name} » de cette conversation ?`)) return;
+    try {
+      await api.del(`/ai/attachments/${row.id}/`);
+      setMessageAttachments((current) => current.filter((item) => item.id !== row.id));
+    } catch {
+      // La conversation reste utilisable même si la suppression du fichier échoue.
+    }
+  }
 
   async function rate(next: "helpful" | "unhelpful") {
     if (!assistant || message.id <= 0 || ratingBusy) return;
@@ -358,6 +426,7 @@ function MessageBubble({ message }: { message: AIMessage }) {
     {assistant && <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600"><Bot size={16}/></span>}
     <div className={`max-w-[88%] ${assistant ? "" : "rounded-2xl rounded-tr-md bg-navy-950 px-4 py-3 text-white"}`}>
       <div className={`whitespace-pre-wrap text-sm leading-6 ${assistant ? "text-slate-700" : "text-white"}`}>{message.content}</div>
+      {messageAttachments.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{messageAttachments.map((row) => <div key={row.id} className={`inline-flex max-w-full items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-semibold ${assistant ? "border-slate-200 bg-white text-slate-500" : "border-white/20 bg-white/10 text-white"}`}><button type="button" onClick={() => void apiDownload(row.download_path.replace("/api", ""), row.name)} className={`inline-flex min-w-0 items-center gap-1.5 ${assistant ? "hover:text-brand-600" : "hover:text-white/80"}`} title={row.name}>{row.is_image ? <ImageIcon size={11}/> : <FileText size={11}/>}<span className="max-w-[180px] truncate">{row.name}</span></button>{!assistant && message.id > 0 && <button type="button" onClick={() => void removeHistoricAttachment(row)} className="rounded p-0.5 text-white/60 hover:bg-white/10 hover:text-white" aria-label={`Supprimer ${row.name}`}><X size={10}/></button>}</div>)}</div>}
       {assistant && message.sources?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{message.sources.slice(0, 6).map((source) => <Link key={source.id} href={source.path || "#"} title={source.score ? `Pertinence RAG : ${source.score.toFixed(1)}` : undefined} className="inline-flex max-w-full items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-500 hover:border-brand-200 hover:text-brand-600"><span className="truncate">{source.title}</span><ExternalLink size={10}/></Link>)}</div>}
       {assistant && actions.length > 0 && <div className="mt-3 space-y-2">{actions.map((action) => <ActionCard key={action.token || action.id} action={action} busy={actionBusy === action.token} onConfirm={() => void decide(action, "confirm")} onReject={() => void decide(action, "reject")} />)}</div>}
       {assistant && <div className="mt-2 flex items-center gap-1 text-slate-400"><span className="mr-1 text-[10px]">Cette réponse vous aide ?</span><button type="button" disabled={ratingBusy} onClick={() => void rate("helpful")} className={`rounded-lg p-1.5 transition ${feedback === "helpful" ? "bg-emerald-50 text-emerald-600" : "hover:bg-slate-100 hover:text-slate-600"}`} aria-label="Réponse utile"><ThumbsUp size={13}/></button><button type="button" disabled={ratingBusy} onClick={() => void rate("unhelpful")} className={`rounded-lg p-1.5 transition ${feedback === "unhelpful" ? "bg-red-50 text-red-500" : "hover:bg-slate-100 hover:text-slate-600"}`} aria-label="Réponse à améliorer"><ThumbsDown size={13}/></button></div>}
