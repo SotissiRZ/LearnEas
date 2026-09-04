@@ -123,3 +123,50 @@ class AssistantAITests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["total"], 1)
         self.assertEqual(response.data["passed"], 1)
+
+    def test_catalog_tool_returns_published_courses(self):
+        from .tools import execute_read_tool
+        result = execute_read_tool(self.student, "search_learning_catalog", {"query": "Python", "kind": "course", "limit": 5})
+        self.assertTrue(any(item["id"] == self.course.id for item in result["items"]))
+
+    def test_confirmed_wishlist_action_executes_only_for_owner(self):
+        from .models import AIMessage
+        from .tools import create_action_proposal
+        conversation = AIConversation.objects.create(user=self.student, title="Action")
+        message = AIMessage.objects.create(conversation=conversation, role="assistant", content="Je peux l'ajouter.")
+        action = create_action_proposal(self.student, conversation, message, "add_course_to_wishlist", {"course_id": self.course.id})
+        response = self.client.post(f"/api/ai/actions/{action.confirmation_token}/confirm/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(self.student.wishlist.filter(course=self.course).exists())
+
+        other = User.objects.create_user(username="action-other", email="action-other@example.com", password="pass1234")
+        other_client = APIClient()
+        other_client.force_authenticate(other)
+        forbidden = other_client.post(f"/api/ai/actions/{action.confirmation_token}/confirm/", {}, format="json")
+        self.assertEqual(forbidden.status_code, 404)
+
+    def test_instructor_can_confirm_quiz_draft(self):
+        from .models import AIMessage, AIDraft
+        from .tools import create_action_proposal
+        client = APIClient()
+        client.force_authenticate(self.instructor)
+        conversation = AIConversation.objects.create(user=self.instructor, title="Quiz")
+        message = AIMessage.objects.create(conversation=conversation, role="assistant", content="Quiz prêt.")
+        action = create_action_proposal(self.instructor, conversation, message, "save_quiz_draft", {
+            "title": "Quiz Python",
+            "course_id": self.course.id,
+            "questions": [{"question": "Quel type stocke plusieurs éléments ?", "options": ["Liste", "Entier"], "correct_answer": "Liste", "explanation": "Une liste contient plusieurs éléments."}],
+        })
+        response = client.post(f"/api/ai/actions/{action.confirmation_token}/confirm/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(AIDraft.objects.filter(user=self.instructor, kind="quiz", title="Quiz Python").exists())
+
+    def test_student_cannot_prepare_instructor_draft(self):
+        from .models import AIMessage
+        from .tools import create_action_proposal
+        conversation = AIConversation.objects.create(user=self.student, title="Nope")
+        message = AIMessage.objects.create(conversation=conversation, role="assistant", content="")
+        with self.assertRaises(PermissionError):
+            create_action_proposal(self.student, conversation, message, "save_course_outline_draft", {
+                "title": "Cours interdit", "sections": [{"title": "A", "lessons": ["B"]}],
+            })

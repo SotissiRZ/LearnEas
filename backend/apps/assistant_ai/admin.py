@@ -1,11 +1,11 @@
 from django.contrib import admin
-from .models import AISettings, AIConversation, AIMessage, AIKnowledgeChunk, AIUsage, AIEvaluationCase
+from .models import AISettings, AIConversation, AIMessage, AIKnowledgeChunk, AIUsage, AIEvaluationCase, AIActionLog, AIDraft
 
 
 @admin.register(AISettings)
 class AISettingsAdmin(admin.ModelAdmin):
     fieldsets = (
-        ("Activation", {"fields": ("enabled", "rag_enabled", "history_enabled")}),
+        ("Activation", {"fields": ("enabled", "rag_enabled", "history_enabled", "tools_enabled")}),
         ("Profils", {"fields": ("student_enabled", "instructor_enabled", "admin_enabled")}),
         ("Quotas mensuels", {"fields": ("student_monthly_limit", "instructor_monthly_limit", "admin_monthly_limit")}),
         ("Modèle", {"fields": ("default_model", "temperature", "max_output_tokens", "max_history_messages", "max_context_chunks", "input_cost_per_million_eur", "output_cost_per_million_eur")}),
@@ -30,7 +30,7 @@ class AIMessageAdmin(admin.ModelAdmin):
     list_display = ("id", "conversation", "role", "model", "created_at")
     list_filter = ("role", "provider", "model")
     search_fields = ("content", "conversation__user__email")
-    readonly_fields = ("created_at", "feedback_at")
+    readonly_fields = ("created_at", "feedback_at", "actions")
 
 
 @admin.register(AIKnowledgeChunk)
@@ -55,3 +55,19 @@ class AIEvaluationCaseAdmin(admin.ModelAdmin):
     list_filter = ("enabled", "expected_source_type", "last_passed")
     search_fields = ("question", "notes")
     readonly_fields = ("last_passed", "last_rank", "last_run_at", "created_at")
+
+
+@admin.register(AIActionLog)
+class AIActionLogAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "user", "tool_name", "label", "status", "executed_at")
+    list_filter = ("status", "tool_name", "created_at")
+    search_fields = ("user__email", "label", "tool_name")
+    readonly_fields = ("confirmation_token", "request_payload", "result_payload", "error", "created_at", "executed_at")
+
+
+@admin.register(AIDraft)
+class AIDraftAdmin(admin.ModelAdmin):
+    list_display = ("title", "kind", "user", "course", "updated_at")
+    list_filter = ("kind", "updated_at")
+    search_fields = ("title", "user__email", "course__title")
+    readonly_fields = ("payload", "created_at", "updated_at")

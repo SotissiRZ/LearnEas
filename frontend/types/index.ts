@@ -531,6 +531,7 @@ export interface AIStatus {
   enabled: boolean;
   rag_enabled: boolean;
   history_enabled: boolean;
+  tools_enabled: boolean;
   dry_run: boolean;
   provider_ready: boolean;
   model: string;
@@ -546,11 +547,25 @@ export interface AISource {
   score?: number;
 }
 
+
+export interface AIAction {
+  id: number;
+  token: string;
+  tool: string;
+  label: string;
+  status: "proposed" | "executed" | "rejected" | "failed" | string;
+  requires_confirmation: boolean;
+  expires_at?: string | null;
+  result?: Record<string, unknown>;
+  error?: string;
+}
+
 export interface AIMessage {
   id: number;
   role: "user" | "assistant";
   content: string;
   sources: AISource[];
+  actions?: AIAction[];
   provider?: string;
   model?: string;
   feedback?: "helpful" | "unhelpful" | "";
@@ -574,6 +589,7 @@ export interface AIAdminSettings {
   enabled: boolean;
   rag_enabled: boolean;
   history_enabled: boolean;
+  tools_enabled: boolean;
   student_enabled: boolean;
   instructor_enabled: boolean;
   admin_enabled: boolean;

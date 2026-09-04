@@ -2,24 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Bot, ChevronLeft, ExternalLink, History, Loader2, Maximize2, MessageSquarePlus,
-  Minimize2, Send, Sparkles, Trash2, X, ThumbsUp, ThumbsDown,
+  Minimize2, Send, Sparkles, Trash2, X, ThumbsUp, ThumbsDown, Check, Ban, ShieldCheck, Wrench,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { AI_CONTEXT_EVENT, AIPageContext, currentAIContext, inferAIContext } from "@/lib/aiContext";
 import { useAuth } from "@/hooks/useAuth";
-import type { AIConversation, AIMessage, AIQuota, AIStatus } from "@/types";
+import type { AIAction, AIConversation, AIMessage, AIQuota, AIStatus } from "@/types";
 
-type Props = { embedded?: boolean };
+type Props = { embedded?: boolean; panelActions?: ReactNode };
 type ChatResult = { conversation_id: number; message: AIMessage; quota: AIQuota; context: Record<string, unknown> };
 
 function unwrap<T>(value: { results?: T[] } | T[]): T[] {
   return Array.isArray(value) ? value : value.results || [];
 }
 
-export function AssistantWorkspace({ embedded = false }: Props) {
+export function AssistantWorkspace({ embedded = false, panelActions }: Props) {
   const pathname = usePathname();
   const { user, hydrated } = useAuth();
   const [status, setStatus] = useState<AIStatus | null>(null);
@@ -125,9 +125,9 @@ export function AssistantWorkspace({ embedded = false }: Props) {
       </aside>}
 
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-          <div className="min-w-0"><div className="flex items-center gap-2 font-black text-navy-950"><span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-orange-400 text-white"><Bot size={17}/></span>KalanPro AI</div><p className="mt-0.5 truncate text-[10px] text-slate-400">{status?.dry_run ? "Mode démonstration" : status?.model || "Assistant contextuel"} · {contextLabel(pageContext)}</p></div>
-          <div className="flex items-center gap-2"><select value={style} onChange={(e) => setStyle(e.target.value as typeof style)} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"><option value="short">Court</option><option value="normal">Normal</option><option value="detailed">Détaillé</option></select>{status?.quota && <span className="hidden rounded-lg bg-slate-100 px-2 py-1.5 text-[10px] font-bold text-slate-500 sm:inline">{status.quota.unlimited ? "Illimité" : `${status.quota.remaining}/${status.quota.limit}`}</span>}</div>
+        <header className="flex min-h-[72px] items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 pr-3">
+          <div className="min-w-0 flex-1"><div className="flex items-center gap-2 font-black text-navy-950"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-orange-400 text-white"><Bot size={17}/></span><span className="truncate">KalanPro AI</span></div><p className="mt-0.5 truncate text-[10px] text-slate-400">{status?.dry_run ? "Mode démonstration" : status?.model || "Assistant contextuel"} · {status?.tools_enabled ? "Outils actifs" : "Lecture seule"} · {contextLabel(pageContext)}</p></div>
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2"><select value={style} onChange={(e) => setStyle(e.target.value as typeof style)} className="hidden rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs sm:block"><option value="short">Court</option><option value="normal">Normal</option><option value="detailed">Détaillé</option></select>{status?.quota && <span className="hidden rounded-lg bg-slate-100 px-2 py-1.5 text-[10px] font-bold text-slate-500 md:inline">{status.quota.unlimited ? "Illimité" : `${status.quota.remaining}/${status.quota.limit}`}</span>}{panelActions}</div>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,#f8fafc_0%,#fff_50%)] p-4 sm:p-5">
@@ -153,18 +153,38 @@ export default function KalanProAssistant() {
   const { user, hydrated } = useAuth();
   const [open, setOpen] = useState(false);
   const [large, setLarge] = useState(false);
-  if (!hydrated || !user || pathname.startsWith("/live/session/") || pathname === "/assistant") return null;
+
+  useEffect(() => {
+    setOpen(false);
+    setLarge(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
+  if (!hydrated || pathname.startsWith("/live/session/") || pathname === "/assistant") return null;
+
+  const controls = <>
+    <button onClick={() => setLarge((v) => !v)} className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-600" aria-label={large ? "Réduire l'assistant" : "Agrandir l'assistant"} title={large ? "Réduire" : "Agrandir"}>{large ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}</button>
+    <button onClick={() => setOpen(false)} className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500" aria-label="Fermer KalanPro AI" title="Fermer"><X size={17}/></button>
+  </>;
+
   return <>
-    <button onClick={() => setOpen(true)} className="fixed bottom-5 right-4 z-40 flex items-center gap-2 rounded-full bg-gradient-to-r from-brand-500 to-orange-400 px-4 py-3 text-sm font-black text-white shadow-[0_15px_45px_rgba(255,100,26,.35)] transition hover:-translate-y-0.5 sm:right-6" aria-label="Ouvrir KalanPro AI"><Sparkles size={17}/> <span className="hidden sm:inline">KalanPro AI</span></button>
-    {open && <div className={`fixed z-[80] overflow-hidden border border-slate-200 bg-white shadow-2xl transition-all ${large ? "inset-3 rounded-3xl sm:inset-6" : "bottom-4 right-3 top-24 w-[calc(100%-1.5rem)] rounded-3xl sm:right-6 sm:w-[min(760px,calc(100%-3rem))]"}`}>
-      <div className="absolute right-3 top-3 z-20 flex gap-1"><button onClick={() => setLarge((v) => !v)} className="rounded-lg bg-white/90 p-2 text-slate-500 shadow-sm hover:bg-slate-100" aria-label={large ? "Réduire" : "Agrandir"}>{large ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button><button onClick={() => setOpen(false)} className="rounded-lg bg-white/90 p-2 text-slate-500 shadow-sm hover:bg-slate-100" aria-label="Fermer"><X size={16}/></button></div>
-      <AssistantWorkspace />
+    {!open && <button onClick={() => setOpen(true)} className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-[70] flex items-center gap-2 rounded-full bg-gradient-to-r from-brand-500 to-orange-400 px-4 py-3 text-sm font-black text-white shadow-[0_15px_45px_rgba(255,100,26,.35)] transition hover:-translate-y-0.5 sm:right-[max(1.5rem,env(safe-area-inset-right))]" aria-label="Ouvrir KalanPro AI"><Sparkles size={17}/> <span className={pathname === "/" ? "inline" : "hidden sm:inline"}>{user ? "KalanPro AI" : "Essayer KalanPro AI"}</span></button>}
+    {open && <div role="dialog" aria-modal="true" aria-label="KalanPro AI" className={`fixed z-[100] overflow-hidden border border-slate-200 bg-white shadow-2xl transition-all ${large ? "inset-2 rounded-2xl sm:inset-6 sm:rounded-3xl" : "bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(.75rem,env(safe-area-inset-right))] top-24 w-[calc(100%-1.5rem)] rounded-2xl sm:right-[max(1.5rem,env(safe-area-inset-right))] sm:w-[min(760px,calc(100%-3rem))] sm:rounded-3xl"}`}>
+      <AssistantWorkspace panelActions={controls} />
     </div>}
   </>;
 }
 
 function Welcome({ userRole, onPrompt }: { userRole: string; onPrompt: (value: string) => void }) {
-  const prompts = userRole === "instructor" ? ["Crée 5 questions de quiz à partir du cours ouvert", "Aide-moi à améliorer les objectifs pédagogiques", "Résume les points clés de cette leçon"] : userRole === "admin" ? ["Que peux-tu analyser dans KalanPro ?", "Explique le fonctionnement du RAG KalanPro", "Quels contrôles qualité recommandes-tu ?"] : ["Explique-moi la leçon actuelle simplement", "Fais-moi un mini quiz de 5 questions", "Résume ce cours en points clés"];
+  const prompts = userRole === "instructor" ? ["Crée 5 questions de quiz à partir du cours ouvert et propose de les enregistrer", "Montre-moi mes contenus instructeur", "Prépare un plan de cours sur mon domaine"] : userRole === "admin" ? ["Que peux-tu analyser dans KalanPro ?", "Cherche les formations Data actuellement publiées", "Quels contrôles qualité recommandes-tu ?"] : ["Trouve-moi un cours débutant adapté à mon profil", "Montre-moi ma progression", "Quelles offres d'emploi correspondent le mieux à mon profil ?"];
   return <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center py-10 text-center"><span className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-brand-500 to-orange-400 text-white shadow-lg"><Sparkles size={25}/></span><h2 className="mt-4 text-xl font-black text-navy-950">Que voulez-vous accomplir ?</h2><p className="mt-2 max-w-lg text-sm leading-6 text-slate-500">Je peux utiliser votre contexte KalanPro, les cours auxquels vous avez accès, les transcriptions et les PDF indexés.</p><div className="mt-6 grid w-full gap-2 sm:grid-cols-3">{prompts.map((prompt) => <button key={prompt} onClick={() => onPrompt(prompt)} className="rounded-2xl border border-slate-200 bg-white p-3 text-left text-xs font-semibold leading-5 text-slate-600 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700">{prompt}</button>)}</div></div>;
 }
 
@@ -172,6 +192,8 @@ function MessageBubble({ message }: { message: AIMessage }) {
   const assistant = message.role === "assistant";
   const [feedback, setFeedback] = useState<"helpful" | "unhelpful" | "">(message.feedback || "");
   const [ratingBusy, setRatingBusy] = useState(false);
+  const [actions, setActions] = useState<AIAction[]>(message.actions || []);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
 
   async function rate(next: "helpful" | "unhelpful") {
     if (!assistant || message.id <= 0 || ratingBusy) return;
@@ -185,7 +207,42 @@ function MessageBubble({ message }: { message: AIMessage }) {
     } finally { setRatingBusy(false); }
   }
 
-  return <div className={`flex gap-3 ${assistant ? "" : "justify-end"}`}>{assistant && <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600"><Bot size={16}/></span>}<div className={`max-w-[88%] ${assistant ? "" : "rounded-2xl rounded-tr-md bg-navy-950 px-4 py-3 text-white"}`}><div className={`whitespace-pre-wrap text-sm leading-6 ${assistant ? "text-slate-700" : "text-white"}`}>{message.content}</div>{assistant && message.sources?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{message.sources.slice(0, 6).map((source) => <Link key={source.id} href={source.path || "#"} title={source.score ? `Pertinence RAG : ${source.score.toFixed(1)}` : undefined} className="inline-flex max-w-full items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-500 hover:border-brand-200 hover:text-brand-600"><span className="truncate">{source.title}</span><ExternalLink size={10}/></Link>)}</div>}{assistant && <div className="mt-2 flex items-center gap-1 text-slate-400"><span className="mr-1 text-[10px]">Cette réponse vous aide ?</span><button type="button" disabled={ratingBusy} onClick={() => void rate("helpful")} className={`rounded-lg p-1.5 transition ${feedback === "helpful" ? "bg-emerald-50 text-emerald-600" : "hover:bg-slate-100 hover:text-slate-600"}`} aria-label="Réponse utile"><ThumbsUp size={13}/></button><button type="button" disabled={ratingBusy} onClick={() => void rate("unhelpful")} className={`rounded-lg p-1.5 transition ${feedback === "unhelpful" ? "bg-red-50 text-red-500" : "hover:bg-slate-100 hover:text-slate-600"}`} aria-label="Réponse à améliorer"><ThumbsDown size={13}/></button></div>}</div></div>;
+  async function decide(action: AIAction, decision: "confirm" | "reject") {
+    if (!action.token || actionBusy) return;
+    setActionBusy(action.token);
+    try {
+      const result = await api.post<{ action: AIAction }>(`/ai/actions/${action.token}/${decision}/`, {});
+      setActions((rows) => rows.map((row) => row.token === action.token ? result.action : row));
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : "Action impossible.";
+      setActions((rows) => rows.map((row) => row.token === action.token ? { ...row, error: text } : row));
+    } finally { setActionBusy(null); }
+  }
+
+  return <div className={`flex gap-3 ${assistant ? "" : "justify-end"}`}>
+    {assistant && <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600"><Bot size={16}/></span>}
+    <div className={`max-w-[88%] ${assistant ? "" : "rounded-2xl rounded-tr-md bg-navy-950 px-4 py-3 text-white"}`}>
+      <div className={`whitespace-pre-wrap text-sm leading-6 ${assistant ? "text-slate-700" : "text-white"}`}>{message.content}</div>
+      {assistant && message.sources?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{message.sources.slice(0, 6).map((source) => <Link key={source.id} href={source.path || "#"} title={source.score ? `Pertinence RAG : ${source.score.toFixed(1)}` : undefined} className="inline-flex max-w-full items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-500 hover:border-brand-200 hover:text-brand-600"><span className="truncate">{source.title}</span><ExternalLink size={10}/></Link>)}</div>}
+      {assistant && actions.length > 0 && <div className="mt-3 space-y-2">{actions.map((action) => <ActionCard key={action.token || action.id} action={action} busy={actionBusy === action.token} onConfirm={() => void decide(action, "confirm")} onReject={() => void decide(action, "reject")} />)}</div>}
+      {assistant && <div className="mt-2 flex items-center gap-1 text-slate-400"><span className="mr-1 text-[10px]">Cette réponse vous aide ?</span><button type="button" disabled={ratingBusy} onClick={() => void rate("helpful")} className={`rounded-lg p-1.5 transition ${feedback === "helpful" ? "bg-emerald-50 text-emerald-600" : "hover:bg-slate-100 hover:text-slate-600"}`} aria-label="Réponse utile"><ThumbsUp size={13}/></button><button type="button" disabled={ratingBusy} onClick={() => void rate("unhelpful")} className={`rounded-lg p-1.5 transition ${feedback === "unhelpful" ? "bg-red-50 text-red-500" : "hover:bg-slate-100 hover:text-slate-600"}`} aria-label="Réponse à améliorer"><ThumbsDown size={13}/></button></div>}
+    </div>
+  </div>;
+}
+
+function ActionCard({ action, busy, onConfirm, onReject }: { action: AIAction; busy: boolean; onConfirm: () => void; onReject: () => void }) {
+  const proposed = action.status === "proposed";
+  const executed = action.status === "executed";
+  const rejected = action.status === "rejected";
+  const failed = action.status === "failed";
+  return <div className={`rounded-2xl border p-3 ${executed ? "border-emerald-200 bg-emerald-50/60" : rejected || failed ? "border-slate-200 bg-slate-50" : "border-brand-200 bg-brand-50/50"}`}>
+    <div className="flex items-start gap-2">
+      <span className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg ${executed ? "bg-emerald-100 text-emerald-700" : proposed ? "bg-white text-brand-600" : "bg-white text-slate-500"}`}>{executed ? <Check size={14}/> : failed ? <Ban size={14}/> : <Wrench size={14}/>}</span>
+      <div className="min-w-0 flex-1"><p className="text-xs font-black text-navy-950">{action.label}</p><p className="mt-0.5 text-[10px] text-slate-500">{executed ? "Action exécutée" : rejected ? "Action refusée" : failed ? "Action échouée" : "Votre confirmation est requise avant toute modification."}</p>{action.error && <p className="mt-1 text-[10px] text-red-600">{action.error}</p>}</div>
+      {proposed && <ShieldCheck size={15} className="shrink-0 text-brand-500"/>}
+    </div>
+    {proposed && <div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busy} onClick={onConfirm} className="inline-flex items-center gap-1 rounded-xl bg-brand-500 px-3 py-2 text-[11px] font-black text-white hover:bg-brand-600 disabled:opacity-50">{busy ? <Loader2 size={12} className="animate-spin"/> : <Check size={12}/>} Confirmer</button><button type="button" disabled={busy} onClick={onReject} className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"><X size={12}/> Refuser</button></div>}
+  </div>;
 }
 
 function contextLabel(context: AIPageContext) {

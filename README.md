@@ -1,5 +1,7 @@
 # KalanPro
 
+> **v63 — KalanPro AI Phase 2 :** outils structurés, recherche catalogue/emploi/progression, actions confirmées, brouillons pédagogiques et journal admin. Voir [`docs/AI_PHASE2_V63.md`](./docs/AI_PHASE2_V63.md).
+
 > **v60 — KalanPro AI Phase 1 :** assistant contextuel avec historique, contexte de page/leçon, RAG sur cours/PDF/transcripts, quotas par rôle et administration IA. Voir [`docs/AI_PHASE1.md`](./docs/AI_PHASE1.md).
 
 > **v57 — Salle live & planning :** disposition vidéo automatique/galerie/intervenant, vignette locale compacte lorsque l'hôte est seul, partage d'écran prioritaire et modification date/heure/durée des séances depuis le dashboard instructeur.
@@ -518,3 +520,7 @@ La Phase 1 dispose d'une boucle de mesure : feedback utilisateur, coût estimé,
 ```bash
 docker compose -f docker-compose.dev.yml exec backend python manage.py evaluate_ai_rag --seed-demo --top-k 6
 ```
+
+### KalanPro AI — widget global (v62)
+
+Le bouton KalanPro AI est visible sur les pages publiques, y compris l'accueil. Un visiteur non authentifié peut ouvrir le panneau mais doit se connecter avant d'utiliser les conversations, le RAG ou l'historique. Le widget n'est pas affiché dans `/live/session/...` ni dans `/assistant`, où l'espace IA dédié est déjà présent.

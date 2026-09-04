@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import AIConversationViewSet, status_view, chat_view, admin_settings_view, admin_metrics_view, message_feedback_view, admin_evaluate_rag_view
+from .views import AIConversationViewSet, status_view, chat_view, admin_settings_view, admin_metrics_view, message_feedback_view, admin_evaluate_rag_view, action_confirm_view, action_reject_view, drafts_view, admin_actions_view
 
 router = DefaultRouter()
 router.register("conversations", AIConversationViewSet, basename="ai-conversation")
@@ -10,7 +10,11 @@ urlpatterns = [
     path("status/", status_view, name="ai-status"),
     path("chat/", chat_view, name="ai-chat"),
     path("messages/<int:message_id>/feedback/", message_feedback_view, name="ai-message-feedback"),
+    path("actions/<uuid:token>/confirm/", action_confirm_view, name="ai-action-confirm"),
+    path("actions/<uuid:token>/reject/", action_reject_view, name="ai-action-reject"),
+    path("drafts/", drafts_view, name="ai-drafts"),
     path("admin/settings/", admin_settings_view, name="ai-admin-settings"),
     path("admin/metrics/", admin_metrics_view, name="ai-admin-metrics"),
+    path("admin/actions/", admin_actions_view, name="ai-admin-actions"),
     path("admin/evaluate-rag/", admin_evaluate_rag_view, name="ai-admin-evaluate-rag"),
 ]

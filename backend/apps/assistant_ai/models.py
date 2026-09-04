@@ -8,6 +8,7 @@ class AISettings(models.Model):
     enabled = models.BooleanField(default=True)
     rag_enabled = models.BooleanField(default=True)
     history_enabled = models.BooleanField(default=True)
+    tools_enabled = models.BooleanField(default=True)
     student_enabled = models.BooleanField(default=True)
     instructor_enabled = models.BooleanField(default=True)
     admin_enabled = models.BooleanField(default=True)
@@ -79,6 +80,7 @@ class AIMessage(models.Model):
     role = models.CharField(max_length=20, choices=Role.choices)
     content = models.TextField()
     sources = models.JSONField(default=list, blank=True)
+    actions = models.JSONField(default=list, blank=True)
     provider = models.CharField(max_length=80, blank=True)
     model = models.CharField(max_length=120, blank=True)
     prompt_tokens = models.PositiveIntegerField(default=0)
@@ -171,3 +173,56 @@ class AIEvaluationCase(models.Model):
 
     def __str__(self):
         return self.question[:80]
+
+
+class AIDraft(models.Model):
+    class Kind(models.TextChoices):
+        QUIZ = "quiz", "Quiz"
+        COURSE_OUTLINE = "course_outline", "Plan de cours"
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ai_drafts")
+    kind = models.CharField(max_length=30, choices=Kind.choices)
+    title = models.CharField(max_length=220)
+    payload = models.JSONField(default=dict)
+    course = models.ForeignKey("catalog.Course", on_delete=models.SET_NULL, null=True, blank=True, related_name="ai_drafts")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        indexes = [models.Index(fields=["user", "kind", "-updated_at"], name="ai_draft_user_kind_idx")]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} · {self.title}"
+
+
+class AIActionLog(models.Model):
+    class Status(models.TextChoices):
+        PROPOSED = "proposed", "À confirmer"
+        EXECUTED = "executed", "Exécutée"
+        REJECTED = "rejected", "Refusée"
+        FAILED = "failed", "Échec"
+
+    confirmation_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ai_actions")
+    conversation = models.ForeignKey(AIConversation, on_delete=models.SET_NULL, null=True, blank=True, related_name="actions")
+    message = models.ForeignKey(AIMessage, on_delete=models.SET_NULL, null=True, blank=True, related_name="action_logs")
+    tool_name = models.CharField(max_length=80)
+    label = models.CharField(max_length=220)
+    request_payload = models.JSONField(default=dict)
+    result_payload = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PROPOSED, db_index=True)
+    error = models.CharField(max_length=1000, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    executed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "status", "-created_at"], name="ai_action_user_status_idx"),
+            models.Index(fields=["tool_name", "status", "-created_at"], name="ai_action_tool_status_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.tool_name} · {self.user} · {self.status}"

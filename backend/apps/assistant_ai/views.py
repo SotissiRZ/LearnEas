@@ -6,9 +6,10 @@ from rest_framework.decorators import action, api_view, permission_classes, thro
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
-from .models import AIConversation, AIMessage, AISettings, AIUsage, AIKnowledgeChunk, AIEvaluationCase
+from .models import AIConversation, AIMessage, AISettings, AIUsage, AIKnowledgeChunk, AIEvaluationCase, AIActionLog, AIDraft
 from .serializers import AIConversationListSerializer, AIConversationDetailSerializer, AISettingsSerializer
 from .services import answer, quota_state, role_enabled, estimate_cost_eur
+from .tools import create_action_proposal, serialize_action, execute_action, reject_action
 from .evaluation import seed_evaluation_cases, run_evaluation
 
 
@@ -58,6 +59,7 @@ def status_view(request):
         "enabled": bool(cfg.enabled and role_enabled(request.user, cfg)),
         "rag_enabled": cfg.rag_enabled,
         "history_enabled": cfg.history_enabled,
+        "tools_enabled": cfg.tools_enabled,
         "dry_run": bool(getattr(settings, "AI_DRY_RUN", False)),
         "provider_ready": bool(getattr(settings, "AI_API_KEY", "") and (cfg.default_model or getattr(settings, "AI_CHAT_MODEL", ""))),
         "model": cfg.default_model or getattr(settings, "AI_CHAT_MODEL", ""),
@@ -127,6 +129,19 @@ def chat_view(request):
         prompt_tokens=result["prompt_tokens"],
         completion_tokens=result["completion_tokens"],
     )
+    action_rows = []
+    for pending in result.get("pending_actions") or []:
+        try:
+            action_rows.append(create_action_proposal(
+                request.user, conversation, message, pending["tool_name"], pending.get("arguments") or {}
+            ))
+        except Exception:
+            # Une proposition invalide ne doit pas faire échouer une réponse IA déjà générée.
+            continue
+    actions = [serialize_action(row) for row in action_rows]
+    if actions:
+        message.actions = actions
+        message.save(update_fields=["actions"])
     conversation.context_preview = result["context_preview"]
     if conversation.title == "Nouvelle conversation":
         conversation.title = question[:80]
@@ -144,10 +159,67 @@ def chat_view(request):
     )
     return Response({
         "conversation_id": conversation.id,
-        "message": {"id": message.id, "role": message.role, "content": message.content, "sources": sources, "provider": message.provider, "model": message.model, "created_at": message.created_at},
+        "message": {"id": message.id, "role": message.role, "content": message.content, "sources": sources, "actions": actions, "provider": message.provider, "model": message.model, "created_at": message.created_at},
         "quota": quota_state(request.user, cfg),
         "context": result["context_preview"],
     })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def action_confirm_view(request, token):
+    action = AIActionLog.objects.select_related("message", "conversation").filter(confirmation_token=token, user=request.user).first()
+    if not action:
+        return Response({"detail": "Action IA introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    try:
+        result = execute_action(action)
+    except (ValueError, PermissionError) as exc:
+        return Response({"detail": str(exc), "action": serialize_action(action)}, status=status.HTTP_400_BAD_REQUEST)
+    serialized = serialize_action(action)
+    if action.message_id:
+        existing = list(action.message.actions or [])
+        actions = [serialized if item.get("token") == str(action.confirmation_token) else item for item in existing]
+        if not any(item.get("token") == str(action.confirmation_token) for item in existing):
+            actions.append(serialized)
+        action.message.actions = actions
+        action.message.save(update_fields=["actions"])
+    return Response({"action": serialized, "result": result})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def action_reject_view(request, token):
+    action = AIActionLog.objects.select_related("message").filter(confirmation_token=token, user=request.user).first()
+    if not action:
+        return Response({"detail": "Action IA introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    try:
+        reject_action(action)
+    except ValueError as exc:
+        return Response({"detail": str(exc), "action": serialize_action(action)}, status=status.HTTP_400_BAD_REQUEST)
+    serialized = serialize_action(action)
+    if action.message_id:
+        existing = list(action.message.actions or [])
+        actions = [serialized if item.get("token") == str(action.confirmation_token) else item for item in existing]
+        if not any(item.get("token") == str(action.confirmation_token) for item in existing):
+            actions.append(serialized)
+        action.message.actions = actions
+        action.message.save(update_fields=["actions"])
+    return Response({"action": serialized})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def drafts_view(request):
+    qs = AIDraft.objects.filter(user=request.user).select_related("course")
+    kind = str(request.query_params.get("kind") or "").strip()
+    if kind in {AIDraft.Kind.QUIZ, AIDraft.Kind.COURSE_OUTLINE}:
+        qs = qs.filter(kind=kind)
+    rows = qs[:50]
+    return Response([{
+        "id": row.id, "kind": row.kind, "title": row.title, "payload": row.payload,
+        "course_id": row.course_id, "course_title": row.course.title if row.course else "",
+        "created_at": row.created_at, "updated_at": row.updated_at,
+    } for row in rows])
 
 
 @api_view(["GET", "PATCH"])
@@ -211,6 +283,18 @@ def admin_evaluate_rag_view(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def admin_actions_view(request):
+    if request.user.role != "admin":
+        return Response({"detail": "Accès administrateur requis."}, status=status.HTTP_403_FORBIDDEN)
+    rows = AIActionLog.objects.select_related("user").order_by("-created_at")[:50]
+    return Response([{
+        "id": row.id, "user_email": row.user.email, "tool": row.tool_name, "label": row.label,
+        "status": row.status, "error": row.error, "created_at": row.created_at, "executed_at": row.executed_at,
+    } for row in rows])
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def admin_metrics_view(request):
     if request.user.role != "admin":
         return Response({"detail": "Accès administrateur requis."}, status=status.HTTP_403_FORBIDDEN)
@@ -245,4 +329,8 @@ def admin_metrics_view(request):
         "helpful_rate": round((helpful / feedback_total * 100), 1) if feedback_total else None,
         "eval_cases": eval_enabled.count(),
         "eval_pass_rate": round((eval_passed / eval_ran.count() * 100), 1) if eval_ran.count() else None,
+        "actions_proposed": AIActionLog.objects.filter(status=AIActionLog.Status.PROPOSED).count(),
+        "actions_executed": AIActionLog.objects.filter(status=AIActionLog.Status.EXECUTED).count(),
+        "actions_failed": AIActionLog.objects.filter(status=AIActionLog.Status.FAILED).count(),
+        "drafts": AIDraft.objects.count(),
     })

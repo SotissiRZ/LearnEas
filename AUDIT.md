@@ -1,3 +1,17 @@
+# Audit v63 — KalanPro AI Phase 2 · lot 1
+
+- Ajout d'outils structurés séparant strictement lecture et mutation.
+- Les outils de lecture interrogent catalogue, progression, certificats, opportunités et contenus instructeur sans exposer de données d'autres comptes.
+- Les mutations IA sont transformées en propositions signées appartenant à l'utilisateur ; confirmation ou refus explicite requis.
+- Validation serveur des paramètres de chaque action et contrôle de propriété instructeur.
+- Expiration des confirmations après 20 minutes.
+- Journal `AIActionLog` et brouillons `AIDraft` persistants ; dashboard admin et page `/assistant/drafts`.
+- Function calling compatible Chat Completions ; repli sans outils si le fournisseur ne supporte pas ce format.
+- Contrôles exécutés : compilation Python, parsing TS/TSX modifiés, audit mobile 119 fichiers sans alerte bloquante, sécurité frontend 4/4, YAML/JSON valides.
+- 140 méthodes de tests backend présentes ; la suite Django runtime reste à exécuter dans Docker/CI.
+
+---
+
 # Audit v48 — Opportunités & recrutement
 
 - Nouveau module `apps.opportunities` compilé sans erreur Python.

@@ -1,3 +1,16 @@
+# v63 — KalanPro AI Phase 2 · outils et actions confirmées
+
+- Outils structurés pour rechercher cours/PDF/cohortes, progression, certificats et opportunités.
+- Matching emploi réutilise le moteur explicable KalanPro au lieu d'un score inventé par le modèle.
+- Function calling compatible Chat Completions avec repli automatique en chat classique si le fournisseur ne supporte pas les outils.
+- Toute mutation IA devient une proposition `AIActionLog` avec confirmation explicite et expiration.
+- Actions initiales : ajouter un cours aux souhaits, enregistrer un quiz IA, enregistrer un plan de cours IA.
+- Nouveaux brouillons persistants `AIDraft` et page instructeur/admin `/assistant/drafts`.
+- Cartes `Confirmer / Refuser` persistées dans l'historique des conversations.
+- Journal des actions et métriques Phase 2 dans le dashboard administrateur.
+- Migration : `assistant_ai.0003_phase2_tools`.
+- Documentation : `docs/AI_PHASE2_V63.md`.
+
 # v59 — Partage d’écran contrôlable sans quitter la réunion
 
 - Suppression du verrou qui forçait systématiquement `screenSharing` en mode focus.
@@ -955,3 +968,12 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Nouveau jeu de tests RAG persistants (`AIEvaluationCase`) et commande `evaluate_ai_rag`.
 - Bouton **Évaluer le RAG** dans le dashboard admin avec Hit@6 et MRR.
 - Nouveaux tests de régression feedback, coûts, qualité RAG et autorisations admin.
+
+## v62 — KalanPro AI · visibilité publique et panneau corrigé
+
+- Le bouton flottant **KalanPro AI** est désormais visible sur la page d'accueil même pour un visiteur non connecté ; le panneau propose alors la connexion sans exposer les fonctions privées.
+- Les boutons **Agrandir / Réduire** et **Fermer** sont intégrés dans la barre d'outils du header au lieu d'être positionnés par-dessus le sélecteur de style/quota.
+- Le bouton flottant disparaît lorsque le panneau est ouvert, ce qui évite tout doublon ou élément partiellement visible derrière la fenêtre.
+- Positionnement du widget durci avec prise en compte des safe areas et z-index explicite.
+- `Échap` ferme le panneau ; un changement de route le replie automatiquement.
+- Le composant reste volontairement masqué dans la salle live et sur la page `/assistant` afin d'éviter deux assistants simultanés.
