@@ -304,3 +304,78 @@ class AssistantAITests(TestCase):
         self.assertTrue(actions)
         self.assertEqual(actions[0]["tool"], "submit_opportunity_application")
         self.assertEqual(actions[0]["status"], "proposed")
+
+    def test_learning_recommendation_uses_missing_skills_and_real_catalog(self):
+        from apps.opportunities.models import CandidateProfile, EmployerProfile, Opportunity
+        from .tools import execute_read_tool
+        CandidateProfile.objects.create(user=self.student, skills=["Python"], desired_roles=["Développeur"])
+        sql_course = Course.objects.create(
+            instructor=self.instructor, category=self.category, title="SQL pour débutants",
+            description="Requêtes SQL et bases relationnelles.", published=True,
+        )
+        employer_user = User.objects.create_user(username="learning-employer", email="learning-employer@example.com", password="pass1234")
+        employer = EmployerProfile.objects.create(user=employer_user, company_name="Learning SARL", country="Sénégal", status=EmployerProfile.Status.APPROVED)
+        opportunity = Opportunity.objects.create(
+            employer=employer, title="Développeur Python SQL", description="Python et SQL",
+            skills_required=["Python", "SQL"], status=Opportunity.Status.PUBLISHED,
+        )
+        result = execute_read_tool(self.student, "recommend_learning_for_opportunity", {"opportunity_id": opportunity.id, "limit": 6})
+        self.assertIn("SQL", result["missing_skills"])
+        self.assertTrue(any(item["id"] == sql_course.id and item["targets_skill"] == "SQL" for item in result["recommendations"]))
+
+    def test_candidate_can_confirm_cv_improvement_draft_without_overwriting_profile(self):
+        from apps.opportunities.models import CandidateProfile, EmployerProfile, Opportunity
+        from .models import AIMessage, AIDraft
+        from .tools import create_action_proposal
+        profile = CandidateProfile.objects.create(user=self.student, headline="Ancienne accroche", summary="Résumé initial", skills=["Python"])
+        employer_user = User.objects.create_user(username="cv-employer", email="cv-employer@example.com", password="pass1234")
+        employer = EmployerProfile.objects.create(user=employer_user, company_name="CV Pro", country="Maroc", status=EmployerProfile.Status.APPROVED)
+        opportunity = Opportunity.objects.create(employer=employer, title="Backend Django", description="Django REST", status=Opportunity.Status.PUBLISHED)
+        conversation = AIConversation.objects.create(user=self.student, title="CV")
+        message = AIMessage.objects.create(conversation=conversation, role="assistant", content="CV prêt.")
+        action = create_action_proposal(self.student, conversation, message, "save_cv_improvement_draft", {
+            "title": "CV Backend Django", "opportunity_id": opportunity.id,
+            "professional_headline": "Développeur Backend Python / Django",
+            "summary": "Profil orienté API et qualité logicielle.", "skills": ["Python", "Django"],
+            "achievement_rewrites": ["Construit des APIs maintenables."], "recommendations": ["Quantifier les résultats."],
+        })
+        response = self.client.post(f"/api/ai/actions/{action.confirmation_token}/confirm/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(AIDraft.objects.filter(user=self.student, kind=AIDraft.Kind.CV_IMPROVEMENT).exists())
+        profile.refresh_from_db()
+        self.assertEqual(profile.headline, "Ancienne accroche")
+
+    def test_candidate_can_save_cover_letter_and_interview_prep_drafts(self):
+        from apps.opportunities.models import EmployerProfile, Opportunity
+        from .models import AIMessage, AIDraft
+        from .tools import create_action_proposal
+        employer_user = User.objects.create_user(username="career-employer", email="career-employer@example.com", password="pass1234")
+        employer = EmployerProfile.objects.create(user=employer_user, company_name="Career K", country="Côte d'Ivoire", status=EmployerProfile.Status.APPROVED)
+        opportunity = Opportunity.objects.create(employer=employer, title="Analyste Data", description="SQL et reporting", status=Opportunity.Status.PUBLISHED)
+        conversation = AIConversation.objects.create(user=self.student, title="Carrière")
+        message = AIMessage.objects.create(conversation=conversation, role="assistant", content="Documents prêts.")
+        for tool, payload, kind in [
+            ("save_cover_letter_draft", {"opportunity_id": opportunity.id, "title": "Lettre Data", "content": "Madame, Monsieur, je souhaite contribuer à vos analyses.", "key_points": ["SQL"]}, AIDraft.Kind.COVER_LETTER),
+            ("save_candidate_interview_prep_draft", {"opportunity_id": opportunity.id, "title": "Entretien Data", "pitch": "Je transforme les données en décisions.", "likely_questions": ["Parlez-moi d'un projet SQL"], "star_examples": ["Projet reporting"], "questions_to_ask": ["Quels KPI suivez-vous ?"], "checklist": ["Tester la caméra"]}, AIDraft.Kind.INTERVIEW_PREP),
+        ]:
+            action = create_action_proposal(self.student, conversation, message, tool, payload)
+            response = self.client.post(f"/api/ai/actions/{action.confirmation_token}/confirm/", {}, format="json")
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(AIDraft.objects.filter(user=self.student, kind=kind).exists())
+
+    def test_candidate_can_save_learning_gap_plan_draft(self):
+        from apps.opportunities.models import EmployerProfile, Opportunity
+        from .models import AIMessage, AIDraft
+        from .tools import create_action_proposal
+        employer_user = User.objects.create_user(username="gap-employer", email="gap-employer@example.com", password="pass1234")
+        employer = EmployerProfile.objects.create(user=employer_user, company_name="Gap K", country="Sénégal", status=EmployerProfile.Status.APPROVED)
+        opportunity = Opportunity.objects.create(employer=employer, title="Data Junior", description="SQL requis", status=Opportunity.Status.PUBLISHED)
+        conversation = AIConversation.objects.create(user=self.student, title="Plan")
+        message = AIMessage.objects.create(conversation=conversation, role="assistant", content="Plan prêt.")
+        action = create_action_proposal(self.student, conversation, message, "save_learning_gap_plan_draft", {
+            "opportunity_id": opportunity.id, "title": "Combler SQL", "missing_skills": ["SQL"],
+            "actions": [{"skill": "SQL", "action": "Suivre un cours SQL puis réaliser un mini-projet.", "content_type": "practice"}],
+        })
+        response = self.client.post(f"/api/ai/actions/{action.confirmation_token}/confirm/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(AIDraft.objects.filter(user=self.student, kind=AIDraft.Kind.LEARNING_GAP_PLAN).exists())

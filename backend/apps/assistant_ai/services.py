@@ -312,8 +312,42 @@ def _dry_run_tool_context(user, question: str, enabled: bool, resolved: dict | N
             pending_actions.append({"tool_name": "update_application_stage", "arguments": clean})
         except Exception:
             pass
+    elif context_opportunity_id and "cv" in q and any(term in q for term in ["améliore", "ameliore", "optimise", "optimiser"]):
+        try:
+            clean = validate_write_tool(user, "save_cv_improvement_draft", {
+                "title": "CV ciblé · offre actuelle", "opportunity_id": context_opportunity_id,
+                "professional_headline": "Profil professionnel ciblé sur l'offre",
+                "summary": "Version de démonstration : configurez le fournisseur IA pour générer une réécriture personnalisée du CV.",
+                "skills": [], "achievement_rewrites": [], "recommendations": ["Adapter les réalisations aux compétences requises de l'offre."],
+            })
+            pending_actions.append({"tool_name": "save_cv_improvement_draft", "arguments": clean})
+        except Exception:
+            pass
+    elif context_opportunity_id and any(term in q for term in ["lettre de motivation", "lettre motivation"]):
+        try:
+            clean = validate_write_tool(user, "save_cover_letter_draft", {
+                "opportunity_id": context_opportunity_id, "title": "Lettre de motivation · offre actuelle",
+                "content": "Brouillon de démonstration. Configurez le fournisseur IA pour générer une lettre réellement personnalisée.",
+                "key_points": [],
+            })
+            pending_actions.append({"tool_name": "save_cover_letter_draft", "arguments": clean})
+        except Exception:
+            pass
+    elif context_opportunity_id and any(term in q for term in ["prépare mon entretien", "prepare mon entretien", "entretien candidat"]):
+        try:
+            clean = validate_write_tool(user, "save_candidate_interview_prep_draft", {
+                "opportunity_id": context_opportunity_id, "title": "Préparation entretien · offre actuelle",
+                "pitch": "Pitch de démonstration à personnaliser avec le fournisseur IA.",
+                "likely_questions": [], "star_examples": [], "questions_to_ask": [], "checklist": [],
+            })
+            pending_actions.append({"tool_name": "save_candidate_interview_prep_draft", "arguments": clean})
+        except Exception:
+            pass
 
-    if "cv" in q and any(term in q for term in ["analyse", "analy"]):
+    if context_opportunity_id and any(term in q for term in ["compétence", "competence", "combler", "formation pour cette offre", "me former"]):
+        tool_name = "recommend_learning_for_opportunity"
+        args = {"opportunity_id": context_opportunity_id, "limit": 8}
+    elif "cv" in q and any(term in q for term in ["analyse", "analy"]):
         opportunity_id = context_opportunity_id or (numbers[0] if numbers else None)
         if opportunity_id:
             tool_name = "analyze_my_cv_against_opportunity"

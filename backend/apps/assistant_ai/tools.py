@@ -34,6 +34,7 @@ READ_TOOLS = {
     "get_my_mentor_sessions",
     "get_my_recruiter_applications",
     "analyze_candidate_application",
+    "recommend_learning_for_opportunity",
 }
 WRITE_TOOLS = {
     "add_course_to_wishlist",
@@ -44,6 +45,10 @@ WRITE_TOOLS = {
     "save_mentorship_plan_draft",
     "save_interview_rubric_draft",
     "update_application_stage",
+    "save_cv_improvement_draft",
+    "save_cover_letter_draft",
+    "save_learning_gap_plan_draft",
+    "save_candidate_interview_prep_draft",
 }
 
 
@@ -111,6 +116,80 @@ BASE_TOOL_DEFINITIONS = [
             "share_portfolio": {"type": "boolean"},
         },
         ["opportunity_id"],
+    ),
+
+    _tool(
+        "recommend_learning_for_opportunity",
+        "À partir d'une opportunité KalanPro et du profil candidat connecté, identifie les compétences requises manquantes et recommande des cours/PDF/cohortes publiés pour les combler. Lecture seule.",
+        {
+            "opportunity_id": {"type": "integer", "minimum": 1},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 12},
+            "max_price": {"type": "number", "minimum": 0},
+        },
+        ["opportunity_id"],
+    ),
+    _tool(
+        "save_cv_improvement_draft",
+        "Prépare une version améliorée du positionnement CV/profil du candidat, éventuellement ciblée sur une opportunité. N'écrase jamais le CV ni le profil. Enregistrement seulement après confirmation.",
+        {
+            "title": {"type": "string"},
+            "opportunity_id": {"type": "integer", "minimum": 1},
+            "professional_headline": {"type": "string"},
+            "summary": {"type": "string"},
+            "skills": {"type": "array", "items": {"type": "string"}, "maxItems": 30},
+            "achievement_rewrites": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+            "recommendations": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+        },
+        ["title", "professional_headline", "summary"],
+    ),
+    _tool(
+        "save_cover_letter_draft",
+        "Prépare une lettre de motivation ciblée sur une opportunité KalanPro et l'enregistre comme brouillon privé uniquement après confirmation. N'envoie pas de candidature.",
+        {
+            "opportunity_id": {"type": "integer", "minimum": 1},
+            "title": {"type": "string"},
+            "content": {"type": "string"},
+            "key_points": {"type": "array", "items": {"type": "string"}, "maxItems": 10},
+        },
+        ["opportunity_id", "title", "content"],
+    ),
+    _tool(
+        "save_learning_gap_plan_draft",
+        "Enregistre après confirmation un plan privé pour combler les compétences manquantes face à une opportunité, avec étapes et contenus KalanPro recommandés.",
+        {
+            "opportunity_id": {"type": "integer", "minimum": 1},
+            "title": {"type": "string"},
+            "missing_skills": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+            "actions": {
+                "type": "array", "maxItems": 20,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "skill": {"type": "string"},
+                        "action": {"type": "string"},
+                        "content_type": {"type": "string", "enum": ["course", "pdf", "cohort", "practice", "other"]},
+                        "content_id": {"type": "integer", "minimum": 1},
+                        "path": {"type": "string"},
+                    },
+                    "required": ["skill", "action"], "additionalProperties": False
+                }
+            },
+        },
+        ["opportunity_id", "title", "missing_skills", "actions"],
+    ),
+    _tool(
+        "save_candidate_interview_prep_draft",
+        "Prépare un plan privé d'entretien pour le candidat face à une opportunité KalanPro. Enregistrement après confirmation; aucun message n'est envoyé au recruteur.",
+        {
+            "opportunity_id": {"type": "integer", "minimum": 1},
+            "title": {"type": "string"},
+            "pitch": {"type": "string"},
+            "likely_questions": {"type": "array", "items": {"type": "string"}, "maxItems": 15},
+            "star_examples": {"type": "array", "items": {"type": "string"}, "maxItems": 10},
+            "questions_to_ask": {"type": "array", "items": {"type": "string"}, "maxItems": 10},
+            "checklist": {"type": "array", "items": {"type": "string"}, "maxItems": 12},
+        },
+        ["opportunity_id", "title", "pitch"],
     ),
     _tool(
         "add_course_to_wishlist",
@@ -491,7 +570,7 @@ def analyze_my_cv_against_opportunity(user, args: dict) -> dict:
     except (TypeError, ValueError):
         raise ValueError("Opportunité invalide.")
     opportunity = Opportunity.objects.select_related("employer").filter(pk=opportunity_id, status=Opportunity.Status.PUBLISHED).first()
-    if not opportunity or not opportunity.is_open:
+    if not opportunity or not opportunity.is_open or opportunity.employer.status != EmployerProfile.Status.APPROVED:
         raise ValueError("Opportunité publiée et ouverte introuvable.")
     try:
         profile = user.candidate_profile
@@ -526,6 +605,36 @@ def analyze_my_cv_against_opportunity(user, args: dict) -> dict:
             "match_score": score, "matched_required_skills": matched_required,
             "missing_required_skills": missing_required, "matched_optional_skills": matched_optional,
         },
+    }
+
+
+def recommend_learning_for_opportunity(user, args: dict) -> dict:
+    analysis = analyze_my_cv_against_opportunity(user, args)
+    missing = list(analysis.get("analysis", {}).get("missing_required_skills") or [])[:12]
+    limit = _clamp_limit(args.get("limit"), 8, 12)
+    max_price = _price(args.get("max_price"))
+    seen: set[tuple[str, int]] = set()
+    recommendations: list[dict] = []
+    for skill in missing:
+        result = search_learning_catalog(user, {
+            "query": skill, "kind": "any", "domain": "", "max_price": max_price, "limit": min(4, limit),
+        })
+        for item in result.get("items", []):
+            key = (str(item.get("type")), int(item.get("id") or 0))
+            if key in seen or not key[1]:
+                continue
+            seen.add(key)
+            recommendations.append({**item, "targets_skill": skill})
+            if len(recommendations) >= limit:
+                break
+        if len(recommendations) >= limit:
+            break
+    return {
+        "opportunity": analysis["opportunity"],
+        "match_score": analysis.get("analysis", {}).get("match_score", 0),
+        "missing_skills": missing,
+        "recommendations": recommendations,
+        "note": "Les recommandations proviennent du catalogue publié KalanPro et doivent être validées par l'utilisateur.",
     }
 
 
@@ -620,6 +729,7 @@ READ_DISPATCH = {
     "get_my_mentor_sessions": get_my_mentor_sessions,
     "get_my_recruiter_applications": get_my_recruiter_applications,
     "analyze_candidate_application": analyze_candidate_application,
+    "recommend_learning_for_opportunity": recommend_learning_for_opportunity,
 }
 
 
@@ -650,6 +760,14 @@ def action_label(name: str, args: dict) -> str:
     if name == "update_application_stage":
         labels = {"reviewing": "en étude", "shortlisted": "en shortlist", "interview": "en entretien"}
         return f"Passer la candidature #{args.get('application_id')} {labels.get(str(args.get('status')), '')}".strip()
+    if name == "save_cv_improvement_draft":
+        return f"Enregistrer l’amélioration CV « {str(args.get('title') or 'CV optimisé')[:120]} »"
+    if name == "save_cover_letter_draft":
+        return f"Enregistrer la lettre « {str(args.get('title') or 'Lettre de motivation')[:120]} »"
+    if name == "save_learning_gap_plan_draft":
+        return f"Enregistrer le plan de compétences « {str(args.get('title') or 'Plan de progression')[:120]} »"
+    if name == "save_candidate_interview_prep_draft":
+        return f"Enregistrer la préparation d’entretien « {str(args.get('title') or 'Préparation entretien')[:120]} »"
     return "Confirmer l'action KalanPro AI"
 
 
@@ -765,6 +883,94 @@ def validate_write_tool(user, name: str, args: dict) -> dict:
             "agenda": _clean_string_list(args.get("agenda"), maximum=12, item_max=600),
             "questions": _clean_string_list(args.get("questions"), maximum=12, item_max=800),
             "follow_up": _clean_string_list(args.get("follow_up"), maximum=10, item_max=600),
+        }
+
+    if name == "save_cv_improvement_draft":
+        title = " ".join(str(args.get("title") or "").split())[:220]
+        headline = " ".join(str(args.get("professional_headline") or "").split())[:180]
+        summary = str(args.get("summary") or "").strip()[:5000]
+        if not title or not headline or not summary:
+            raise ValueError("Titre, accroche professionnelle et résumé sont requis.")
+        opportunity_id = None
+        opportunity_title = ""
+        if args.get("opportunity_id"):
+            try:
+                opportunity_id = int(args.get("opportunity_id"))
+            except (TypeError, ValueError):
+                raise ValueError("Opportunité invalide.")
+            opportunity = Opportunity.objects.select_related("employer").filter(pk=opportunity_id, status=Opportunity.Status.PUBLISHED).first()
+            if not opportunity or opportunity.employer.status != EmployerProfile.Status.APPROVED:
+                raise ValueError("Opportunité publiée introuvable.")
+            if opportunity.employer.user_id == user.id:
+                raise PermissionError("Vous ne pouvez pas cibler votre propre offre comme candidat.")
+            opportunity_title = opportunity.title
+        return {
+            "title": title, "opportunity_id": opportunity_id, "opportunity_title": opportunity_title,
+            "professional_headline": headline, "summary": summary,
+            "skills": _clean_string_list(args.get("skills"), maximum=30, item_max=120),
+            "achievement_rewrites": _clean_string_list(args.get("achievement_rewrites"), maximum=20, item_max=700),
+            "recommendations": _clean_string_list(args.get("recommendations"), maximum=20, item_max=700),
+        }
+
+    if name in {"save_cover_letter_draft", "save_learning_gap_plan_draft", "save_candidate_interview_prep_draft"}:
+        try:
+            opportunity_id = int(args.get("opportunity_id"))
+        except (TypeError, ValueError):
+            raise ValueError("Opportunité invalide.")
+        opportunity = Opportunity.objects.select_related("employer").filter(pk=opportunity_id, status=Opportunity.Status.PUBLISHED).first()
+        if not opportunity or opportunity.employer.status != EmployerProfile.Status.APPROVED:
+            raise ValueError("Opportunité publiée introuvable.")
+        if opportunity.employer.user_id == user.id:
+            raise PermissionError("Cette action candidat ne peut pas cibler votre propre offre.")
+        title = " ".join(str(args.get("title") or "").split())[:220]
+        if not title:
+            raise ValueError("Titre requis.")
+        if name == "save_cover_letter_draft":
+            content = str(args.get("content") or "").strip()[:7000]
+            if not content:
+                raise ValueError("Le contenu de la lettre est requis.")
+            return {
+                "opportunity_id": opportunity.id, "opportunity_title": opportunity.title, "title": title,
+                "content": content, "key_points": _clean_string_list(args.get("key_points"), maximum=10, item_max=500),
+            }
+        if name == "save_learning_gap_plan_draft":
+            missing = _clean_string_list(args.get("missing_skills"), maximum=20, item_max=120)
+            raw_actions = args.get("actions") or []
+            if not missing or not isinstance(raw_actions, list) or not raw_actions:
+                raise ValueError("Ajoutez des compétences manquantes et au moins une action de progression.")
+            clean_actions = []
+            for raw in raw_actions[:20]:
+                if not isinstance(raw, dict):
+                    continue
+                skill = " ".join(str(raw.get("skill") or "").split())[:120]
+                action_text = str(raw.get("action") or "").strip()[:900]
+                if not skill or not action_text:
+                    continue
+                content_type = str(raw.get("content_type") or "other")
+                if content_type not in {"course", "pdf", "cohort", "practice", "other"}:
+                    content_type = "other"
+                content_id = raw.get("content_id")
+                try:
+                    content_id = int(content_id) if content_id else None
+                except (TypeError, ValueError):
+                    content_id = None
+                path = str(raw.get("path") or "")[:500]
+                clean_actions.append({"skill": skill, "action": action_text, "content_type": content_type, "content_id": content_id, "path": path})
+            if not clean_actions:
+                raise ValueError("Aucune action de progression valide.")
+            return {
+                "opportunity_id": opportunity.id, "opportunity_title": opportunity.title, "title": title,
+                "missing_skills": missing, "actions": clean_actions,
+            }
+        pitch = str(args.get("pitch") or "").strip()[:3000]
+        if not pitch:
+            raise ValueError("Le pitch candidat est requis.")
+        return {
+            "opportunity_id": opportunity.id, "opportunity_title": opportunity.title, "title": title, "pitch": pitch,
+            "likely_questions": _clean_string_list(args.get("likely_questions"), maximum=15, item_max=900),
+            "star_examples": _clean_string_list(args.get("star_examples"), maximum=10, item_max=1400),
+            "questions_to_ask": _clean_string_list(args.get("questions_to_ask"), maximum=10, item_max=900),
+            "checklist": _clean_string_list(args.get("checklist"), maximum=12, item_max=500),
         }
 
     if user.role not in {"instructor", "admin"}:
@@ -957,6 +1163,50 @@ def execute_action(action: AIActionLog) -> dict:
             "status": application.status,
             "path": f"/opportunities/{opportunity.slug}",
         }
+
+    elif action.tool_name == "save_cv_improvement_draft":
+        draft = AIDraft.objects.create(
+            user=action.user, kind=AIDraft.Kind.CV_IMPROVEMENT, title=args["title"],
+            payload={
+                "opportunity_id": args.get("opportunity_id"), "opportunity": args.get("opportunity_title", ""),
+                "professional_headline": args["professional_headline"], "summary": args["summary"],
+                "skills": args.get("skills", []), "achievement_rewrites": args.get("achievement_rewrites", []),
+                "recommendations": args.get("recommendations", []),
+            },
+        )
+        result = {"draft_id": draft.id, "kind": draft.kind, "title": draft.title, "path": "/assistant/drafts"}
+
+    elif action.tool_name == "save_cover_letter_draft":
+        draft = AIDraft.objects.create(
+            user=action.user, kind=AIDraft.Kind.COVER_LETTER, title=args["title"],
+            payload={
+                "opportunity_id": args["opportunity_id"], "opportunity": args.get("opportunity_title", ""),
+                "content": args["content"], "key_points": args.get("key_points", []),
+            },
+        )
+        result = {"draft_id": draft.id, "kind": draft.kind, "title": draft.title, "path": "/assistant/drafts"}
+
+    elif action.tool_name == "save_learning_gap_plan_draft":
+        draft = AIDraft.objects.create(
+            user=action.user, kind=AIDraft.Kind.LEARNING_GAP_PLAN, title=args["title"],
+            payload={
+                "opportunity_id": args["opportunity_id"], "opportunity": args.get("opportunity_title", ""),
+                "missing_skills": args.get("missing_skills", []), "actions": args.get("actions", []),
+            },
+        )
+        result = {"draft_id": draft.id, "kind": draft.kind, "title": draft.title, "path": "/assistant/drafts"}
+
+    elif action.tool_name == "save_candidate_interview_prep_draft":
+        draft = AIDraft.objects.create(
+            user=action.user, kind=AIDraft.Kind.INTERVIEW_PREP, title=args["title"],
+            payload={
+                "opportunity_id": args["opportunity_id"], "opportunity": args.get("opportunity_title", ""),
+                "pitch": args["pitch"], "likely_questions": args.get("likely_questions", []),
+                "star_examples": args.get("star_examples", []), "questions_to_ask": args.get("questions_to_ask", []),
+                "checklist": args.get("checklist", []),
+            },
+        )
+        result = {"draft_id": draft.id, "kind": draft.kind, "title": draft.title, "path": "/assistant/drafts"}
 
     elif action.tool_name == "save_quiz_draft":
         draft = AIDraft.objects.create(user=action.user, kind=AIDraft.Kind.QUIZ, title=args["title"], course_id=args.get("course_id"), payload={"questions": args["questions"]})

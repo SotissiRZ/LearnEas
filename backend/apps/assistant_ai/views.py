@@ -218,7 +218,10 @@ def action_reject_view(request, token):
 def drafts_view(request):
     qs = AIDraft.objects.filter(user=request.user).select_related("course")
     kind = str(request.query_params.get("kind") or "").strip()
-    if kind in {AIDraft.Kind.QUIZ, AIDraft.Kind.COURSE_OUTLINE, AIDraft.Kind.MENTOR_PLAN, AIDraft.Kind.INTERVIEW_RUBRIC}:
+    if kind in {
+        AIDraft.Kind.QUIZ, AIDraft.Kind.COURSE_OUTLINE, AIDraft.Kind.MENTOR_PLAN, AIDraft.Kind.INTERVIEW_RUBRIC,
+        AIDraft.Kind.CV_IMPROVEMENT, AIDraft.Kind.COVER_LETTER, AIDraft.Kind.LEARNING_GAP_PLAN, AIDraft.Kind.INTERVIEW_PREP,
+    }:
         qs = qs.filter(kind=kind)
     rows = qs[:50]
     return Response([{

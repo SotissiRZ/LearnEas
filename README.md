@@ -32,6 +32,11 @@ dashboards dédiés par rôle et espace de lecture immersif).
 
 ---
 
+
+## KalanPro AI — copilote carrière
+
+La Phase IA 2 comprend maintenant l’analyse CV/offre, les recommandations de formations pour compétences manquantes, les brouillons de CV amélioré et de lettre de motivation, ainsi que la préparation candidat/recruteur aux entretiens. Voir `docs/AI_PHASE2_V66.md`.
+
 ## 🏗️ Architecture
 
 ```

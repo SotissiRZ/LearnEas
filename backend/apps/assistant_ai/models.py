@@ -181,6 +181,10 @@ class AIDraft(models.Model):
         COURSE_OUTLINE = "course_outline", "Plan de cours"
         MENTOR_PLAN = "mentor_plan", "Plan de mentorat"
         INTERVIEW_RUBRIC = "interview_rubric", "Grille d’entretien"
+        CV_IMPROVEMENT = "cv_improvement", "Amélioration CV"
+        COVER_LETTER = "cover_letter", "Lettre de motivation"
+        LEARNING_GAP_PLAN = "learning_gap_plan", "Plan de compétences"
+        INTERVIEW_PREP = "interview_prep", "Préparation entretien"
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ai_drafts")
     kind = models.CharField(max_length=30, choices=Kind.choices)

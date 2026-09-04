@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Bot, ChevronLeft, ClipboardList, FileQuestion, Layers3, Loader2, Users } from "lucide-react";
+import { Bot, BriefcaseBusiness, ChevronLeft, ClipboardList, FilePenLine, FileQuestion, GraduationCap, Layers3, Loader2, ScrollText, Users } from "lucide-react";
 import GuardScreen from "@/components/ui/GuardScreen";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { api, ApiError } from "@/lib/api";
 
-type DraftKind = "quiz" | "course_outline" | "mentor_plan" | "interview_rubric";
+type DraftKind = "quiz" | "course_outline" | "mentor_plan" | "interview_rubric" | "cv_improvement" | "cover_letter" | "learning_gap_plan" | "interview_prep";
 type AIDraft = {
   id: number;
   kind: DraftKind;
@@ -23,7 +23,11 @@ const meta: Record<DraftKind, { label: string; className: string }> = {
   quiz: { label: "Quiz", className: "bg-brand-50 text-brand-600" },
   course_outline: { label: "Plan de cours", className: "bg-blue-50 text-blue-600" },
   mentor_plan: { label: "Plan de mentorat", className: "bg-emerald-50 text-emerald-600" },
-  interview_rubric: { label: "Grille d’entretien", className: "bg-violet-50 text-violet-600" },
+  interview_rubric: { label: "Grille d’entretien recruteur", className: "bg-violet-50 text-violet-600" },
+  cv_improvement: { label: "CV amélioré", className: "bg-cyan-50 text-cyan-700" },
+  cover_letter: { label: "Lettre de motivation", className: "bg-amber-50 text-amber-700" },
+  learning_gap_plan: { label: "Plan de compétences", className: "bg-indigo-50 text-indigo-700" },
+  interview_prep: { label: "Préparation entretien", className: "bg-rose-50 text-rose-700" },
 };
 
 export default function AssistantDraftsPage() {
@@ -55,6 +59,10 @@ function DraftIcon({ kind }: { kind: DraftKind }) {
   if (kind === "quiz") return <FileQuestion size={18}/>;
   if (kind === "course_outline") return <Layers3 size={18}/>;
   if (kind === "mentor_plan") return <Users size={18}/>;
+  if (kind === "cv_improvement") return <FilePenLine size={18}/>;
+  if (kind === "cover_letter") return <ScrollText size={18}/>;
+  if (kind === "learning_gap_plan") return <GraduationCap size={18}/>;
+  if (kind === "interview_prep") return <BriefcaseBusiness size={18}/>;
   return <ClipboardList size={18}/>;
 }
 
@@ -64,15 +72,29 @@ function DraftCard({ row }: { row: AIDraft }) {
   const sections = Array.isArray(row.payload.sections) ? row.payload.sections : [];
   const agenda = Array.isArray(row.payload.agenda) ? row.payload.agenda : [];
   const criteria = Array.isArray(row.payload.criteria) ? row.payload.criteria : [];
+  const missingSkills = Array.isArray(row.payload.missing_skills) ? row.payload.missing_skills : [];
+  const actions = Array.isArray(row.payload.actions) ? row.payload.actions : [];
+  const likelyQuestions = Array.isArray(row.payload.likely_questions) ? row.payload.likely_questions : [];
+  const skills = Array.isArray(row.payload.skills) ? row.payload.skills : [];
   const summary = row.kind === "quiz" ? `${questions.length} question${questions.length > 1 ? "s" : ""}`
     : row.kind === "course_outline" ? `${sections.length} section${sections.length > 1 ? "s" : ""}`
     : row.kind === "mentor_plan" ? `${agenda.length} point${agenda.length > 1 ? "s" : ""} d’agenda`
-    : `${criteria.length} critère${criteria.length > 1 ? "s" : ""} d’entretien`;
+    : row.kind === "interview_rubric" ? `${criteria.length} critère${criteria.length > 1 ? "s" : ""} d’entretien`
+    : row.kind === "cv_improvement" ? `${skills.length} compétence${skills.length > 1 ? "s" : ""} mise${skills.length > 1 ? "s" : ""} en avant`
+    : row.kind === "cover_letter" ? "Lettre ciblée prête à relire"
+    : row.kind === "learning_gap_plan" ? `${missingSkills.length} compétence${missingSkills.length > 1 ? "s" : ""} · ${actions.length} étape${actions.length > 1 ? "s" : ""}`
+    : `${likelyQuestions.length} question${likelyQuestions.length > 1 ? "s" : ""} probable${likelyQuestions.length > 1 ? "s" : ""}`;
   return <article className="card p-5">
     <div className="flex items-start gap-3"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${info.className}`}><DraftIcon kind={row.kind}/></span><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.12em] text-slate-400">{info.label}</p><h2 className="truncate font-black text-navy-950">{row.title}</h2>{row.course_title && <p className="mt-1 text-xs text-slate-500">Cours : {row.course_title}</p>}</div></div>
     <div className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">{summary}</div>
     {typeof row.payload.candidate === "string" && <p className="mt-3 text-xs text-slate-500">Candidat : {row.payload.candidate}</p>}
     {typeof row.payload.learner === "string" && <p className="mt-3 text-xs text-slate-500">Mentoré : {row.payload.learner}</p>}
+    {typeof row.payload.opportunity === "string" && row.payload.opportunity && <p className="mt-3 text-xs text-slate-500">Offre : {row.payload.opportunity}</p>}
+    {typeof row.payload.professional_headline === "string" && row.payload.professional_headline && <p className="mt-3 line-clamp-2 text-xs font-semibold text-navy-950">{row.payload.professional_headline}</p>}
+    {row.kind === "cover_letter" && typeof row.payload.content === "string" && <details className="mt-3 rounded-xl border border-slate-100 bg-white p-3"><summary className="cursor-pointer text-xs font-bold text-brand-600">Voir la lettre</summary><p className="mt-3 whitespace-pre-wrap text-xs leading-5 text-slate-600">{row.payload.content}</p></details>}
+    {row.kind === "cv_improvement" && typeof row.payload.summary === "string" && <details className="mt-3 rounded-xl border border-slate-100 bg-white p-3"><summary className="cursor-pointer text-xs font-bold text-brand-600">Voir les améliorations CV</summary><p className="mt-3 whitespace-pre-wrap text-xs leading-5 text-slate-600">{row.payload.summary}</p>{Array.isArray(row.payload.recommendations) && row.payload.recommendations.length > 0 && <ul className="mt-3 list-disc space-y-1 pl-4 text-xs text-slate-600">{row.payload.recommendations.slice(0, 10).map((item, index) => <li key={index}>{String(item)}</li>)}</ul>}</details>}
+    {row.kind === "learning_gap_plan" && actions.length > 0 && <details className="mt-3 rounded-xl border border-slate-100 bg-white p-3"><summary className="cursor-pointer text-xs font-bold text-brand-600">Voir le plan</summary><div className="mt-3 space-y-2">{actions.slice(0, 12).map((item, index) => { const value = item && typeof item === "object" ? item as Record<string, unknown> : {}; return <div key={index} className="rounded-lg bg-slate-50 p-2 text-xs text-slate-600"><span className="font-bold text-navy-950">{String(value.skill || "Compétence")}</span> · {String(value.action || "")}</div>; })}</div></details>}
+    {row.kind === "interview_prep" && <details className="mt-3 rounded-xl border border-slate-100 bg-white p-3"><summary className="cursor-pointer text-xs font-bold text-brand-600">Voir la préparation</summary>{typeof row.payload.pitch === "string" && <p className="mt-3 whitespace-pre-wrap text-xs leading-5 text-slate-600">{row.payload.pitch}</p>}{likelyQuestions.length > 0 && <div className="mt-3"><p className="text-[10px] font-black uppercase tracking-[.1em] text-slate-400">Questions probables</p><ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-600">{likelyQuestions.slice(0, 12).map((item, index) => <li key={index}>{String(item)}</li>)}</ul></div>}</details>}
     <p className="mt-3 text-[10px] text-slate-400">Mis à jour le {new Date(row.updated_at).toLocaleString("fr-FR")}</p>
   </article>;
 }

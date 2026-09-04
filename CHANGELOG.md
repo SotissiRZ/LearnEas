@@ -1,3 +1,12 @@
+# v66 — Copilote carrière IA
+
+- Amélioration CV en brouillon privé avec confirmation, sans écraser le profil ou le fichier original.
+- Lettres de motivation structurées sauvegardables en brouillon.
+- Recommandation déterministe de contenus KalanPro à partir des compétences manquantes d'une offre.
+- Plans de montée en compétences liés à une opportunité.
+- Préparation candidat à l'entretien : pitch, questions probables, STAR, questions à poser et checklist.
+- Nouveaux affichages dans Mes brouillons IA et tests de permissions.
+
 # v65 — Lanceur KalanPro AI déplaçable
 
 - Le bouton flottant KalanPro AI peut être déplacé par glisser-déposer à la souris, au stylet ou au tactile.
