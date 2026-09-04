@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot, ChevronLeft, ExternalLink, History, Loader2, Maximize2, MessageSquarePlus,
-  Minimize2, Send, Sparkles, Trash2, X,
+  Minimize2, Send, Sparkles, Trash2, X, ThumbsUp, ThumbsDown,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { AI_CONTEXT_EVENT, AIPageContext, currentAIContext, inferAIContext } from "@/lib/aiContext";
@@ -170,7 +170,22 @@ function Welcome({ userRole, onPrompt }: { userRole: string; onPrompt: (value: s
 
 function MessageBubble({ message }: { message: AIMessage }) {
   const assistant = message.role === "assistant";
-  return <div className={`flex gap-3 ${assistant ? "" : "justify-end"}`}>{assistant && <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600"><Bot size={16}/></span>}<div className={`max-w-[88%] ${assistant ? "" : "rounded-2xl rounded-tr-md bg-navy-950 px-4 py-3 text-white"}`}><div className={`whitespace-pre-wrap text-sm leading-6 ${assistant ? "text-slate-700" : "text-white"}`}>{message.content}</div>{assistant && message.sources?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{message.sources.slice(0, 6).map((source) => <Link key={source.id} href={source.path || "#"} className="inline-flex max-w-full items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-500 hover:border-brand-200 hover:text-brand-600"><span className="truncate">{source.title}</span><ExternalLink size={10}/></Link>)}</div>}</div></div>;
+  const [feedback, setFeedback] = useState<"helpful" | "unhelpful" | "">(message.feedback || "");
+  const [ratingBusy, setRatingBusy] = useState(false);
+
+  async function rate(next: "helpful" | "unhelpful") {
+    if (!assistant || message.id <= 0 || ratingBusy) return;
+    const desired = feedback === next ? "clear" : next;
+    setRatingBusy(true);
+    try {
+      const result = await api.post<{ feedback: "helpful" | "unhelpful" | "" }>(`/ai/messages/${message.id}/feedback/`, { feedback: desired });
+      setFeedback(result.feedback || "");
+    } catch {
+      // Le feedback ne doit jamais interrompre la conversation.
+    } finally { setRatingBusy(false); }
+  }
+
+  return <div className={`flex gap-3 ${assistant ? "" : "justify-end"}`}>{assistant && <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600"><Bot size={16}/></span>}<div className={`max-w-[88%] ${assistant ? "" : "rounded-2xl rounded-tr-md bg-navy-950 px-4 py-3 text-white"}`}><div className={`whitespace-pre-wrap text-sm leading-6 ${assistant ? "text-slate-700" : "text-white"}`}>{message.content}</div>{assistant && message.sources?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{message.sources.slice(0, 6).map((source) => <Link key={source.id} href={source.path || "#"} title={source.score ? `Pertinence RAG : ${source.score.toFixed(1)}` : undefined} className="inline-flex max-w-full items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-500 hover:border-brand-200 hover:text-brand-600"><span className="truncate">{source.title}</span><ExternalLink size={10}/></Link>)}</div>}{assistant && <div className="mt-2 flex items-center gap-1 text-slate-400"><span className="mr-1 text-[10px]">Cette réponse vous aide ?</span><button type="button" disabled={ratingBusy} onClick={() => void rate("helpful")} className={`rounded-lg p-1.5 transition ${feedback === "helpful" ? "bg-emerald-50 text-emerald-600" : "hover:bg-slate-100 hover:text-slate-600"}`} aria-label="Réponse utile"><ThumbsUp size={13}/></button><button type="button" disabled={ratingBusy} onClick={() => void rate("unhelpful")} className={`rounded-lg p-1.5 transition ${feedback === "unhelpful" ? "bg-red-50 text-red-500" : "hover:bg-slate-100 hover:text-slate-600"}`} aria-label="Réponse à améliorer"><ThumbsDown size={13}/></button></div>}</div></div>;
 }
 
 function contextLabel(context: AIPageContext) {

@@ -1,13 +1,15 @@
 from django.conf import settings
-from django.db.models import Count
+from django.db.models import Count, Avg, Sum
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
-from .models import AIConversation, AIMessage, AISettings, AIUsage, AIKnowledgeChunk
+from .models import AIConversation, AIMessage, AISettings, AIUsage, AIKnowledgeChunk, AIEvaluationCase
 from .serializers import AIConversationListSerializer, AIConversationDetailSerializer, AISettingsSerializer
-from .services import answer, quota_state, role_enabled
+from .services import answer, quota_state, role_enabled, estimate_cost_eur
+from .evaluation import seed_evaluation_cases, run_evaluation
 
 
 class AIThrottle(UserRateThrottle):
@@ -112,7 +114,7 @@ def chat_view(request):
         return Response({"detail": f"Assistant IA indisponible : {str(exc)[:240]}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     sources = [
-        {"id": chunk.id, "title": chunk.title, "type": chunk.source_type, "path": chunk.source_path, "metadata": chunk.metadata}
+        {"id": chunk.id, "title": chunk.title, "type": chunk.source_type, "path": chunk.source_path, "metadata": chunk.metadata, "score": float(getattr(chunk, "_ai_relevance_score", 0) or 0)}
         for chunk in result["chunks"]
     ]
     message = AIMessage.objects.create(
@@ -138,6 +140,7 @@ def chat_view(request):
         completion_tokens=result["completion_tokens"],
         latency_ms=result["latency_ms"],
         rag_chunks=len(sources),
+        estimated_cost_eur=estimate_cost_eur(result["prompt_tokens"], result["completion_tokens"], cfg),
     )
     return Response({
         "conversation_id": conversation.id,
@@ -160,15 +163,86 @@ def admin_settings_view(request):
     return Response(AISettingsSerializer(cfg).data)
 
 
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def message_feedback_view(request, message_id: int):
+    message = AIMessage.objects.select_related("conversation").filter(
+        pk=message_id, conversation__user=request.user, role=AIMessage.Role.ASSISTANT
+    ).first()
+    if not message:
+        return Response({"detail": "Réponse IA introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    feedback = str(request.data.get("feedback") or "").strip().lower()
+    comment = str(request.data.get("comment") or "").strip()[:1000]
+    if feedback in {"", "clear"}:
+        message.feedback = ""
+        message.feedback_comment = ""
+        message.feedback_at = None
+    elif feedback in {AIMessage.Feedback.HELPFUL, AIMessage.Feedback.UNHELPFUL}:
+        message.feedback = feedback
+        message.feedback_comment = comment
+        message.feedback_at = timezone.now()
+    else:
+        return Response({"feedback": ["Valeur attendue : helpful, unhelpful ou clear."]}, status=status.HTTP_400_BAD_REQUEST)
+    message.save(update_fields=["feedback", "feedback_comment", "feedback_at"])
+    return Response({
+        "id": message.id,
+        "feedback": message.feedback,
+        "feedback_comment": message.feedback_comment,
+        "feedback_at": message.feedback_at,
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_evaluate_rag_view(request):
+    if request.user.role != "admin":
+        return Response({"detail": "Accès administrateur requis."}, status=status.HTTP_403_FORBIDDEN)
+    seed = bool(request.data.get("seed", True))
+    top_k = request.data.get("top_k", 6)
+    limit = request.data.get("limit", 50)
+    try:
+        created = seed_evaluation_cases(int(limit)) if seed else 0
+        result = run_evaluation(request.user, top_k=int(top_k), limit=int(limit))
+    except (TypeError, ValueError):
+        return Response({"detail": "Paramètres d'évaluation invalides."}, status=status.HTTP_400_BAD_REQUEST)
+    result["created"] = created
+    return Response(result)
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def admin_metrics_view(request):
     if request.user.role != "admin":
         return Response({"detail": "Accès administrateur requis."}, status=status.HTTP_403_FORBIDDEN)
+    start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    monthly = AIUsage.objects.filter(created_at__gte=start)
+    usage = monthly.aggregate(
+        prompt_tokens=Sum("prompt_tokens"),
+        completion_tokens=Sum("completion_tokens"),
+        avg_latency_ms=Avg("latency_ms"),
+        avg_rag_chunks=Avg("rag_chunks"),
+        estimated_cost_eur=Sum("estimated_cost_eur"),
+    )
+    feedback_qs = AIMessage.objects.filter(role=AIMessage.Role.ASSISTANT).exclude(feedback="")
+    feedback_total = feedback_qs.count()
+    helpful = feedback_qs.filter(feedback=AIMessage.Feedback.HELPFUL).count()
+    eval_enabled = AIEvaluationCase.objects.filter(enabled=True)
+    eval_ran = eval_enabled.filter(last_passed__isnull=False)
+    eval_passed = eval_ran.filter(last_passed=True).count()
     return Response({
         "conversations": AIConversation.objects.count(),
         "messages": AIMessage.objects.count(),
         "usage_requests": AIUsage.objects.count(),
         "knowledge_chunks": AIKnowledgeChunk.objects.count(),
         "users_with_ai": AIUsage.objects.values("user_id").distinct().count(),
+        "month_requests": monthly.count(),
+        "month_prompt_tokens": int(usage["prompt_tokens"] or 0),
+        "month_completion_tokens": int(usage["completion_tokens"] or 0),
+        "month_estimated_cost_eur": float(usage["estimated_cost_eur"] or 0),
+        "avg_latency_ms": int(usage["avg_latency_ms"] or 0),
+        "avg_rag_chunks": round(float(usage["avg_rag_chunks"] or 0), 2),
+        "feedback_total": feedback_total,
+        "helpful_rate": round((helpful / feedback_total * 100), 1) if feedback_total else None,
+        "eval_cases": eval_enabled.count(),
+        "eval_pass_rate": round((eval_passed / eval_ran.count() * 100), 1) if eval_ran.count() else None,
     })

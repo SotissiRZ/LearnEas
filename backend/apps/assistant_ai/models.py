@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from django.conf import settings
 from django.db import models
 
@@ -18,6 +19,8 @@ class AISettings(models.Model):
     max_context_chunks = models.PositiveSmallIntegerField(default=6)
     max_output_tokens = models.PositiveIntegerField(default=1200)
     temperature = models.DecimalField(max_digits=3, decimal_places=2, default=0.30)
+    input_cost_per_million_eur = models.DecimalField(max_digits=10, decimal_places=4, default=0, help_text="Coût estimé du modèle pour 1M tokens d'entrée.")
+    output_cost_per_million_eur = models.DecimalField(max_digits=10, decimal_places=4, default=0, help_text="Coût estimé du modèle pour 1M tokens de sortie.")
     custom_system_prompt = models.TextField(blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -33,6 +36,9 @@ class AISettings(models.Model):
         self.max_history_messages = min(max(int(self.max_history_messages), 2), 40)
         self.max_context_chunks = min(max(int(self.max_context_chunks), 1), 12)
         self.max_output_tokens = min(max(int(self.max_output_tokens), 128), 8000)
+        self.temperature = min(max(Decimal(str(self.temperature or 0)), Decimal("0")), Decimal("1"))
+        self.input_cost_per_million_eur = max(Decimal(str(self.input_cost_per_million_eur or 0)), Decimal("0"))
+        self.output_cost_per_million_eur = max(Decimal(str(self.output_cost_per_million_eur or 0)), Decimal("0"))
         super().save(*args, **kwargs)
 
     @classmethod
@@ -65,6 +71,10 @@ class AIMessage(models.Model):
         USER = "user", "Utilisateur"
         ASSISTANT = "assistant", "Assistant"
 
+    class Feedback(models.TextChoices):
+        HELPFUL = "helpful", "Utile"
+        UNHELPFUL = "unhelpful", "À améliorer"
+
     conversation = models.ForeignKey(AIConversation, on_delete=models.CASCADE, related_name="messages")
     role = models.CharField(max_length=20, choices=Role.choices)
     content = models.TextField()
@@ -73,6 +83,9 @@ class AIMessage(models.Model):
     model = models.CharField(max_length=120, blank=True)
     prompt_tokens = models.PositiveIntegerField(default=0)
     completion_tokens = models.PositiveIntegerField(default=0)
+    feedback = models.CharField(max_length=20, choices=Feedback.choices, blank=True)
+    feedback_comment = models.CharField(max_length=1000, blank=True)
+    feedback_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -128,6 +141,7 @@ class AIUsage(models.Model):
     completion_tokens = models.PositiveIntegerField(default=0)
     latency_ms = models.PositiveIntegerField(default=0)
     rag_chunks = models.PositiveSmallIntegerField(default=0)
+    estimated_cost_eur = models.DecimalField(max_digits=12, decimal_places=6, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -136,3 +150,24 @@ class AIUsage(models.Model):
 
     def __str__(self):
         return f"{self.user.email} · {self.created_at:%Y-%m-%d}"
+
+
+class AIEvaluationCase(models.Model):
+    question = models.CharField(max_length=500)
+    expected_source_type = models.CharField(max_length=30, choices=AIKnowledgeChunk.SourceType.choices)
+    expected_source_id = models.PositiveIntegerField()
+    enabled = models.BooleanField(default=True)
+    notes = models.CharField(max_length=500, blank=True)
+    last_passed = models.BooleanField(null=True, blank=True)
+    last_rank = models.PositiveSmallIntegerField(null=True, blank=True)
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["id"]
+        constraints = [
+            models.UniqueConstraint(fields=["question", "expected_source_type", "expected_source_id"], name="uniq_ai_eval_case")
+        ]
+
+    def __str__(self):
+        return self.question[:80]

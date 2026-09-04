@@ -3,7 +3,7 @@ from rest_framework.test import APIClient
 from apps.accounts.models import User
 from apps.catalog.models import Category, Course, Section, Lesson
 from apps.enrollments.models import CourseEnrollment
-from .models import AISettings, AIConversation, AIUsage
+from .models import AISettings, AIConversation, AIUsage, AIEvaluationCase, AIKnowledgeChunk
 from .rag import index_course, index_lesson
 
 
@@ -73,3 +73,53 @@ class AssistantAITests(TestCase):
         conversation = AIConversation.objects.create(user=other, title="Privé")
         response = self.client.get(f"/api/ai/conversations/{conversation.id}/")
         self.assertEqual(response.status_code, 404)
+
+    def test_feedback_is_scoped_to_message_owner(self):
+        first = self.client.post("/api/ai/chat/", {"message": "Bonjour"}, format="json")
+        self.assertEqual(first.status_code, 200)
+        message_id = first.data["message"]["id"]
+        feedback = self.client.post(f"/api/ai/messages/{message_id}/feedback/", {"feedback": "helpful"}, format="json")
+        self.assertEqual(feedback.status_code, 200)
+        self.assertEqual(feedback.data["feedback"], "helpful")
+
+        other = User.objects.create_user(username="feedback-other", email="feedback-other@example.com", password="pass1234")
+        other_client = APIClient()
+        other_client.force_authenticate(other)
+        forbidden = other_client.post(f"/api/ai/messages/{message_id}/feedback/", {"feedback": "unhelpful"}, format="json")
+        self.assertEqual(forbidden.status_code, 404)
+
+    def test_usage_cost_is_computed_from_admin_rates(self):
+        from decimal import Decimal
+        from .services import estimate_cost_eur
+        self.cfg.input_cost_per_million_eur = Decimal("2")
+        self.cfg.output_cost_per_million_eur = Decimal("8")
+        self.cfg.save()
+        self.assertEqual(estimate_cost_eur(500000, 250000, self.cfg), Decimal("3.000000"))
+
+    def test_explicit_query_does_not_force_unrelated_page_chunk(self):
+        CourseEnrollment.objects.create(user=self.student, course=self.course)
+        other_course = Course.objects.create(
+            instructor=self.instructor, category=self.category, title="Design graphique", description="Couleurs et typographie.", published=True
+        )
+        index_course(other_course)
+        response = self.client.post("/api/ai/chat/", {
+            "message": "Que dit KalanPro sur les dictionnaires Python ?",
+            "page_context": {"course_slug": other_course.slug},
+        }, format="json")
+        self.assertEqual(response.status_code, 200)
+        titles = [source["title"] for source in response.data["message"]["sources"]]
+        self.assertTrue(any("Python" in title for title in titles))
+
+    def test_admin_can_run_rag_evaluation(self):
+        admin = User.objects.create_user(username="ai-admin", email="ai-admin@example.com", password="pass1234", role="admin")
+        AIEvaluationCase.objects.create(
+            question="Que contient la leçon Les listes ?",
+            expected_source_type=AIKnowledgeChunk.SourceType.LESSON,
+            expected_source_id=self.lesson.id,
+        )
+        client = APIClient()
+        client.force_authenticate(admin)
+        response = client.post("/api/ai/admin/evaluate-rag/", {"seed": False, "top_k": 6}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["total"], 1)
+        self.assertEqual(response.data["passed"], 1)

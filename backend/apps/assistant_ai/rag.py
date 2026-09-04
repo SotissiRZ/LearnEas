@@ -161,8 +161,28 @@ def allowed_chunks(user):
     )
 
 
+def _contextual_query(query: str) -> bool:
+    text = str(query or "").strip().lower()
+    if not text:
+        return True
+    markers = (
+        "ça", "ceci", "cela", "cette leçon", "ce cours", "ce passage", "ici",
+        "explique-moi", "explique moi", "résume", "resume", "résume-moi", "résume moi",
+        "les dernières minutes", "la partie", "ce pdf", "ce document",
+    )
+    tokens = re.findall(r"[\wÀ-ÿ-]{3,}", text)
+    return len(tokens) <= 4 or any(marker in text for marker in markers)
+
+
 def retrieve(user, query: str, *, limit: int = 6, course_id: int | None = None, lesson_id: int | None = None,
              pdf_product_id: int | None = None) -> list[AIKnowledgeChunk]:
+    """Recherche lexicale + boost contextuel, avec diversité de sources.
+
+    Le contexte de page est très utile pour des questions comme « explique-moi ça »,
+    mais ne doit pas polluer une question explicite sans rapport. Les scores calculés
+    sont attachés temporairement aux chunks via ``_ai_relevance_score`` pour les
+    citations/évaluations, sans modifier le schéma de la base.
+    """
     qs = allowed_chunks(user)
     preferred = Q()
     has_preferred = False
@@ -175,39 +195,85 @@ def retrieve(user, query: str, *, limit: int = 6, course_id: int | None = None, 
     if pdf_product_id:
         preferred |= Q(pdf_product_id=pdf_product_id)
         has_preferred = True
-    preferred_rows = list(qs.filter(preferred)[: max(limit, 6)]) if has_preferred else []
 
-    tokens = [t for t in re.findall(r"[\wÀ-ÿ-]{3,}", query.lower()) if len(t) >= 3][:12]
-    if connection.vendor == "postgresql" and query.strip():
+    contextual = _contextual_query(query)
+    preferred_rows = list(qs.filter(preferred)[: max(limit * 2, 10)]) if has_preferred else []
+    tokens = [t for t in re.findall(r"[\wÀ-ÿ-]{3,}", str(query or "").lower()) if len(t) >= 3][:16]
+
+    if connection.vendor == "postgresql" and str(query or "").strip():
         vector = SearchVector("title", weight="A", config="french") + SearchVector("content", weight="B", config="french")
         search = SearchQuery(query, config="french", search_type="websearch")
-        ranked = list(qs.annotate(rank=SearchRank(vector, search)).filter(rank__gt=0.01).order_by("-rank")[: max(limit * 3, 12)])
+        ranked = list(
+            qs.annotate(rank=SearchRank(vector, search))
+            .filter(rank__gt=0.005)
+            .order_by("-rank")[: max(limit * 5, 30)]
+        )
     else:
         if tokens:
             cond = Q()
             for token in tokens:
                 cond |= Q(title__icontains=token) | Q(content__icontains=token)
-            ranked = list(qs.filter(cond)[: max(limit * 4, 20)])
+            ranked = list(qs.filter(cond)[: max(limit * 6, 36)])
         else:
-            ranked = list(qs[:limit])
+            ranked = []
 
-    if preferred_rows:
-        # Le contexte de la page courante passe en premier, puis les résultats
-        # de recherche. Évite les doublons sans altérer le classement global.
-        preferred_ids = {row.id for row in preferred_rows}
-        ranked = preferred_rows + [row for row in ranked if row.id not in preferred_ids]
+    candidate_by_id = {row.id: row for row in ranked}
+    for row in preferred_rows:
+        candidate_by_id.setdefault(row.id, row)
+    candidates = list(candidate_by_id.values())
+
+    phrase = str(query or "").strip().lower()
 
     def score(chunk: AIKnowledgeChunk) -> float:
-        text = f"{chunk.title} {chunk.content}".lower()
-        value = sum(1.0 for t in tokens if t in text)
-        if lesson_id and chunk.source_type == AIKnowledgeChunk.SourceType.LESSON and chunk.source_id == lesson_id:
-            value += 8
-        if course_id and chunk.course_id == course_id:
-            value += 4
-        if pdf_product_id and chunk.pdf_product_id == pdf_product_id:
-            value += 4
-        value += float(getattr(chunk, "rank", 0) or 0) * 10
+        title = chunk.title.lower()
+        content = chunk.content.lower()
+        value = 0.0
+        for token in tokens:
+            if token in title:
+                value += 2.25
+            if token in content:
+                value += 1.0
+        if phrase and len(phrase) >= 8:
+            if phrase in title:
+                value += 5.0
+            elif phrase in content:
+                value += 2.0
+        value += float(getattr(chunk, "rank", 0) or 0) * 12.0
+        same_lesson = bool(lesson_id and chunk.source_type == AIKnowledgeChunk.SourceType.LESSON and chunk.source_id == lesson_id)
+        same_course = bool(course_id and chunk.course_id == course_id)
+        same_pdf = bool(pdf_product_id and chunk.pdf_product_id == pdf_product_id)
+        if contextual:
+            if same_lesson:
+                value += 9.0
+            elif same_course or same_pdf:
+                value += 4.0
+        else:
+            if same_lesson:
+                value += 2.0
+            elif same_course or same_pdf:
+                value += 0.75
         return value
 
-    ranked.sort(key=score, reverse=True)
-    return ranked[:limit]
+    scored = []
+    for chunk in candidates:
+        value = score(chunk)
+        # Pour une question explicite, ne cite pas une source sans aucun signal lexical.
+        # Une question contextuelle peut garder le chunk de la page courante.
+        if value <= 0 and not contextual:
+            continue
+        setattr(chunk, "_ai_relevance_score", round(value, 3))
+        scored.append((value, chunk))
+    scored.sort(key=lambda item: item[0], reverse=True)
+
+    # Diversifier les résultats : au maximum deux chunks du même objet source.
+    selected: list[AIKnowledgeChunk] = []
+    per_source: dict[tuple[str, int], int] = {}
+    for value, chunk in scored:
+        key = (chunk.source_type, chunk.source_id)
+        if per_source.get(key, 0) >= 2:
+            continue
+        selected.append(chunk)
+        per_source[key] = per_source.get(key, 0) + 1
+        if len(selected) >= limit:
+            break
+    return selected

@@ -510,3 +510,11 @@ KalanPro ferme désormais la boucle **apprendre → pratiquer → certifier → 
 ### Email transactionnel Resend
 
 KalanPro peut envoyer ses notifications HTML via Resend en complément de WhatsApp. Voir `docs/RESEND_EMAIL.md`. En production, vérifiez le domaine d'expédition dans Resend puis configurez `RESEND_ENABLED=True`, `RESEND_DRY_RUN=False` et `RESEND_API_KEY` sur Railway.
+
+### KalanPro AI — contrôle qualité
+
+La Phase 1 dispose d'une boucle de mesure : feedback utilisateur, coût estimé, latence et évaluation RAG Hit@6/MRR. Depuis le dashboard admin, utilisez **Assistant IA -> Évaluer le RAG**. En CLI :
+
+```bash
+docker compose -f docker-compose.dev.yml exec backend python manage.py evaluate_ai_rag --seed-demo --top-k 6
+```

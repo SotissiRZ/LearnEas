@@ -5,7 +5,7 @@ from .models import AIConversation, AIMessage, AISettings
 class AIMessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = AIMessage
-        fields = ["id", "role", "content", "sources", "provider", "model", "created_at"]
+        fields = ["id", "role", "content", "sources", "provider", "model", "feedback", "feedback_comment", "feedback_at", "created_at"]
 
 
 class AIConversationListSerializer(serializers.ModelSerializer):
@@ -32,5 +32,5 @@ class AISettingsSerializer(serializers.ModelSerializer):
         fields = [
             "enabled", "rag_enabled", "history_enabled", "student_enabled", "instructor_enabled", "admin_enabled",
             "default_model", "student_monthly_limit", "instructor_monthly_limit", "admin_monthly_limit",
-            "max_history_messages", "max_context_chunks", "max_output_tokens", "temperature", "custom_system_prompt", "updated_at",
+            "max_history_messages", "max_context_chunks", "max_output_tokens", "temperature", "input_cost_per_million_eur", "output_cost_per_million_eur", "custom_system_prompt", "updated_at",
         ]

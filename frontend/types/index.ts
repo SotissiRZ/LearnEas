@@ -543,6 +543,7 @@ export interface AISource {
   type: "course" | "lesson" | "pdf_resource" | "pdf_product" | string;
   path: string;
   metadata: Record<string, unknown>;
+  score?: number;
 }
 
 export interface AIMessage {
@@ -552,6 +553,9 @@ export interface AIMessage {
   sources: AISource[];
   provider?: string;
   model?: string;
+  feedback?: "helpful" | "unhelpful" | "";
+  feedback_comment?: string;
+  feedback_at?: string | null;
   created_at: string;
 }
 
@@ -581,6 +585,8 @@ export interface AIAdminSettings {
   max_context_chunks: number;
   max_output_tokens: number;
   temperature: string | number;
+  input_cost_per_million_eur: string | number;
+  output_cost_per_million_eur: string | number;
   custom_system_prompt: string;
   updated_at: string;
 }

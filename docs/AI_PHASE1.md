@@ -108,3 +108,40 @@ La clé API reste exclusivement dans Railway / `.env`.
 - Les PDF scannés sans couche texte ne sont pas OCRisés.
 - Les actions qui modifient KalanPro (publier, acheter, candidater, envoyer un message, etc.) restent hors périmètre jusqu'à la Phase 2.
 - L'assistant est volontairement masqué dans les salles live ; l'assistance de séance est prévue en Phase 3.
+
+## Stabilisation v61 — qualité, feedback et coût
+
+La Phase 1 ajoute désormais une boucle de qualité mesurable :
+
+- chaque réponse IA peut être notée **Utile** / **À améliorer** ;
+- le feedback est strictement limité au propriétaire de la conversation ;
+- le dashboard admin affiche le taux de satisfaction ;
+- le coût estimé mensuel est calculé à partir des tokens déclarés par le fournisseur et des tarifs configurés par million de tokens ;
+- la latence moyenne et le nombre moyen de chunks RAG sont visibles ;
+- les sources exposent un score de pertinence interne ;
+- le RAG privilégie fortement le contexte de page uniquement pour les requêtes contextuelles (« explique-moi ça », « résume cette leçon »), afin d'éviter qu'une page ouverte sans rapport pollue une question explicite ;
+- au maximum deux chunks d'un même objet source sont retournés pour conserver de la diversité documentaire.
+
+### Évaluer le RAG
+
+Le dashboard admin propose **Évaluer le RAG**. KalanPro crée un jeu de questions déterministe à partir des leçons/transcripts, cours et PDF existants puis mesure :
+
+- `Hit@6` : la bonne source apparaît-elle dans les 6 premiers résultats ?
+- `MRR` : à quel rang moyen apparaît la bonne source ?
+
+Même contrôle en ligne de commande :
+
+```bash
+docker compose exec backend python manage.py evaluate_ai_rag --seed-demo --top-k 6
+```
+
+Les cas d'évaluation sont persistés et peuvent être complétés/manuellement ajustés depuis Django Admin (`AIEvaluationCase`).
+
+### Pilotage des coûts
+
+Dans `Dashboard admin -> Assistant IA`, renseignez les tarifs du modèle réellement utilisé :
+
+- coût entrée / 1 million de tokens (EUR) ;
+- coût sortie / 1 million de tokens (EUR).
+
+Ces valeurs ne déclenchent aucune facturation : elles servent uniquement à calculer une estimation de coût à partir des compteurs tokens renvoyés par le fournisseur.

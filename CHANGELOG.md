@@ -943,3 +943,15 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Nouvel onglet **Assistant IA** dans le dashboard admin avec activation, quotas, modèle, limites et instructions globales.
 - Clé fournisseur conservée uniquement côté serveur (`AI_API_KEY`) et mode `AI_DRY_RUN` pour les tests locaux.
 - Durcissement prompt-injection : les contenus RAG sont traités comme données non fiables et ne peuvent pas modifier les instructions système.
+
+## v61 — KalanPro AI · stabilisation Phase 1
+
+- Amélioration du ranking RAG : boost contextuel conditionnel, score lexical/FTS et diversité des sources.
+- Citations KalanPro explicitement demandées dans le prompt sous forme `[SOURCE n]`.
+- Prompts spécialisés apprenant/instructeur/admin affinés pour le tutorat et la création pédagogique.
+- Feedback **Utile / À améliorer** sous chaque réponse, avec isolation stricte par utilisateur.
+- Ajout d'un coût estimé par requête et d'un pilotage mensuel tokens/coût/latence dans l'admin.
+- Tarifs modèle entrée/sortie par million de tokens configurables côté admin.
+- Nouveau jeu de tests RAG persistants (`AIEvaluationCase`) et commande `evaluate_ai_rag`.
+- Bouton **Évaluer le RAG** dans le dashboard admin avec Hit@6 et MRR.
+- Nouveaux tests de régression feedback, coûts, qualité RAG et autorisations admin.
