@@ -11,9 +11,12 @@ export default function AppHydrator() {
   const hydrateCurrency = useCurrency((s) => s.hydrate);
 
   useEffect(() => {
-    hydrateAuth();
+    const expire = () => useAuth.setState({ user: null, hydrated: true });
+    window.addEventListener("learneas:auth-expired", expire);
+    void hydrateAuth();
     hydrateCart();
     hydrateCurrency();
+    return () => window.removeEventListener("learneas:auth-expired", expire);
   }, [hydrateAuth, hydrateCart, hydrateCurrency]);
 
   return null;

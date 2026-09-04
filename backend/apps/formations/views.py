@@ -22,6 +22,11 @@ from .models import (
     FormationAttendance, FormationSignal, FormationStatus, FormationRoomFile, FormationSessionInvite,
     FormationKind, MentorshipOffering, MentorshipSlot, MentorshipBooking,
 )
+from .rtc import ice_servers_for_user
+from .realtime import (
+    make_realtime_ticket, publish_files_changed, publish_presence_changed,
+    publish_session_state, publish_signal, serialize_signal,
+)
 from .serializers import (
     InteractiveFormationListSerializer, InteractiveFormationDetailSerializer,
     InteractiveFormationWriteSerializer, FormationSessionSerializer, FormationSessionWriteSerializer,
@@ -242,6 +247,18 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
                 "name": request.user.get_full_name() or request.user.username,
                 "avatar": request.user.avatar.url if getattr(request.user, "avatar", None) else None,
             },
+            "ice_servers": ice_servers_for_user(request.user),
+        })
+
+    @action(detail=True, methods=["post"], url_path="realtime-ticket")
+    def realtime_ticket(self, request, pk=None):
+        session = self.get_object()
+        self._require_access(request, session)
+        if session.completed or session.ended_at:
+            return Response({"detail": "Cette séance est terminée."}, status=409)
+        return Response({
+            "ticket": make_realtime_ticket(session_id=session.id, user_id=request.user.id),
+            "expires_in": settings.REALTIME_TICKET_MAX_AGE_SECONDS,
         })
 
     @action(detail=True, methods=["post"])
@@ -255,6 +272,7 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
             session.formation.status = FormationStatus.IN_PROGRESS
             session.formation.save(update_fields=["status"])
             session.save(update_fields=["started_at"])
+            publish_session_state(session.id, "started")
         return Response(FormationSessionSerializer(session, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["post"])
@@ -290,6 +308,7 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
         attendance = FormationAttendance.objects.create(
             session=session, user=request.user, role=_role_for(request.user, session.formation, session)
         )
+        publish_presence_changed(session.id)
         enrollment = FormationEnrollment.objects.filter(user=request.user, formation=session.formation).first()
         if enrollment:
             enrollment.attended_sessions.add(session)
@@ -321,6 +340,7 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
         FormationSignal.objects.filter(session=session).filter(
             Q(sender=request.user) | Q(recipient=request.user)
         ).delete()
+        publish_presence_changed(session.id)
         return Response({"ok": True})
 
     @action(detail=True, methods=["get"])
@@ -359,6 +379,7 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Présence introuvable ou déjà clôturée."}, status=404)
         attendance.hand_raised = bool(request.data.get("raised", False))
         attendance.save(update_fields=["hand_raised"])
+        publish_presence_changed(session.id)
         return Response({"ok": True, "hand_raised": attendance.hand_raised})
 
     @action(detail=True, methods=["get", "post"], url_path="invites")
@@ -466,6 +487,7 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
                 content_type=getattr(upload, "content_type", "") or "",
                 size=upload.size,
             )
+            publish_files_changed(session.id)
             return Response(self._room_file_payload(item), status=status.HTTP_201_CREATED)
 
         files = session.room_files.select_related("uploader").all()[:100]
@@ -636,6 +658,7 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
             signal = FormationSignal.objects.create(
                 session=session, sender=request.user, recipient=recipient, kind=kind, payload=payload
             )
+            publish_signal(signal)
             return Response({"id": signal.id}, status=201)
 
         after = request.query_params.get("after", "0")
@@ -646,16 +669,7 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
         signals = FormationSignal.objects.filter(
             session=session, recipient=request.user, id__gt=after_id
         ).select_related("sender")[:100]
-        return Response([
-            {
-                "id": s.id,
-                "sender_id": s.sender_id,
-                "sender_name": s.sender.get_full_name() or s.sender.username,
-                "kind": s.kind,
-                "payload": s.payload,
-            }
-            for s in signals
-        ])
+        return Response([serialize_signal(signal) for signal in signals])
 
     @action(detail=True, methods=["post"])
     def end(self, request, pk=None):
@@ -674,6 +688,8 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
         for attendance in FormationAttendance.objects.filter(session=session, left_at__isnull=True):
             attendance.close(now)
         session.signals.all().delete()
+        publish_presence_changed(session.id)
+        publish_session_state(session.id, "ended")
 
         if not session.formation.sessions.filter(completed=False).exists():
             session.formation.status = FormationStatus.COMPLETED

@@ -1,3 +1,32 @@
+# v51 — Realtime WebSocket, TURN éphémère, CSP stricte et tests E2E
+
+- Backend basculé en ASGI/Daphne avec Django Channels + `channels-redis`; Redis devient aussi le bus realtime des salles live.
+- Signalisation entrante, présence, fichiers et états de séance poussés par WebSocket avec ticket signé court et contrôle d’origine.
+- Suppression du poll permanent à 1 seconde ; heartbeat à 15 s et fallback HTTP à 3 s uniquement lorsque le WebSocket est indisponible, avec reconnexion exponentielle.
+- Conservation du POST HTTP pour les signaux sortants afin de réutiliser les validations DRF et la modération métier avant diffusion realtime.
+- Credentials ICE/TURN déplacés côté backend : génération temporaire compatible secret partagé coturn (`RTC_TURN_SECRET`) et suppression des secrets `NEXT_PUBLIC_RTC_*`.
+- CSP principale Next.js générée par requête avec nonce + `strict-dynamic`; aucun `script-src unsafe-inline` ni `unsafe-eval` en production. `unsafe-eval` n’est ajouté que sous `NODE_ENV=development` pour le tooling Next local.
+- Mini-runner JavaScript/Python déplacé sous `/code-runner/`, chargé dans une iframe `sandbox="allow-scripts"` sans `allow-same-origin`, puis exécuté dans des Workers avec timeout. Pyodide/CDN/wasm restent confinés à la CSP du runner.
+- Aperçus HTML/CSS rendus dans des iframes sans permission de script.
+- Nginx reverse-proxy `/ws/` ajouté ; Docker dev utilise `ws://localhost:8000/ws`. Le `X-Frame-Options: DENY` global Nginx est retiré afin de ne pas bloquer le runner same-origin ; les routes sensibles conservent leurs headers explicites.
+- Tests backend ajoutés pour ticket realtime, push Channels et credentials TURN temporaires.
+- `npm run test:security` ajoute quatre garde-fous statiques auth/CSP/realtime/runner.
+- Smoke tests Playwright ajoutés et exécutés par la CI après le build Next.js.
+- Documentation Railway/Vercel/RTC mise à jour ; correction d’une variable AWS dupliquée dans Compose.
+
+# v50 — Sécurité auth, SQL, uploads et files Celery
+
+- Refresh JWT déplacé dans un cookie HttpOnly ; access token uniquement en mémoire et durée ramenée à 15 minutes.
+- Proxy `/api` configurable côté Vercel pour conserver une origine navigateur unique avec Railway.
+- Contrôle Origin sur refresh/logout, refresh HttpOnly stable multi-onglets, et révocation lors du logout/changement de mot de passe.
+- Suppression des N+1 du matching opportunités et des listes de projets apprenant.
+- Revalidation administrateur obligatoire après modification de l'identité d'une entreprise approuvée.
+- Validation des signatures PDF/Office/ZIP/VTT et protections ZIP traversal/zip-bomb.
+- Client ClamAV INSTREAM intégré ; scan documentaire requis par défaut lorsque `DEBUG=False`.
+- Durée des liens privés classiques ramenée à 15 minutes ; fenêtre HLS séparée à 6 heures.
+- Files Celery `media`, `notifications`, `default` et worker média Docker séparé.
+- Tests de régression ajoutés pour cookie HttpOnly, rotation/logout, origine inconnue, entreprise revalidée et faux fichiers.
+
 # v48 — Emplois, missions & matching professionnel
 
 - Nouveau module `apps.opportunities` : entreprises, profils candidats, opportunités et candidatures.

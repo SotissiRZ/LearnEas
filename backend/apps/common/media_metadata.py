@@ -16,6 +16,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -187,26 +188,47 @@ def _run_ffmpeg_normalization(source_path: str, output_path: str) -> None:
         raise ValueError(result.stderr.strip() or "ffmpeg n'a pas produit de fichier vidéo valide")
 
 
-def normalize_video_upload(file_obj):
-    """Normalise un upload vidéo si nécessaire et renvoie un UploadedFile prêt à sauvegarder.
+def _duration_minutes_from_info(info: dict[str, Any]) -> int:
+    try:
+        seconds = float(info.get("duration_seconds") or 0)
+    except (TypeError, ValueError):
+        seconds = 0.0
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("durée invalide")
+    return max(1, math.ceil(seconds / 60))
 
-    - MP4 H.264/AAC yuv420p : conservé tel quel (aucune perte ni délai).
-    - MOV/M4V/WebM, HEVC/H.265, AV1, H.264 10-bit, audio incompatible, etc. :
-      transcodés en MP4 H.264/AAC.
 
-    Le transcodage est volontairement effectué côté serveur : accepter une extension ``.mp4``
-    sans contrôler son codec conduit exactement à l'erreur navigateur « source non prise en charge ».
+def prepare_video_upload(file_obj) -> tuple[Any, int]:
+    """Prépare une vidéo dans un worker et renvoie ``(fichier, durée_minutes)``.
+
+    Le fichier distant éventuel (S3/R2) n'est matérialisé qu'une seule fois sur disque local.
+    La même copie sert à ffprobe, à la vérification de compatibilité et, si nécessaire, à ffmpeg.
+    C'est important pour les vidéos de plusieurs Go : le worker ne doit pas télécharger deux fois
+    la source depuis le bucket uniquement pour calculer sa durée.
     """
-    if not file_obj or not getattr(settings, "VIDEO_NORMALIZATION_ENABLED", True):
-        return file_obj
+    if not file_obj:
+        return file_obj, 0
 
     source_path, source_is_temp = _uploaded_file_path(file_obj)
     output_fd = None
     output_path = None
     try:
-        compatible, _ = browser_video_compatibility(source_path, filename=getattr(file_obj, "name", None))
+        if getattr(settings, "VIDEO_NORMALIZATION_ENABLED", True):
+            compatible, source_info = browser_video_compatibility(
+                source_path, filename=getattr(file_obj, "name", None)
+            )
+        else:
+            source_info = probe_video_path(source_path)
+            compatible = True
+
+        try:
+            duration_minutes = _duration_minutes_from_info(source_info)
+        except ValueError:
+            duration_minutes = 0
         if compatible:
-            return file_obj
+            if duration_minutes <= 0:
+                raise ValueError("durée invalide")
+            return file_obj, duration_minutes
 
         output_fd, output_path = tempfile.mkstemp(prefix="learneas-normalized-", suffix=".mp4")
         os.close(output_fd)
@@ -219,6 +241,11 @@ def normalize_video_upload(file_obj):
             raise serializers.ValidationError({
                 "video_file": f"Après conversion web, la vidéo dépasse la limite de {max_bytes // (1024 * 1024)} Mo."
             })
+
+        # Si le conteneur source ne fournissait pas une durée exploitable, vérifier la sortie.
+        # (Normalement source_info suffit et évite un second ffprobe.)
+        if duration_minutes <= 0:
+            duration_minutes = _duration_minutes_from_info(probe_video_path(output_path))
 
         original_name = Path(getattr(file_obj, "name", "video.mp4"))
         normalized_name = f"{original_name.stem}.mp4"
@@ -233,7 +260,7 @@ def normalize_video_upload(file_obj):
         normalized.file.flush()
         normalized.seek(0)
         normalized.size = normalized_size
-        return normalized
+        return normalized, duration_minutes
     except serializers.ValidationError:
         raise
     except (FileNotFoundError, subprocess.TimeoutExpired, ValueError) as exc:
@@ -262,6 +289,15 @@ def normalize_video_upload(file_obj):
                 pass
 
 
+def normalize_video_upload(file_obj):
+    """Compatibilité historique : normalise dans le contexte appelant et renvoie le fichier.
+
+    Le pipeline LearnEas de production appelle désormais :func:`prepare_video_upload` depuis
+    Celery ; cette fonction est conservée pour les appels internes/anciens sans dupliquer la logique.
+    """
+    prepared, _duration = prepare_video_upload(file_obj)
+    return prepared
+
 def extract_video_duration_minutes(file_obj) -> int:
     """Extrait la durée réelle d'une vidéo locale avec ffprobe, arrondie à la minute supérieure."""
     if not file_obj:
@@ -285,6 +321,81 @@ def extract_video_duration_minutes(file_obj) -> int:
                 pass
 
 
+_OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+_ZIP_MAGICS = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
+
+
+def _read_upload_head(file_obj, size=8192) -> bytes:
+    position = None
+    try:
+        position = file_obj.tell()
+    except (AttributeError, OSError):
+        pass
+    try:
+        file_obj.seek(0)
+        return file_obj.read(size) or b""
+    finally:
+        _reset_stream(file_obj, position)
+
+
+def _validate_zip_structure(file_obj, *, suffix: str, field: str, max_bytes: int) -> None:
+    position = None
+    try:
+        position = file_obj.tell()
+    except (AttributeError, OSError):
+        pass
+    try:
+        file_obj.seek(0)
+        if not zipfile.is_zipfile(file_obj):
+            raise serializers.ValidationError({field: "Le contenu du fichier ne correspond pas à son extension."})
+        file_obj.seek(0)
+        with zipfile.ZipFile(file_obj) as archive:
+            infos = archive.infolist()
+            names = {info.filename for info in infos}
+            # Protection préventive : aucune archive déposée ne doit contenir de traversal de chemin
+            # ni exploser à plusieurs gigaoctets si elle est inspectée ultérieurement.
+            max_uncompressed = max(200 * 1024 * 1024, max_bytes * 20)
+            if sum(max(0, info.file_size) for info in infos) > max_uncompressed:
+                raise serializers.ValidationError({field: "Archive compressée anormalement volumineuse après extraction."})
+            for info in infos:
+                normalized = info.filename.replace("\\", "/")
+                parts = [part for part in normalized.split("/") if part]
+                if normalized.startswith("/") or ".." in parts:
+                    raise serializers.ValidationError({field: "Archive contenant un chemin de fichier non sûr."})
+
+            office_root = {".docx": "word/", ".xlsx": "xl/", ".pptx": "ppt/"}.get(suffix)
+            if office_root:
+                if "[Content_Types].xml" not in names or not any(name.startswith(office_root) for name in names):
+                    raise serializers.ValidationError({field: "Le contenu Office ne correspond pas à son extension."})
+    except zipfile.BadZipFile as exc:
+        raise serializers.ValidationError({field: "Archive ZIP/Office invalide."}) from exc
+    finally:
+        _reset_stream(file_obj, position)
+
+
+def validate_upload_signature(file_obj, *, suffix: str, field: str, max_bytes: int) -> None:
+    """Vérifie les signatures structurelles des documents risqués sans faire confiance au MIME client."""
+    head = _read_upload_head(file_obj)
+    if suffix == ".pdf" and not head.startswith(b"%PDF-"):
+        raise serializers.ValidationError({field: "Le contenu du fichier ne correspond pas à un PDF valide."})
+    if suffix in {".doc", ".xls", ".ppt"} and not head.startswith(_OLE_MAGIC):
+        raise serializers.ValidationError({field: "Le contenu du document Office ne correspond pas à son extension."})
+    if suffix in {".docx", ".xlsx", ".pptx", ".zip"}:
+        if not head.startswith(_ZIP_MAGICS):
+            raise serializers.ValidationError({field: "Le contenu du fichier ne correspond pas à une archive ZIP/Office valide."})
+        _validate_zip_structure(file_obj, suffix=suffix, field=field, max_bytes=max_bytes)
+    if suffix in {".txt", ".csv"} and b"\x00" in head:
+        raise serializers.ValidationError({field: "Ce fichier texte contient des données binaires inattendues."})
+    if suffix == ".vtt":
+        text_head = head.lstrip(b"\xef\xbb\xbf \t\r\n")
+        if not text_head.startswith(b"WEBVTT"):
+            raise serializers.ValidationError({field: "Fichier de sous-titres VTT invalide."})
+
+    if suffix in {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip"}:
+        from apps.common.malware import scan_upload
+        scan_upload(file_obj, field=field)
+
+
 def validate_upload_limits(file_obj, *, max_bytes: int, extensions: set[str], field: str = "file") -> None:
     """Validation serveur minimale commune : taille + extension normalisée.
 
@@ -301,3 +412,4 @@ def validate_upload_limits(file_obj, *, max_bytes: int, extensions: set[str], fi
     if suffix not in extensions:
         allowed = ", ".join(sorted(extensions))
         raise serializers.ValidationError({field: f"Format non autorisé. Formats acceptés : {allowed}."})
+    validate_upload_signature(file_obj, suffix=suffix, field=field, max_bytes=max_bytes)

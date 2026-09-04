@@ -6,6 +6,9 @@ class AuthRateThrottle(AnonRateThrottle):
 class PasswordResetRateThrottle(AnonRateThrottle):
     scope = "password_reset"
 
+class RefreshRateThrottle(AnonRateThrottle):
+    scope = "token_refresh"
+
 class CheckoutRateThrottle(UserRateThrottle):
     scope = "checkout"
 

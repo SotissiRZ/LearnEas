@@ -4,6 +4,8 @@ import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import AppHydrator from "@/components/layout/AppHydrator";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "LearnEas · La formation en ligne pensée pour l'Afrique",
   description:

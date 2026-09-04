@@ -62,8 +62,28 @@ class EmployerProfileViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         if request.user.role != "admin" and instance.user_id != request.user.id:
             return Response({"detail": "Accès refusé."}, status=403)
-        # Une entreprise approuvée peut corriger ses données sans perdre l'approbation.
-        return super().partial_update(request, *args, **kwargs)
+
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        sensitive_fields = {"company_name", "website_url", "country", "logo"}
+        identity_changed = any(
+            field in serializer.validated_data
+            and serializer.validated_data[field] != getattr(instance, field)
+            for field in sensitive_fields
+        )
+        if request.user.role != "admin" and instance.status == EmployerProfile.Status.APPROVED and identity_changed:
+            # Un recruteur approuvé ne peut pas remplacer son identité par celle d'une autre
+            # entreprise sans contrôle. Le profil et ses offres disparaissent du public jusqu'à
+            # une nouvelle validation administrateur (les candidatures historiques sont conservées).
+            serializer.save(
+                status=EmployerProfile.Status.PENDING,
+                review_note="",
+                reviewed_by=None,
+                reviewed_at=None,
+            )
+        else:
+            serializer.save()
+        return Response(serializer.data)
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):

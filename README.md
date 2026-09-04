@@ -183,10 +183,11 @@ La délivrance du contenu ne dépend jamais du simple retour navigateur : LearnE
 - Invitation ponctuelle par email d'un apprenant non inscrit : accès limité à la séance, statut d'invitation et révocation par l'organisateur, sans création d'une inscription à la formation.
 - Enregistrement local côté organisateur de la grille vidéo et du mix audio disponibles au moment de l'enregistrement ; le fichier WebM est téléchargé sur le poste de l'organisateur et n'est pas stocké automatiquement sur le serveur.
 - **Mini-IDE collaboratif multi-fichiers** : création/renommage/suppression de fichiers, projets libres/POO et modèles React, Next.js, Django, Django REST Framework, FastAPI, Flask et Node/Express.
-- Coloration syntaxique et thèmes d’éditeur ; console redimensionnable. JavaScript/HTML/CSS s’exécutent dans des iframes sandboxées et Python dans un Web Worker Pyodide isolé avec fichiers/imports locaux.
+- Coloration syntaxique et thèmes d’éditeur ; console redimensionnable. JavaScript et Python s’exécutent dans un runner dédié chargé dans une iframe `sandbox="allow-scripts"` à origine opaque, puis dans des Web Workers limités en temps ; les aperçus HTML/CSS sont séparés et n’autorisent aucun script.
 - Les projets framework côté serveur (Django/DRF/FastAPI/Flask/Express/Next.js) sont éditables et collaboratifs, mais ne sont **pas exécutés sur le serveur LearnEas** : aucun moteur d’exécution de code arbitraire multi-tenant n’est activé par défaut.
 - Tableau blanc collaboratif avec dessin souris/tactile, couleurs, épaisseur, annulation et effacement synchronisés.
-- Pour une production fiable derrière des NAT/réseaux mobiles, un **TURN** reste nécessaire. Pour des classes nombreuses, prévoir une architecture **SFU** plutôt qu'un maillage WebRTC pair-à-pair.
+- La signalisation entrante et les événements de présence/fichiers utilisent **WebSocket / Django Channels / Redis** ; un fallback HTTP à 3 s reste disponible si le canal realtime tombe. Le heartbeat HTTP est limité à 15 s.
+- Pour une production fiable derrière des NAT/réseaux mobiles, un **TURN** reste nécessaire. Les credentials TURN peuvent être générés temporairement côté backend avec `RTC_TURN_SECRET`; aucun secret TURN n’est compilé dans le frontend. Pour des classes nombreuses, prévoir une architecture **SFU** plutôt qu'un maillage WebRTC pair-à-pair.
 
 ### Comptes & rôles
 - 3 rôles : étudiant, instructeur, administrateur.
@@ -242,6 +243,16 @@ LearnEas permet désormais à un instructeur d’ajouter des projets évalués a
 
 La page publique du portfolio n’expose ni email ni téléphone, et les fichiers de remise restent privés. Voir `docs/PROJECTS_PORTFOLIO.md`.
 
+## 🔐 Durcissement v50–v51
+
+La v50 retire les JWT persistants du navigateur, ajoute le refresh HttpOnly, le proxy Vercel → Railway same-origin,
+la validation structurelle/antivirus des documents, la revalidation des entreprises après changement d'identité,
+les optimisations SQL opportunités/projets et l'isolation Celery des transcodages. Voir `docs/AUDIT_FIXES_V50.md`.
+
+La v51 ajoute la signalisation **WebSocket/Channels**, les tickets realtime courts, le fallback réseau contrôlé,
+les credentials TURN temporaires générés côté backend, une CSP script par nonce sans `unsafe-inline`/`unsafe-eval` en production,
+l’isolation du mini-runner dans une iframe sandboxée à origine opaque, et des garde-fous frontend/Playwright. Voir `docs/AUDIT_FIXES_V51.md`.
+
 ## 🚀 Lancer le projet
 
 ### Option A — Docker (recommandé, tout est orchestré)
@@ -253,14 +264,16 @@ cp .env.docker.example .env      # profil local : DEBUG=True
 docker compose up -d --build
 ```
 
-Cela démarre 6 services orchestrés ensemble :
+Cela démarre 8 services orchestrés ensemble :
 
 | Service | Rôle |
 |---|---|
 | `db` | PostgreSQL 16 |
 | `redis` | Cache + broker Celery |
-| `backend` | Django + Gunicorn (API REST) |
-| `celery_worker` | Tâches asynchrones (emails, etc.) |
+| `backend` | Django ASGI + Daphne (API REST + WebSocket/Channels) |
+| `celery_worker` | Tâches courtes + notifications (`default,notifications`) |
+| `celery_media_worker` | Transcodage vidéo/HLS isolé (`media`) |
+| `celery_beat` | Planification des rappels et tâches périodiques |
 | `frontend` | Next.js en mode standalone |
 | `nginx` | Reverse proxy unique — point d'entrée sur `http://localhost` |
 
@@ -344,12 +357,11 @@ npm run dev                       # http://localhost:3000
 > refusera volontairement de démarrer si une clé de développement est utilisée avec `DEBUG=False`.
 
 
-La v28 applique notamment les garde-fous suivants : JWT pour l’API, rotation/blacklist des refresh tokens,
-throttling Redis partagé entre workers, mots de passe validés par Django, médias pédagogiques privés
-servis via URL signée + `X-Accel-Redirect`, Stripe Checkout + webhook signé, réservation temporaire
-atomique des places live, contrôles de rôles côté API, CSP/en-têtes nginx, secrets faibles et
-`ALLOWED_HOSTS=*` refusés lorsque `DEBUG=False`, documentation API uniquement en développement,
-backend/Celery exécutés sous utilisateur non privilégié après bootstrap.
+Les versions récentes appliquent notamment : JWT avec refresh **HttpOnly** et access token en mémoire, rotation/blacklist,
+throttling Redis partagé, mots de passe validés par Django, médias privés par URL signée, vérification des webhooks de paiement,
+contrôles de rôles côté API, CSP script par nonce, runner de code isolé, validation/scan des documents,
+realtime WebSocket avec tickets courts, secrets TURN uniquement côté backend, refus des secrets faibles et de `ALLOWED_HOSTS=*` en production,
+et exécution backend/Celery sous utilisateur non privilégié après bootstrap.
 
 Avant exposition Internet, configurez obligatoirement :
 
@@ -357,7 +369,7 @@ Avant exposition Internet, configurez obligatoirement :
 2. Les clés **live et test séparées** des prestataires activés. Pour Stripe, configurez `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` et `STRIPE_TEST_SECRET_KEY` / `STRIPE_TEST_WEBHOOK_SECRET` selon les environnements. Pour YouCan Pay, le token utilisé par LearnEas doit autoriser la création et la consultation des factures ; renseignez un token sandbox séparé si votre compte en fournit un. Pour GeniusPay, renseignez les couples clé/secret et secrets webhook distincts sandbox/live.
 3. Les URLs webhook HTTPS : `/api/payments/stripe/webhook/` et `/api/payments/geniuspay/webhook/`. YouCan Pay est réconcilié côté serveur en relisant l’état de la facture lors du retour/vérification.
 4. Un SMTP réel pour les emails transactionnels puis utilisez **Admin → Paramètres → Test email**.
-5. Un serveur TURN pour fiabiliser les classes WebRTC sur réseaux mobiles/NAT restrictifs.
+5. Un serveur TURN pour fiabiliser les classes WebRTC sur réseaux mobiles/NAT restrictifs. Préférez `RTC_TURN_SECRET` avec des credentials temporaires ; n’exposez jamais le secret dans `NEXT_PUBLIC_*`. Configurez aussi `REALTIME_ALLOWED_ORIGINS` et `NEXT_PUBLIC_WS_URL=wss://<backend-railway>/ws` lorsque frontend et backend sont sur des domaines distincts.
 6. Un stockage objet/CDN pour les médias et segments HLS ; sur Railway activez `USE_S3=True` et `REQUIRE_REMOTE_MEDIA=True` afin que les paquets HLS v43 survivent aux redéploiements.
 
 Les limitations et priorités restantes sont détaillées dans [`AUDIT.md`](./AUDIT.md).
@@ -377,15 +389,16 @@ python manage.py migrate --noinput
 python manage.py test
 npm ci
 npm run audit:mobile
+npm run test:security
 npm run build
+npx playwright test
 docker compose config -q
 ```
 
-Dans l’environnement de génération de cette archive v9, les contrôles effectivement exécutés sont :
-parsing AST de tous les fichiers Python, syntaxe shell de l’entrypoint, parsing TypeScript/TSX,
-résolution des imports locaux, audit mobile statique, validation YAML des Compose/CI et cohérence
-statique des dépendances de migrations. Le véritable build Next.js et la suite Django nécessitent les
-dépendances npm/pip et sont donc laissés à la CI/Docker de la machine cible.
+Pour la v51, la génération locale valide la compilation Python, la syntaxe TS/TSX/JS, les YAML Compose/CI,
+`npm run audit:mobile` et les tests statiques de sécurité frontend. L’environnement de génération ne peut pas
+installer les dépendances npm/pip (timeout réseau), donc le build Next.js, Playwright et la suite Django complète
+restent des **release gates obligatoires** de la CI/Docker avant déploiement.
 
 ---
 
@@ -393,7 +406,7 @@ dépendances npm/pip et sont donc laissés à la CI/Docker de la machine cible.
 
 - Notifications (email + in-app) sur achat, nouveau commentaire, réponse instructeur.
 - Recherche full-text avancée (Algolia/Meilisearch), comme dans le projet Laravel d'origine.
-- Chat en direct temps réel (WebSocket / Django Channels) — le modèle `ChatMessage` est déjà prêt.
+- Étendre progressivement le realtime WebSocket au chat général et, si nécessaire, aux signaux sortants à très haute fréquence.
 - Stockage objet/CDN pour les médias volumineux et supervision de la qualité des séances WebRTC.
 - Système d'abonnement "Premium" (accès illimité à un catalogue) en complément de l'achat à l'unité.
 
@@ -406,7 +419,7 @@ L’API LearnEas (`/api/...`) utilise JWT (`Authorization: Bearer ...`) et **pas
 
 ## Exécution de code dans les séances live
 
-La salle live peut exécuter JavaScript dans une iframe sandboxée et Python dans le navigateur via Pyodide/WebAssembly (version épinglée `0.27.7` chargée depuis jsDelivr). HTML et CSS disposent d'un aperçu direct. Java, C et C++ restent éditables et synchronisés mais ne sont pas exécutés côté serveur, afin de ne pas exposer le backend à l'exécution arbitraire de code. En environnement à accès Internet filtré, autoriser `https://cdn.jsdelivr.net` ou héberger les ressources Pyodide en interne.
+La salle live charge un runner distinct sous `/code-runner/` dans une iframe `sandbox="allow-scripts"` sans `allow-same-origin`. JavaScript et Python s’exécutent ensuite dans des Web Workers avec délais d’arrêt ; Pyodide/WebAssembly reste épinglé à `0.27.7` et n’est autorisé par CSP que dans ce runner isolé. Les aperçus HTML/CSS sont rendus dans des iframes sans permission de script. Java, C et C++ restent éditables et synchronisés mais ne sont pas exécutés côté serveur. En environnement à accès Internet filtré, hébergez Pyodide en interne ou autorisez explicitement le CDN uniquement pour le runner.
 
 ### Paiement test local
 
@@ -464,6 +477,8 @@ docker compose exec backend python manage.py prepare_course_streaming --force
 
 Les manifests et segments sont privés : le frontend ne reçoit que des URL signées expirantes. En Docker local les segments passent par nginx/X-Accel-Redirect ; en production avec `USE_S3=True`, ils utilisent le stockage objet présigné.
 Si le frontend est sur **Vercel** et les segments sur un domaine S3/R2 distinct, définissez aussi `NEXT_PUBLIC_MEDIA_ORIGIN=https://votre-cdn.example.com` au build frontend et autorisez les requêtes `GET`/`HEAD` depuis le domaine LearnEas dans la politique CORS du bucket. Cela permet à hls.js de charger les segments sans élargir inutilement la CSP à tous les domaines.
+
+Pour les **uploads vidéo volumineux**, LearnEas utilise aussi un multipart upload direct navigateur → S3/R2 lorsque `DIRECT_MEDIA_UPLOADS_ENABLED=True`. Le bucket doit autoriser `PUT` depuis l'origine Vercel/LearnEas et exposer l'en-tête `ETag` (`ExposeHeaders: ["ETag"]`) afin que le navigateur puisse finaliser chaque multipart upload. Les URL de blocs sont courtes et signées côté backend ; les credentials S3 ne sont jamais envoyés au navigateur.
 
 Variables disponibles :
 

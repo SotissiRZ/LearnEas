@@ -26,7 +26,7 @@ interface Profile {
 
 export default function InstructorProfilePage() {
   const { ready } = useAuthGuard({ roles: ["instructor", "admin"], redirectTo: "/dashboard/instructor" });
-  const { refreshMe } = useAuth();
+  const { refreshMe, logout } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [avatar, setAvatar] = useState<File | null>(null);
   const [message, setMessage] = useState("");
@@ -80,6 +80,8 @@ export default function InstructorProfilePage() {
       const response = await api.post<{ detail: string }>("/auth/change-password/", pw);
       setPw({ current_password: "", new_password: "", new_password2: "" });
       setPwMessage(response.detail);
+      await logout();
+      window.location.assign("/login");
     } catch (error) {
       setPwMessage(error instanceof ApiError ? error.message : "Impossible de modifier le mot de passe.");
     }

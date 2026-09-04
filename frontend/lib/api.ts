@@ -29,37 +29,54 @@ const API_URL =
     ? process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://backend:8000/api"
     : process.env.NEXT_PUBLIC_API_URL || "/api";
 
+// L'access token ne persiste jamais dans localStorage/sessionStorage : il reste uniquement en
+// mémoire de l'onglet. Après un rechargement, le cookie refresh HttpOnly permet d'en obtenir un
+// nouveau sans exposer de secret à JavaScript.
+let accessToken: string | null = null;
+let refreshPromise: Promise<string | null> | null = null;
+let authGeneration = 0;
+
 function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("learneas_access");
+  return typeof window === "undefined" ? null : accessToken;
 }
 
-let refreshPromise: Promise<string | null> | null = null;
+export function setAccessToken(token: string | null): void {
+  authGeneration += 1;
+  accessToken = token;
+}
+
+export function clearClientSession(): void {
+  authGeneration += 1;
+  accessToken = null;
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("learneas_user");
+    window.dispatchEvent(new Event("learneas:auth-expired"));
+  }
+}
 
 async function refreshAccessToken(): Promise<string | null> {
   if (typeof window === "undefined") return null;
-  const refresh = localStorage.getItem("learneas_refresh");
-  if (!refresh) return null;
   if (refreshPromise) return refreshPromise;
 
+  const generationAtStart = authGeneration;
   refreshPromise = (async () => {
     try {
       const response = await fetch(`${API_URL}/auth/token/refresh/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh }),
+        credentials: "include",
         cache: "no-store",
       });
       if (!response.ok) throw new Error("Refresh JWT refusé");
-      const data = await response.json() as { access?: string; refresh?: string };
+      const data = await response.json() as { access?: string };
       if (!data.access) throw new Error("Nouveau jeton absent");
-      localStorage.setItem("learneas_access", data.access);
-      if (data.refresh) localStorage.setItem("learneas_refresh", data.refresh);
+      // Si un login/logout a eu lieu pendant ce refresh lent, sa décision est plus récente :
+      // l'ancienne requête ne doit jamais écraser la nouvelle session.
+      if (generationAtStart !== authGeneration) return accessToken;
+      accessToken = data.access;
       return data.access;
     } catch {
-      localStorage.removeItem("learneas_access");
-      localStorage.removeItem("learneas_refresh");
-      localStorage.removeItem("learneas_user");
+      if (generationAtStart === authGeneration) clearClientSession();
       return null;
     } finally {
       refreshPromise = null;
@@ -67,6 +84,10 @@ async function refreshAccessToken(): Promise<string | null> {
   })();
 
   return refreshPromise;
+}
+
+export async function restoreAccessToken(): Promise<boolean> {
+  return Boolean(await refreshAccessToken());
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -143,19 +164,19 @@ export async function apiFetch<T>(
 
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, { ...options, headers, cache: "no-store" });
+    res = await fetch(`${API_URL}${path}`, { ...options, headers, credentials: "include", cache: "no-store" });
   } catch {
     throw new ApiError(
       "Impossible de contacter le serveur. Vérifiez votre connexion ou réessayez plus tard."
     );
   }
 
-  if (res.status === 401 && token && typeof window !== "undefined" && !path.includes("/auth/token/refresh/")) {
+  if (res.status === 401 && typeof window !== "undefined" && !path.includes("/auth/token/refresh/") && !path.includes("/auth/login/") && !path.includes("/auth/register/")) {
     const renewed = await refreshAccessToken();
     if (renewed) {
       headers.Authorization = `Bearer ${renewed}`;
       try {
-        res = await fetch(`${API_URL}${path}`, { ...options, headers, cache: "no-store" });
+        res = await fetch(`${API_URL}${path}`, { ...options, headers, credentials: "include", cache: "no-store" });
       } catch {
         throw new ApiError("Impossible de contacter le serveur. Vérifiez votre connexion ou réessayez plus tard.");
       }
@@ -208,6 +229,7 @@ export async function apiUploadWithProgress<T>(
   const attempt = (token: string | null) => new Promise<{ status: number; data: unknown }>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open(method, `${API_URL}${path}`);
+    xhr.withCredentials = true;
     if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && onProgress) onProgress(Math.round((event.loaded / event.total) * 100));
@@ -271,6 +293,7 @@ export async function apiDownload(path: string, filename = "download"): Promise<
   const doFetch = (token: string | null) => fetch(`${API_URL}${path}`, {
     method: "GET",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: "include",
     cache: "no-store",
   });
 

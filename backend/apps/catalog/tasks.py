@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from apps.common.fields import ProtectedFileField
 from apps.common.hls_media import sign_hls_path
-from apps.common.media_metadata import extract_video_duration_minutes, normalize_video_upload
+from apps.common.media_metadata import prepare_video_upload
 from .models import Lesson, StreamingStatus
 from .streaming import delete_hls_package_from_manifest, generate_lesson_hls
 
@@ -71,47 +71,72 @@ def prepare_lesson_streaming(self, lesson_id: int, force: bool = False):
 
 @shared_task(bind=True)
 def normalize_lesson_video(self, lesson_id: int):
-    """Répare une vidéo de leçon existante en la normalisant pour le lecteur web.
+    """Prépare une vidéo de leçon hors requête HTTP.
 
-    La tâche s'exécute dans Celery pour ne pas bloquer Gunicorn pendant un transcodage long.
+    Pipeline unique :
+      1. ouvre la source (locale ou S3/R2) ;
+      2. normalise uniquement si le codec/conteneur n'est pas compatible navigateur ;
+      3. calcule la durée réelle ;
+      4. déclenche la génération HLS adaptative.
+
+    Cette tâche est l'unique point d'entrée vidéo après upload afin que Gunicorn ne lance
+    jamais ffprobe/ffmpeg sur le chemin critique d'une requête utilisateur.
     """
     lesson = Lesson.objects.select_related("section__course").get(pk=lesson_id)
     if not lesson.video_file:
-        return {"lesson_id": lesson_id, "status": "no_file", "detail": "Aucun fichier vidéo à convertir."}
+        return {"lesson_id": lesson_id, "status": "no_file", "detail": "Aucun fichier vidéo à préparer."}
+
+    Lesson.objects.filter(pk=lesson_id).update(
+        streaming_status=StreamingStatus.PROCESSING,
+        streaming_error="",
+        streaming_updated_at=timezone.now(),
+    )
 
     old_name = lesson.video_file.name
-    normalized = normalize_video_upload(lesson.video_file)
+    try:
+        normalized, duration_minutes = prepare_video_upload(lesson.video_file)
+        was_normalized = normalized is not lesson.video_file
 
-    if normalized is lesson.video_file:
-        # Même une vidéo déjà compatible peut ne pas avoir encore son paquet HLS (anciens cours).
-        if getattr(settings, "HLS_STREAMING_ENABLED", True) and lesson.streaming_status != StreamingStatus.READY:
-            prepare_lesson_streaming.delay(lesson.id)
+        if was_normalized:
+            lesson.video_file.save(normalized.name, normalized, save=False)
+
+        # Durée et compatibilité sont calculées sur la même copie locale de la source, ce qui
+        # évite de retélécharger une grosse vidéo S3/R2 une seconde fois dans le worker.
+        lesson.duration_minutes = duration_minutes
+        lesson.streaming_status = StreamingStatus.PENDING
+        lesson.streaming_error = ""
+        lesson.streaming_updated_at = timezone.now()
+        update_fields = ["duration_minutes", "streaming_status", "streaming_error", "streaming_updated_at"]
+        if was_normalized:
+            update_fields.append("video_file")
+        lesson.save(update_fields=update_fields)
+
+        if old_name and old_name != lesson.video_file.name:
+            try:
+                default_storage.delete(old_name)
+            except Exception:
+                pass
+
+        if getattr(settings, "HLS_STREAMING_ENABLED", True):
+            prepare_lesson_streaming.delay(lesson.id, force=True)
+        else:
+            Lesson.objects.filter(pk=lesson.id).update(
+                streaming_status=StreamingStatus.READY,
+                streaming_updated_at=timezone.now(),
+            )
+
         return {
             "lesson_id": lesson_id,
-            "status": "already_compatible",
+            "status": "prepared",
             "video_file": ProtectedFileField().to_representation(lesson.video_file),
-            "duration_minutes": lesson.duration_minutes,
+            "duration_minutes": duration_minutes,
         }
+    except Exception as exc:
+        message = str(exc).strip()[-2000:] or "Préparation vidéo échouée."
+        Lesson.objects.filter(pk=lesson_id).update(
+            streaming_status=StreamingStatus.FAILED,
+            streaming_error=message,
+            streaming_updated_at=timezone.now(),
+        )
+        raise
 
-    duration_minutes = extract_video_duration_minutes(normalized)
-    lesson.video_file.save(normalized.name, normalized, save=False)
-    lesson.duration_minutes = duration_minutes
-    lesson.streaming_status = StreamingStatus.PENDING
-    lesson.streaming_error = ""
-    lesson.save(update_fields=["video_file", "duration_minutes", "streaming_status", "streaming_error"])
-
-    if old_name and old_name != lesson.video_file.name:
-        try:
-            default_storage.delete(old_name)
-        except Exception:
-            pass
-
-    if getattr(settings, "HLS_STREAMING_ENABLED", True):
-        prepare_lesson_streaming.delay(lesson.id, force=True)
-
-    return {
-        "lesson_id": lesson_id,
-        "status": "converted",
-        "video_file": ProtectedFileField().to_representation(lesson.video_file),
-        "duration_minutes": lesson.duration_minutes,
-    }

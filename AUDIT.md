@@ -71,16 +71,16 @@ en charge**, listées explicitement à la fin de ce document.
 - Redirections `next=` limitées strictement à l’origine frontend sur login **et inscription**.
 - Email/username de profil non modifiables via l’endpoint utilisateur générique afin de préserver l’identité des invitations et sessions.
 - Validation Django des mots de passe, y compris création de compte par un administrateur.
-- Throttling Redis spécialisé pour auth, reset, checkout, médias, diagnostics admin, webhooks et polling/signalisation live.
+- Throttling Redis spécialisé pour auth, reset, checkout, médias, diagnostics admin et webhooks ; la signalisation live entrante utilise désormais Channels/Redis avec ticket court et fallback HTTP borné.
 - Payloads live bornés : taille globale, chat, projets de code, fichiers et tableau blanc.
 - Modération live réservée à l’organisateur ; une séance terminée refuse les nouveaux signaux métier.
 - Fichiers pédagogiques et fichiers de réunion privés protégés ; accès local via `X-Accel-Redirect` interne et URLs S3 présignées courtes en stockage distant.
 - Uploads bornés par taille/type et métadonnées PDF/vidéo vérifiées côté serveur.
 - v29 : uploads vidéo jusqu’à 2 Go par défaut côté Docker local, limites configurables côté Django et validation navigateur avant transfert ; les gros fichiers sont spoulés sur disque plutôt qu’en mémoire.
 - v29 : lecteur PDF média privé vérifié contre les blocages CSP/X-Frame ; seul le point d’accès média signé est embeddable par les origines frontend autorisées.
-- CSP, `nosniff`, frame deny, Referrer-Policy et Permissions-Policy sur Nginx et Next.js/Vercel.
-- CSP Next.js ajoute dynamiquement l’origine `NEXT_PUBLIC_API_URL` quand Railway et Vercel sont sur des domaines distincts.
-- Pyodide/Python exécuté dans un **Web Worker** séparé sans accès au DOM, localStorage ou JWT ; JavaScript/HTML/CSS exécutés dans des iframes sandboxées.
+- CSP, `nosniff`, frame deny, Referrer-Policy et Permissions-Policy sur Nginx et Next.js/Vercel. La CSP script principale est générée par requête avec nonce + `strict-dynamic` et n’autorise ni `unsafe-inline` ni `unsafe-eval` en production.
+- Le runner `/code-runner/` possède une CSP séparée : JavaScript/Pyodide y sont confinés dans une iframe `sandbox="allow-scripts"` sans `allow-same-origin`, puis dans des Workers limités en temps. Les aperçus HTML/CSS n’autorisent aucun script.
+- Les credentials TURN ne sont plus des variables `NEXT_PUBLIC_*`; ils sont fournis par le backend et peuvent être éphémères via secret partagé coturn.
 - Aucune exécution serveur arbitraire de projets Django/Next/Express : ces templates sont éditables/collaboratifs uniquement.
 - Garde-fous production : SECRET_KEY faible et `ALLOWED_HOSTS=*` refusés avec `DEBUG=False`; possibilité d’exiger un stockage média distant.
 - HSTS configurable lorsque `USE_HTTPS=True`.
@@ -169,13 +169,15 @@ docker compose up --build
 
 Ces points ne sont pas des bugs corrigibles uniquement dans le dépôt :
 
-1. **JWT dans localStorage** : la CSP réduit le risque XSS mais un BFF avec cookies HttpOnly serait plus robuste pour une exposition à très haut risque.
-2. **WebRTC P2P** : adapté aux petites classes ; pour des classes nombreuses, utiliser un SFU (LiveKit/Jitsi/mediasoup/Janus).
-3. **TURN** : indispensable en production sur certains NAT/réseaux mobiles.
-4. **Stockage Railway** : activer S3/R2/Backblaze/etc. et `REQUIRE_REMOTE_MEDIA=True`; le disque Railway ne doit pas être la source durable.
-5. **Antivirus/CDR** : recommandé si le partage de fichiers devient ouvert à grande échelle.
-6. **Exécution framework** : aucun runner serveur arbitraire n’est fourni volontairement. Pour exécuter Django/Node/Java/C++, déployer un service sandbox éphémère dédié (conteneurs isolés, quotas CPU/RAM/temps, aucun secret/réseau interne).
-7. **Clés et webhooks live** : doivent être créés dans les comptes Stripe/GeniusPay/YouCan Pay et testés sur les environnements réels ; le code ne peut pas valider des credentials inexistants.
+1. **WebRTC P2P** : adapté aux petites classes ; pour des classes nombreuses, utiliser un SFU (LiveKit/Jitsi/mediasoup/Janus). La signalisation WebSocket ne change pas cette limite média.
+2. **Signaux sortants live** : l’envoi métier reste validé par POST HTTP avant diffusion WebSocket. C’est robuste et simple à auditer, mais une très forte fréquence de collaboration peut justifier un canal bidirectionnel spécialisé.
+3. **TURN** : indispensable en production sur certains NAT/réseaux mobiles ; tester les credentials temporaires et le routage UDP/TCP/TLS depuis plusieurs opérateurs.
+4. **CSP style** : `style-src 'unsafe-inline'` reste nécessaire aux styles calculés/Tailwind actuels. Le risque script est isolé, mais supprimer cette exception CSS demanderait une refonte de certains composants/styles.
+5. **Stockage Railway** : activer S3/R2/Backblaze/etc. et `REQUIRE_REMOTE_MEDIA=True`; le disque Railway ne doit pas être la source durable.
+6. **Antivirus/CDR** : ClamAV est intégré ; une CDR dédiée peut être ajoutée si le partage documentaire devient ouvert à très grande échelle.
+7. **Exécution framework** : aucun runner serveur arbitraire n’est fourni volontairement. Pour exécuter Django/Node/Java/C++, déployer un service sandbox éphémère dédié (conteneurs isolés, quotas CPU/RAM/temps, aucun secret/réseau interne).
+8. **Clés et webhooks live** : doivent être créés dans les comptes Stripe/GeniusPay/YouCan Pay/CinetPay et testés sur les environnements réels ; le code ne peut pas valider des credentials inexistants.
+9. **Release gates** : le build Next.js, Playwright et les tests Django complets doivent être verts en CI avant déploiement ; ils ne sont pas certifiés par l’analyse statique seule.
 
 ## Checklist Railway / Vercel
 
@@ -186,10 +188,11 @@ Ces points ne sont pas des bugs corrigibles uniquement dans le dépôt :
 - [ ] SMTP testé depuis l’outil Admin.
 - [ ] Passerelles sandbox testées depuis l’outil Admin puis clés live configurées.
 - [ ] Webhooks Stripe/GeniusPay enregistrés sur l’URL Railway HTTPS.
-- [ ] `NEXT_PUBLIC_API_URL` Vercel pointe sur `/api` Railway.
-- [ ] `CORS_ALLOWED_ORIGINS` contient seulement les domaines Vercel/personnalisés attendus.
-- [ ] TURN testé depuis 4G/5G et réseaux d’entreprise.
-- [ ] Tests Django, build Next.js et `docker compose config` réussis dans CI/l’environnement de livraison.
+- [ ] `API_PROXY_TARGET` Vercel pointe vers le backend Railway et le navigateur utilise `/api` same-origin.
+- [ ] `NEXT_PUBLIC_WS_URL=wss://<backend-railway>/ws` configuré sur Vercel si `/ws` n’est pas reverse-proxyé par le domaine frontend.
+- [ ] `CORS_ALLOWED_ORIGINS` et `REALTIME_ALLOWED_ORIGINS` contiennent seulement les domaines Vercel/personnalisés attendus.
+- [ ] TURN configuré côté backend (`RTC_TURN_URL` + idéalement `RTC_TURN_SECRET`) et testé depuis 4G/5G et réseaux d’entreprise.
+- [ ] Tests Django, `npm run test:security`, build Next.js, Playwright et `docker compose config` réussis dans CI/l’environnement de livraison.
 - [ ] Sauvegardes PostgreSQL et bucket média restaurées au moins une fois en environnement de test.
 
 ## Correctif média v29 — vérifications ciblées

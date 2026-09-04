@@ -5,8 +5,8 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from rest_framework_simplejwt.views import TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+from apps.accounts.views import CookieTokenRefreshView
 
 def health(request):
     try:
@@ -24,7 +24,7 @@ urlpatterns = [
 
     path("api/", include("apps.common.urls")),
     path("api/auth/", include("apps.accounts.urls")),
-    path("api/auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("api/auth/token/refresh/", CookieTokenRefreshView.as_view(), name="token_refresh"),
 
     path("api/catalog/", include("apps.catalog.urls")),
     path("api/enrollments/", include("apps.enrollments.urls")),

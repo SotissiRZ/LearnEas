@@ -3,7 +3,7 @@ from django.db import transaction
 from rest_framework import serializers
 from apps.accounts.serializers import UserPublicSerializer
 from apps.common.fields import RelativeImageField, RelativeFileField, ProtectedFileField
-from apps.common.media_metadata import extract_pdf_page_count, extract_video_duration_minutes, normalize_video_upload, validate_upload_limits
+from apps.common.media_metadata import extract_pdf_page_count, validate_upload_limits
 from apps.common.hls_media import sign_hls_path
 from .models import Category, Course, Section, Lesson, PDFResource, PDFProduct
 
@@ -275,11 +275,9 @@ class LessonWriteSerializer(serializers.ModelSerializer):
             validate_upload_limits(subtitles_file, max_bytes=5 * 1024 * 1024, extensions={".vtt"}, field="subtitles_file")
         video_file = attrs.get("video_file")
         if video_file:
+            # Validation légère uniquement pendant la requête HTTP. Aucun ffprobe/ffmpeg ici :
+            # les fichiers volumineux doivent être sauvegardés rapidement puis traités par Celery.
             validate_upload_limits(video_file, max_bytes=settings.MAX_VIDEO_UPLOAD_MB * 1024 * 1024, extensions={".mp4", ".webm", ".mov", ".m4v"}, field="video_file")
-            # Une extension .mp4 ne garantit pas un codec lisible par le navigateur (HEVC,
-            # H.264 10-bit, etc.). Normaliser l'upload avant sauvegarde évite MEDIA_ERR_SRC_NOT_SUPPORTED.
-            attrs["video_file"] = normalize_video_upload(video_file)
-            video_file = attrs["video_file"]
         video_url = attrs.get("video_url")
         if self.instance:
             video_file = video_file or self.instance.video_file
@@ -287,29 +285,34 @@ class LessonWriteSerializer(serializers.ModelSerializer):
         if not video_file and not video_url:
             raise serializers.ValidationError({"video_file": "Ajoutez un fichier vidéo ou une URL vidéo."})
         if attrs.get("video_file"):
-            attrs["duration_minutes"] = extract_video_duration_minutes(attrs["video_file"])
+            # La durée réelle est calculée dans normalize_lesson_video après sauvegarde.
+            # Ne jamais lancer ffprobe sur le chemin critique d'un upload de plusieurs Go.
+            attrs["duration_minutes"] = 0
         elif video_url and not attrs.get("duration_minutes") and not (self.instance and self.instance.duration_minutes):
             raise serializers.ValidationError({
                 "video_url": "Impossible de déterminer la durée. Vérifiez que l'URL vidéo est accessible."
             })
         return attrs
 
-    def _schedule_streaming(self, lesson):
-        if not getattr(settings, "HLS_STREAMING_ENABLED", True) or not lesson.video_file:
+    def _schedule_video_processing(self, lesson):
+        if not lesson.video_file:
             return
         from .models import StreamingStatus
-        from .tasks import prepare_lesson_streaming
-        Lesson.objects.filter(pk=lesson.pk).update(streaming_status=StreamingStatus.PENDING, streaming_error="")
+        from .tasks import normalize_lesson_video
+        Lesson.objects.filter(pk=lesson.pk).update(
+            streaming_status=StreamingStatus.PENDING,
+            streaming_error="Vidéo en attente de préparation.",
+        )
 
         def enqueue():
             try:
-                prepare_lesson_streaming.delay(lesson.pk, force=True)
+                normalize_lesson_video.delay(lesson.pk)
             except Exception:
                 # L'upload reste valide même si Redis/Celery est momentanément indisponible.
                 # L'instructeur peut relancer la préparation depuis l'interface.
                 Lesson.objects.filter(pk=lesson.pk).update(
                     streaming_status=StreamingStatus.PENDING,
-                    streaming_error="Worker de transcodage temporairement indisponible.",
+                    streaming_error="Worker vidéo temporairement indisponible.",
                 )
 
         transaction.on_commit(enqueue)
@@ -317,15 +320,38 @@ class LessonWriteSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         lesson = super().create(validated_data)
         if lesson.video_file:
-            self._schedule_streaming(lesson)
+            self._schedule_video_processing(lesson)
         return lesson
 
     def update(self, instance, validated_data):
         video_changed = "video_file" in validated_data
         lesson = super().update(instance, validated_data)
         if video_changed and lesson.video_file:
-            self._schedule_streaming(lesson)
+            self._schedule_video_processing(lesson)
         return lesson
+
+
+class LessonDirectCompleteSerializer(serializers.Serializer):
+    section = serializers.PrimaryKeyRelatedField(queryset=Section.objects.select_related("course__instructor").all())
+    title = serializers.CharField(max_length=200)
+    order = serializers.IntegerField(required=False, min_value=0, default=1)
+    is_preview = serializers.BooleanField(required=False, default=False)
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    subtitles_file = serializers.FileField(required=False, allow_null=True)
+    transcript = serializers.CharField(required=False, allow_blank=True, default="")
+    object_key = serializers.CharField(max_length=700)
+    upload_id = serializers.CharField(max_length=1000)
+    expected_size = serializers.IntegerField(min_value=1)
+    parts = serializers.ListField(child=serializers.DictField(), allow_empty=False)
+
+    def validate_section(self, section):
+        _validate_owner(self.context["request"], section.course.instructor_id, "section")
+        return section
+
+    def validate_subtitles_file(self, value):
+        if value:
+            validate_upload_limits(value, max_bytes=5 * 1024 * 1024, extensions={".vtt"}, field="subtitles_file")
+        return value
 
 
 class PDFResourceWriteSerializer(serializers.ModelSerializer):

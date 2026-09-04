@@ -16,14 +16,14 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 
 from .serializers import (
     RegisterSerializer, UserSerializer, AdminUserSerializer, AdminUserCreateSerializer,
     PlatformSettingsSerializer, InstructorApplicationSerializer, InstructorApplicationAdminSerializer,
 )
 from .models import PlatformSettings, InstructorApplication
-from apps.common.throttles import AuthRateThrottle, PasswordResetRateThrottle
+from apps.common.throttles import AuthRateThrottle, PasswordResetRateThrottle, RefreshRateThrottle
 from .authentication import password_fingerprint
 
 User = get_user_model()
@@ -44,9 +44,89 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 
 
+def _set_refresh_cookie(response, refresh_value: str):
+    response.set_cookie(
+        settings.AUTH_REFRESH_COOKIE_NAME,
+        refresh_value,
+        max_age=settings.AUTH_REFRESH_COOKIE_MAX_AGE,
+        httponly=True,
+        secure=settings.AUTH_REFRESH_COOKIE_SECURE,
+        samesite=settings.AUTH_REFRESH_COOKIE_SAMESITE,
+        path=settings.AUTH_REFRESH_COOKIE_PATH,
+        domain=settings.AUTH_REFRESH_COOKIE_DOMAIN,
+    )
+
+
+def _clear_refresh_cookie(response):
+    response.delete_cookie(
+        settings.AUTH_REFRESH_COOKIE_NAME,
+        path=settings.AUTH_REFRESH_COOKIE_PATH,
+        domain=settings.AUTH_REFRESH_COOKIE_DOMAIN,
+        samesite=settings.AUTH_REFRESH_COOKIE_SAMESITE,
+    )
+
+
+def _cookie_request_origin_allowed(request) -> bool:
+    """Refuse l'usage d'un cookie d'auth depuis une origine navigateur inconnue.
+
+    DRF est volontairement JWT-only et n'utilise donc pas SessionAuthentication/CSRF pour
+    l'API. Les endpoints qui *consomment* le refresh HttpOnly ajoutent ce contrôle Origin
+    explicite. Les clients non-navigateurs sans en-tête Origin restent autorisés.
+    """
+    origin = (request.headers.get("Origin") or "").rstrip("/")
+    if not origin:
+        return True
+    allowed = {str(value).rstrip("/") for value in settings.CORS_ALLOWED_ORIGINS}
+    allowed.update({
+        str(getattr(settings, "FRONTEND_URL", "")).rstrip("/"),
+        str(getattr(settings, "BACKEND_PUBLIC_URL", "")).rstrip("/"),
+    })
+    try:
+        own_origin = f"{'https' if request.is_secure() else 'http'}://{request.get_host()}".rstrip("/")
+        allowed.add(own_origin)
+    except Exception:
+        pass
+    allowed.discard("")
+    return origin in allowed
+
+
 class LoginView(TokenObtainPairView):
     serializer_class = EmailTokenObtainPairSerializer
     throttle_classes = [AuthRateThrottle]
+
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        refresh_value = response.data.pop("refresh", None) if isinstance(response.data, dict) else None
+        if refresh_value:
+            _set_refresh_cookie(response, refresh_value)
+        return response
+
+
+class CookieTokenRefreshView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [RefreshRateThrottle]
+
+    def post(self, request):
+        if not _cookie_request_origin_allowed(request):
+            return Response({"detail": "Origine non autorisée."}, status=status.HTTP_403_FORBIDDEN)
+        refresh_value = request.COOKIES.get(settings.AUTH_REFRESH_COOKIE_NAME)
+        if not refresh_value:
+            return Response({"detail": "Session expirée."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        serializer = TokenRefreshSerializer(data={"refresh": refresh_value})
+        try:
+            serializer.is_valid(raise_exception=True)
+        except Exception:
+            response = Response({"detail": "Session expirée."}, status=status.HTTP_401_UNAUTHORIZED)
+            _clear_refresh_cookie(response)
+            return response
+
+        data = dict(serializer.validated_data)
+        rotated_refresh = data.pop("refresh", None)
+        response = Response(data, status=status.HTTP_200_OK)
+        if rotated_refresh:
+            _set_refresh_cookie(response, rotated_refresh)
+        return response
 
 
 def _blacklist_user_refresh_tokens(user):
@@ -55,16 +135,22 @@ def _blacklist_user_refresh_tokens(user):
 
 
 class LogoutView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    # La déconnexion doit fonctionner même lorsque l'access token vient d'expirer. Le refresh
+    # HttpOnly est la source d'autorité pour révoquer la session, puis le cookie est supprimé.
+    permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        refresh_value = request.data.get("refresh")
+        if not _cookie_request_origin_allowed(request):
+            return Response({"detail": "Origine non autorisée."}, status=status.HTTP_403_FORBIDDEN)
+        refresh_value = request.COOKIES.get(settings.AUTH_REFRESH_COOKIE_NAME)
         if refresh_value:
             try:
                 RefreshToken(refresh_value).blacklist()
             except Exception:
                 pass
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        response = Response(status=status.HTTP_204_NO_CONTENT)
+        _clear_refresh_cookie(response)
+        return response
 
 
 class RegisterView(generics.CreateAPIView):
@@ -80,14 +166,15 @@ class RegisterView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         refresh = EmailTokenObtainPairSerializer.get_token(user)
-        return Response(
+        response = Response(
             {
                 "user": UserSerializer(user).data,
                 "access": str(refresh.access_token),
-                "refresh": str(refresh),
             },
             status=status.HTTP_201_CREATED,
         )
+        _set_refresh_cookie(response, str(refresh))
+        return response
 
 
 class MeView(generics.RetrieveUpdateAPIView):
@@ -269,7 +356,9 @@ class ChangePasswordView(APIView):
         request.user.set_password(new_password)
         request.user.save(update_fields=["password"])
         _blacklist_user_refresh_tokens(request.user)
-        return Response({"detail": "Mot de passe modifié avec succès. Reconnectez-vous sur vos appareils."})
+        response = Response({"detail": "Mot de passe modifié avec succès. Reconnectez-vous sur vos appareils."})
+        _clear_refresh_cookie(response)
+        return response
 
 
 class InstructorApplyView(APIView):

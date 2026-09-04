@@ -1,4 +1,4 @@
-# --- LearnEas backend (Django + DRF + gunicorn) ---
+# --- LearnEas backend (Django + DRF + Channels/Daphne) ---
 FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -31,4 +31,4 @@ RUN chmod +x /app/docker/entrypoint.sh \
 EXPOSE 8000
 
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
-CMD ["gunicorn", "learneas.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "3600"]
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "--application-close-timeout", "10", "learneas.asgi:application"]

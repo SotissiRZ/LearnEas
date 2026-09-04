@@ -12,7 +12,7 @@ from apps.common.fields import RelativeImageField
 from apps.common.media_metadata import validate_upload_limits
 from apps.payments.models import Currency
 from .models import EmployerProfile, CandidateProfile, Opportunity, OpportunityApplication
-from .services import clean_strings, match_opportunity, build_application_snapshot
+from .services import clean_strings, match_opportunity, build_application_snapshot, candidate_skills_for
 
 
 def validate_country(value, *, allow_blank=True):
@@ -187,13 +187,39 @@ class OpportunitySerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         return request.user if request and request.user.is_authenticated else None
 
-    def get_match_score(self, obj):
+    def _candidate_context(self):
+        cached = self.context.get("_opportunity_candidate_context")
+        if cached is not None:
+            return cached
         user = self._request_user()
-        return match_opportunity(obj, user) if user else None
+        if not user:
+            cached = {"user": None, "profile": None, "skills": [], "applied_ids": set()}
+        else:
+            try:
+                profile = user.candidate_profile
+            except CandidateProfile.DoesNotExist:
+                profile = None
+            cached = {
+                "user": user,
+                "profile": profile,
+                # Ces trois familles de données étaient auparavant relues pour CHAQUE offre.
+                "skills": candidate_skills_for(user, profile),
+                "applied_ids": set(
+                    OpportunityApplication.objects.filter(candidate=user)
+                    .values_list("opportunity_id", flat=True)
+                ),
+            }
+        self.context["_opportunity_candidate_context"] = cached
+        return cached
+
+    def get_match_score(self, obj):
+        ctx = self._candidate_context()
+        user = ctx["user"]
+        return match_opportunity(obj, user, ctx["profile"], ctx["skills"]) if user else None
 
     def get_already_applied(self, obj):
-        user = self._request_user()
-        return bool(user and obj.applications.filter(candidate=user).exists())
+        ctx = self._candidate_context()
+        return bool(ctx["user"] and obj.id in ctx["applied_ids"])
 
     def validate_country(self, value):
         return validate_country(value, allow_blank=True)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from django.db import models, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets, filters
@@ -41,7 +41,23 @@ class ProjectAssignmentViewSet(viewsets.ModelViewSet):
         if user.role == "instructor":
             return qs.filter(course__instructor=user)
         course_ids = CourseEnrollment.objects.filter(user=user).values_list("course_id", flat=True)
-        return qs.filter(course_id__in=course_ids, published=True)
+        # Les anciennes SerializerMethodField faisaient deux requêtes par projet (inscription +
+        # remise). On charge une fois l'inscription du viewer et ses remises, quelle que soit la
+        # taille de la liste.
+        return qs.filter(course_id__in=course_ids, published=True).prefetch_related(
+            Prefetch(
+                "course__enrollments",
+                queryset=CourseEnrollment.objects.filter(user=user).only("id", "course_id", "purchased_at"),
+                to_attr="_viewer_enrollments",
+            ),
+            Prefetch(
+                "submissions",
+                queryset=ProjectSubmission.objects.filter(student=user).select_related(
+                    "assignment", "assignment__course", "student", "enrollment", "reviewed_by"
+                ).prefetch_related("revisions"),
+                to_attr="_viewer_submissions",
+            ),
+        )
 
     def create(self, request, *args, **kwargs):
         if request.user.role not in ("instructor", "admin"):

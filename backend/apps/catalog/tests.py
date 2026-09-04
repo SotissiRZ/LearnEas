@@ -2,6 +2,7 @@ from io import BytesIO
 from pathlib import Path
 import tempfile
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
@@ -132,6 +133,81 @@ class CatalogAccessRegressionTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
         self.assertIn("1 Mo", str(response.data))
+
+
+    def test_video_upload_returns_without_sync_ffmpeg_or_ffprobe(self):
+        self.client.force_authenticate(self.instructor)
+        fake_video = SimpleUploadedFile("async.mp4", b"not-a-real-video", content_type="video/mp4")
+        with patch("apps.catalog.tasks.normalize_lesson_video.delay"):
+            response = self.client.post(
+                "/api/catalog/lessons/",
+                {
+                    "section": self.section.id,
+                    "title": "Traitement asynchrone",
+                    "video_file": fake_video,
+                    "order": 3,
+                    "is_preview": False,
+                },
+                format="multipart",
+            )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        created = Lesson.objects.get(title="Traitement asynchrone")
+        self.assertEqual(created.duration_minutes, 0)
+        self.assertEqual(created.streaming_status, "pending")
+
+    @override_settings(USE_S3=False, DIRECT_MEDIA_UPLOADS_ENABLED=False)
+    def test_upload_capabilities_keep_local_fallback(self):
+        self.client.force_authenticate(self.instructor)
+        response = self.client.get("/api/catalog/lessons/upload-capabilities/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data["direct_multipart"])
+
+    @override_settings(USE_S3=True, DIRECT_MEDIA_UPLOADS_ENABLED=True)
+    @patch("apps.catalog.direct_uploads.initiate_multipart_upload")
+    def test_owner_can_start_direct_multipart_upload(self, initiate):
+        initiate.return_value = {
+            "object_key": f"courses/videos/direct/{self.instructor.id}/abc.mp4",
+            "upload_id": "upload-123",
+            "part_size_bytes": 16 * 1024 * 1024,
+            "parts_count": 2,
+            "content_type": "video/mp4",
+        }
+        self.client.force_authenticate(self.instructor)
+        response = self.client.post(
+            "/api/catalog/lessons/direct-upload-start/",
+            {"section": self.section.id, "filename": "cours.mp4", "size": 20 * 1024 * 1024},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data["upload_id"], "upload-123")
+        initiate.assert_called_once()
+
+    @patch("apps.catalog.tasks.normalize_lesson_video.delay")
+    @patch("apps.catalog.direct_uploads.complete_multipart_upload")
+    def test_direct_multipart_completion_creates_pending_lesson(self, complete, normalize_delay):
+        object_key = f"courses/videos/direct/{self.instructor.id}/abc.mp4"
+        complete.return_value = {"object_key": object_key, "size": 1234}
+        self.client.force_authenticate(self.instructor)
+        response = self.client.post(
+            "/api/catalog/lessons/direct-upload-complete/",
+            {
+                "section": self.section.id,
+                "title": "Vidéo S3",
+                "order": "2",
+                "is_preview": "false",
+                "object_key": object_key,
+                "upload_id": "upload-123",
+                "expected_size": "1234",
+                "parts": '[{"PartNumber":1,"ETag":"\"etag\""}]',
+            },
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        lesson = Lesson.objects.get(title="Vidéo S3")
+        self.assertEqual(lesson.video_file.name, object_key)
+        self.assertEqual(lesson.duration_minutes, 0)
+        self.assertEqual(lesson.streaming_status, "pending")
+        complete.assert_called_once()
 
     def test_private_video_media_endpoint_exposes_streaming_headers(self):
         self.lesson.video_url = ""

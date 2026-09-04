@@ -28,7 +28,7 @@ export function useAuthGuard(options: Options = {}) {
   const authorized = !!user && (!options.roles || options.roles.includes(user.role));
 
   useEffect(() => {
-    if (!hydrated) return; // on attend la lecture du localStorage avant de décider
+    if (!hydrated) return; // on attend la restauration sécurisée via le cookie HttpOnly
 
     if (!user) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
@@ -44,7 +44,7 @@ export function useAuthGuard(options: Options = {}) {
     user,
     /** true seulement quand on peut afficher le contenu protégé en toute sécurité */
     ready: hydrated && authorized,
-    /** true tant qu'on ne sait pas encore (lecture localStorage en cours) */
+    /** true tant que la session HttpOnly n'a pas encore été restaurée ou rejetée */
     checking: !hydrated,
   };
 }

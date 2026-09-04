@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState, useCallback } from "react";
 import { PlusCircle, Trash2, PlayCircle, FileText, Eye, EyeOff, Loader2, Upload, Link as LinkIcon, AlertCircle, RefreshCw } from "lucide-react";
 import { api, apiUploadWithProgress, ApiError } from "@/lib/api";
+import { uploadLessonVideoMultipart, DirectUploadCapabilities } from "@/lib/directMultipartUpload";
 import { Course } from "@/types";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import GuardScreen from "@/components/ui/GuardScreen";
@@ -78,11 +79,20 @@ export default function ManageCoursePage() { const params = useParams<{ id: stri
     sectionId: number, title: string, file: File, isPreview: boolean, subtitles: File | null, transcript: string,
     onProgress: (percent: number) => void
   ) {
-    const fd = new FormData();
-    fd.append("section", String(sectionId)); fd.append("title", title); fd.append("order", "1");
-    fd.append("is_preview", String(isPreview)); fd.append("video_file", file); fd.append("transcript", transcript);
-    if (subtitles) fd.append("subtitles_file", subtitles);
-    await apiUploadWithProgress("/catalog/lessons/", fd, onProgress);
+    const capabilities = await api.get<DirectUploadCapabilities>("/catalog/lessons/upload-capabilities/");
+    if (capabilities.direct_multipart) {
+      await uploadLessonVideoMultipart({
+        sectionId, title, file, isPreview, subtitles, transcript, onProgress,
+      });
+    } else {
+      // Développement local / stockage disque : conserver le chemin multipart HTTP classique.
+      // La normalisation et ffprobe restent néanmoins asynchrones côté Celery.
+      const fd = new FormData();
+      fd.append("section", String(sectionId)); fd.append("title", title); fd.append("order", "1");
+      fd.append("is_preview", String(isPreview)); fd.append("video_file", file); fd.append("transcript", transcript);
+      if (subtitles) fd.append("subtitles_file", subtitles);
+      await apiUploadWithProgress("/catalog/lessons/", fd, onProgress);
+    }
     load();
   }
 

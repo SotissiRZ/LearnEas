@@ -63,14 +63,25 @@ class ProjectAssignmentSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request or not request.user.is_authenticated or not obj.due_days_after_enrollment:
             return None
-        enrollment = CourseEnrollment.objects.filter(user=request.user, course=obj.course).only("purchased_at").first()
+        prefetched = getattr(obj.course, "_viewer_enrollments", None)
+        if prefetched is not None:
+            enrollment = prefetched[0] if prefetched else None
+        else:
+            # Repli utile pour la sérialisation ponctuelle hors ViewSet (admin/tests).
+            enrollment = CourseEnrollment.objects.filter(user=request.user, course=obj.course).only("purchased_at").first()
         return enrollment.purchased_at + timedelta(days=obj.due_days_after_enrollment) if enrollment else None
 
     def get_submission(self, obj):
         request = self.context.get("request")
         if not request or not request.user.is_authenticated or request.user.role != "student":
             return None
-        submission = ProjectSubmission.objects.filter(assignment=obj, student=request.user).first()
+        prefetched = getattr(obj, "_viewer_submissions", None)
+        if prefetched is not None:
+            submission = prefetched[0] if prefetched else None
+        else:
+            submission = ProjectSubmission.objects.filter(assignment=obj, student=request.user).select_related(
+                "assignment", "assignment__course", "student", "enrollment", "reviewed_by"
+            ).prefetch_related("revisions").first()
         return ProjectSubmissionSummarySerializer(submission, context=self.context).data if submission else None
 
     def validate_objectives(self, value):

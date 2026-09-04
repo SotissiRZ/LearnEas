@@ -21,7 +21,9 @@ class RegistrationRegressionTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertIn("access", response.data)
-        self.assertIn("refresh", response.data)
+        self.assertNotIn("refresh", response.data)
+        self.assertIn("learneas_refresh", response.cookies)
+        self.assertTrue(response.cookies["learneas_refresh"]["httponly"])
         self.assertEqual(response.data["user"]["email"], "student@example.com")
         user = User.objects.get(email="student@example.com")
         self.assertEqual(user.role, User.Role.STUDENT)
@@ -274,3 +276,73 @@ class InstructorWorkspaceRegressionTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.instructor.refresh_from_db()
         self.assertTrue(self.instructor.check_password("new-pass-1234"))
+
+
+class HttpOnlyRefreshCookieRegressionTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="cookie_user",
+            email="cookie@example.com",
+            password="passpass123",
+            country="Sénégal",
+        )
+
+    def test_login_hides_refresh_from_json_and_sets_httponly_cookie(self):
+        response = self.client.post(
+            "/api/auth/login/",
+            {"email": "cookie@example.com", "password": "passpass123"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertIn("access", response.data)
+        self.assertNotIn("refresh", response.data)
+        cookie = response.cookies.get("learneas_refresh")
+        self.assertIsNotNone(cookie)
+        self.assertTrue(cookie["httponly"])
+        self.assertEqual(cookie["path"], "/api/auth/")
+
+    def test_refresh_reads_httponly_cookie_and_never_returns_refresh_json(self):
+        login = self.client.post(
+            "/api/auth/login/",
+            {"email": "cookie@example.com", "password": "passpass123"},
+            format="json",
+        )
+        old_refresh = login.cookies["learneas_refresh"].value
+        response = self.client.post("/api/auth/token/refresh/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertIn("access", response.data)
+        self.assertNotIn("refresh", response.data)
+        # Avec plusieurs onglets, la rotation à chaque refresh crée une course : le deuxième
+        # onglet peut blacklister/supprimer le cookie fraîchement émis au premier. Le refresh
+        # HttpOnly reste stable jusqu'au logout/changement de mot de passe.
+        if "learneas_refresh" in response.cookies:
+            self.assertEqual(response.cookies["learneas_refresh"].value, old_refresh)
+
+    def test_refresh_rejects_unknown_browser_origin(self):
+        self.client.post(
+            "/api/auth/login/",
+            {"email": "cookie@example.com", "password": "passpass123"},
+            format="json",
+        )
+        response = self.client.post(
+            "/api/auth/token/refresh/",
+            {},
+            format="json",
+            HTTP_ORIGIN="https://evil.example",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN, response.data)
+
+    def test_logout_revokes_refresh_and_deletes_cookie_without_access_token(self):
+        self.client.post(
+            "/api/auth/login/",
+            {"email": "cookie@example.com", "password": "passpass123"},
+            format="json",
+        )
+        response = self.client.post("/api/auth/logout/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        cookie = response.cookies.get("learneas_refresh")
+        self.assertIsNotNone(cookie)
+        self.assertEqual(cookie["max-age"], 0)
+
+        refresh = self.client.post("/api/auth/token/refresh/", {}, format="json")
+        self.assertEqual(refresh.status_code, status.HTTP_401_UNAUTHORIZED)

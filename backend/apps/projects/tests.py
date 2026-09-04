@@ -72,6 +72,23 @@ class ProjectFlowTests(APITestCase):
         }, format="json")
         self.assertIn(response.status_code, (403, 404))
 
+
+    def test_project_artifact_rejects_fake_zip_content(self):
+        self.client.force_authenticate(self.student)
+        fake = SimpleUploadedFile("sources.zip", b"not-a-zip", content_type="application/zip")
+        response = self.client.post(
+            "/api/projects/submissions/",
+            {
+                "assignment": self.assignment.id,
+                "title": "Archive",
+                "summary": "Sources",
+                "artifact_file": fake,
+            },
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("artifact_file", response.data)
+
     def test_private_portfolio_is_not_public(self):
         profile = PortfolioProfile.objects.create(user=self.student, slug="student-work", is_public=False)
         self.client.force_authenticate(None)

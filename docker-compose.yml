@@ -10,9 +10,25 @@ x-backend-env: &backend-env
   ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
   DATABASE_URL: postgres://${POSTGRES_USER:-learneas}:${POSTGRES_PASSWORD:-learneas}@db:5432/${POSTGRES_DB:-learneas}
   REDIS_URL: redis://redis:6379/0
+  REALTIME_TICKET_MAX_AGE_SECONDS: ${REALTIME_TICKET_MAX_AGE_SECONDS:-60}
+  REALTIME_ALLOWED_ORIGINS: ${REALTIME_ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1,http://localhost:3000,http://127.0.0.1:3000}
+  REALTIME_CHANNEL_CAPACITY: ${REALTIME_CHANNEL_CAPACITY:-500}
+  REALTIME_CHANNEL_EXPIRY_SECONDS: ${REALTIME_CHANNEL_EXPIRY_SECONDS:-60}
+  RTC_STUN_URL: ${RTC_STUN_URL:-stun:stun.l.google.com:19302}
+  RTC_TURN_URL: ${RTC_TURN_URL:-}
+  RTC_TURN_SECRET: ${RTC_TURN_SECRET:-}
+  RTC_TURN_TTL_SECONDS: ${RTC_TURN_TTL_SECONDS:-3600}
+  RTC_TURN_USERNAME: ${RTC_TURN_USERNAME:-}
+  RTC_TURN_CREDENTIAL: ${RTC_TURN_CREDENTIAL:-}
   CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1,http://localhost:3000,http://127.0.0.1:3000}
   CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost,http://127.0.0.1}
   USE_HTTPS: ${USE_HTTPS:-False}
+  AUTH_REFRESH_COOKIE_NAME: ${AUTH_REFRESH_COOKIE_NAME:-learneas_refresh}
+  AUTH_REFRESH_COOKIE_PATH: ${AUTH_REFRESH_COOKIE_PATH:-/api/auth/}
+  AUTH_REFRESH_COOKIE_DOMAIN: ${AUTH_REFRESH_COOKIE_DOMAIN:-}
+  AUTH_REFRESH_COOKIE_SECURE: ${AUTH_REFRESH_COOKIE_SECURE:-False}
+  AUTH_REFRESH_COOKIE_SAMESITE: ${AUTH_REFRESH_COOKIE_SAMESITE:-Lax}
+  AUTH_REFRESH_COOKIE_MAX_AGE: ${AUTH_REFRESH_COOKIE_MAX_AGE:-604800}
   FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
   BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-http://localhost}
   STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
@@ -43,10 +59,19 @@ x-backend-env: &backend-env
   PAYMENT_CURRENCY: ${PAYMENT_CURRENCY:-EUR}
   USE_S3: ${USE_S3:-False}
   REQUIRE_REMOTE_MEDIA: ${REQUIRE_REMOTE_MEDIA:-False}
+  DIRECT_MEDIA_UPLOADS_ENABLED: ${DIRECT_MEDIA_UPLOADS_ENABLED:-False}
+  DIRECT_UPLOAD_PART_SIZE_MB: ${DIRECT_UPLOAD_PART_SIZE_MB:-16}
+  DIRECT_UPLOAD_URL_TTL_SECONDS: ${DIRECT_UPLOAD_URL_TTL_SECONDS:-3600}
   MAX_VIDEO_UPLOAD_MB: ${MAX_VIDEO_UPLOAD_MB:-2048}
   MAX_PDF_UPLOAD_MB: ${MAX_PDF_UPLOAD_MB:-100}
   MAX_IMAGE_UPLOAD_MB: ${MAX_IMAGE_UPLOAD_MB:-15}
-  PRIVATE_MEDIA_TOKEN_MAX_AGE: ${PRIVATE_MEDIA_TOKEN_MAX_AGE:-43200}
+  PRIVATE_MEDIA_TOKEN_MAX_AGE: ${PRIVATE_MEDIA_TOKEN_MAX_AGE:-900}
+  HLS_MEDIA_TOKEN_MAX_AGE: ${HLS_MEDIA_TOKEN_MAX_AGE:-21600}
+  MALWARE_SCAN_ENABLED: ${MALWARE_SCAN_ENABLED:-False}
+  MALWARE_SCAN_REQUIRED: ${MALWARE_SCAN_REQUIRED:-True}
+  CLAMAV_HOST: ${CLAMAV_HOST:-}
+  CLAMAV_PORT: ${CLAMAV_PORT:-3310}
+  CLAMAV_TIMEOUT_SECONDS: ${CLAMAV_TIMEOUT_SECONDS:-30}
   VIDEO_NORMALIZATION_ENABLED: ${VIDEO_NORMALIZATION_ENABLED:-True}
   VIDEO_PROBE_TIMEOUT_SECONDS: ${VIDEO_PROBE_TIMEOUT_SECONDS:-120}
   VIDEO_TRANSCODE_TIMEOUT_SECONDS: ${VIDEO_TRANSCODE_TIMEOUT_SECONDS:-3600}
@@ -144,7 +169,26 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: ["celery", "-A", "learneas", "worker", "--loglevel=info"]
+    command: ["celery", "-A", "learneas", "worker", "--loglevel=info", "-Q", "default,notifications"]
+    environment:
+      <<: *backend-env
+      SKIP_BOOTSTRAP: "true"
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - learneas_net
+
+  celery_media_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["celery", "-A", "learneas", "worker", "--loglevel=info", "-Q", "media", "--concurrency=1", "--prefetch-multiplier=1"]
     environment:
       <<: *backend-env
       SKIP_BOOTSTRAP: "true"
@@ -185,19 +229,13 @@ services:
         # interne vers le backend. Ne mettez une valeur absolue ici que pour un déploiement avec
         # un domaine public dédié différent du domaine du frontend.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
-        NEXT_PUBLIC_RTC_STUN_URL: ${NEXT_PUBLIC_RTC_STUN_URL:-stun:stun.l.google.com:19302}
-        NEXT_PUBLIC_RTC_TURN_URL: ${NEXT_PUBLIC_RTC_TURN_URL:-}
-        NEXT_PUBLIC_RTC_TURN_USERNAME: ${NEXT_PUBLIC_RTC_TURN_USERNAME:-}
-        NEXT_PUBLIC_RTC_TURN_CREDENTIAL: ${NEXT_PUBLIC_RTC_TURN_CREDENTIAL:-}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-}
         NEXT_PUBLIC_MAX_VIDEO_UPLOAD_MB: ${MAX_VIDEO_UPLOAD_MB:-2048}
         NEXT_PUBLIC_MEDIA_ORIGIN: ${NEXT_PUBLIC_MEDIA_ORIGIN:-}
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
-      NEXT_PUBLIC_RTC_STUN_URL: ${NEXT_PUBLIC_RTC_STUN_URL:-stun:stun.l.google.com:19302}
-      NEXT_PUBLIC_RTC_TURN_URL: ${NEXT_PUBLIC_RTC_TURN_URL:-}
-      NEXT_PUBLIC_RTC_TURN_USERNAME: ${NEXT_PUBLIC_RTC_TURN_USERNAME:-}
-      NEXT_PUBLIC_RTC_TURN_CREDENTIAL: ${NEXT_PUBLIC_RTC_TURN_CREDENTIAL:-}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-}
       NEXT_PUBLIC_MAX_VIDEO_UPLOAD_MB: ${MAX_VIDEO_UPLOAD_MB:-2048}
       NEXT_PUBLIC_MEDIA_ORIGIN: ${NEXT_PUBLIC_MEDIA_ORIGIN:-}
       # URL interne au réseau Docker, utilisée UNIQUEMENT côté serveur (rendu SSR des pages

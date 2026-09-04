@@ -43,6 +43,7 @@ import {
   VideoOff,
 } from "lucide-react";
 import { api, apiDownload, apiUploadWithProgress, ApiError } from "@/lib/api";
+import { buildRealtimeWebSocketUrl } from "@/lib/realtime";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import GuardScreen from "@/components/ui/GuardScreen";
 
@@ -60,6 +61,7 @@ interface RoomInfo {
   is_guest: boolean;
   organizer: { id: number; name: string; avatar: string | null };
   user: { id: number; name: string; avatar: string | null };
+  ice_servers: RTCIceServer[];
 }
 
 interface Person {
@@ -261,6 +263,8 @@ export default function LiveSessionPage() {
   const pendingIceRef = useRef<Map<number, RTCIceCandidateInit[]>>(new Map());
   const lastSignalIdRef = useRef(0);
   const attendanceIdRef = useRef<number | null>(null);
+  const realtimeSocketRef = useRef<WebSocket | null>(null);
+  const realtimeReconnectTimerRef = useRef<number | null>(null);
   const remoteVideoElementsRef = useRef<Map<number, HTMLVideoElement>>(new Map());
   const codeRunnerRef = useRef<HTMLIFrameElement | null>(null);
   const skipCodeBroadcastRef = useRef(false);
@@ -357,6 +361,12 @@ export default function LiveSessionPage() {
       if (whiteboardBroadcastTimerRef.current !== null) {
         window.clearTimeout(whiteboardBroadcastTimerRef.current);
       }
+      if (realtimeReconnectTimerRef.current !== null) {
+        window.clearTimeout(realtimeReconnectTimerRef.current);
+        realtimeReconnectTimerRef.current = null;
+      }
+      realtimeSocketRef.current?.close(1000, "page-unmount");
+      realtimeSocketRef.current = null;
       if (recorderRef.current?.state === "recording") {
         recorderRef.current.stop();
       }
@@ -442,6 +452,7 @@ export default function LiveSessionPage() {
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
+      if (event.source !== codeRunnerRef.current?.contentWindow) return;
       if (event.data?.source !== "learneas-code-runner") return;
       if (event.data?.nonce !== codeRunNonceRef.current) return;
       setCodeOutput(String(event.data?.output || ""));
@@ -707,17 +718,9 @@ export default function LiveSessionPage() {
       const existing = peersRef.current.get(peerId);
       if (existing) return existing;
 
-      const stunUrl = process.env.NEXT_PUBLIC_RTC_STUN_URL || "stun:stun.l.google.com:19302";
-      const turnUrl = process.env.NEXT_PUBLIC_RTC_TURN_URL || "";
-      const iceServers: RTCIceServer[] = [];
-      if (stunUrl) iceServers.push({ urls: stunUrl });
-      if (turnUrl) {
-        iceServers.push({
-          urls: turnUrl,
-          username: process.env.NEXT_PUBLIC_RTC_TURN_USERNAME || undefined,
-          credential: process.env.NEXT_PUBLIC_RTC_TURN_CREDENTIAL || undefined,
-        });
-      }
+      const iceServers: RTCIceServer[] = room?.ice_servers?.length
+        ? room.ice_servers
+        : [{ urls: "stun:stun.l.google.com:19302" }];
 
       const pc = new RTCPeerConnection({ iceServers });
       peersRef.current.set(peerId, pc);
@@ -750,7 +753,7 @@ export default function LiveSessionPage() {
 
       return pc;
     },
-    [sendSignal]
+    [sendSignal, room]
   );
 
   const flushIce = useCallback(async (peerId: number, pc: RTCPeerConnection) => {
@@ -946,32 +949,43 @@ export default function LiveSessionPage() {
     try {
       setFiles(await api.get<RoomFile[]>(`/sessions/${sessionId}/files/`));
     } catch {
-      // Le rafraîchissement suivant réessaiera.
+      // Une reconnexion temps réel ou le fallback HTTP réessaiera.
     }
   }, [sessionId]);
 
+  const loadPresence = useCallback(async () => {
+    if (!attendanceIdRef.current || !room) return;
+    try {
+      const active = await api.get<Person[]>(`/sessions/${sessionId}/presence/`);
+      setPeople(active);
+      for (const person of active) {
+        if (
+          person.user_id !== room.user.id &&
+          room.user.id < person.user_id &&
+          !peersRef.current.has(person.user_id)
+        ) {
+          createOffer(person.user_id, person.name).catch(() => {});
+        }
+      }
+    } catch {
+      // Une perte momentanée de réseau ne ferme pas la salle.
+    }
+  }, [sessionId, room, createOffer]);
+
   useEffect(() => {
     if (!attendanceId || !room) return;
-    const activeRoom = room;
     let cancelled = false;
+    let reconnectAttempt = 0;
+    let fallbackTimer: number | null = null;
 
-    async function tick() {
+    async function heartbeat() {
       try {
         await api.post(`/sessions/${sessionId}/heartbeat/`, { attendance_id: attendanceId });
-        const active = await api.get<Person[]>(`/sessions/${sessionId}/presence/`);
-        if (cancelled) return;
-        setPeople(active);
-        for (const person of active) {
-          if (
-            person.user_id !== activeRoom.user.id &&
-            activeRoom.user.id < person.user_id &&
-            !peersRef.current.has(person.user_id)
-          ) {
-            createOffer(person.user_id, person.name).catch(() => {});
-          }
+        if (realtimeSocketRef.current?.readyState === WebSocket.OPEN) {
+          realtimeSocketRef.current.send(JSON.stringify({ type: "ping" }));
         }
       } catch {
-        // Une perte momentanée de réseau ne ferme pas la salle.
+        // Trois heartbeats manqués sont tolérés avant expiration de présence côté serveur.
       }
     }
 
@@ -985,24 +999,126 @@ export default function LiveSessionPage() {
           await handleSignal(message);
         }
       } catch {
-        // Le prochain poll réessaiera.
+        // Le fallback suivant réessaiera.
       }
     }
 
-    tick();
-    pollSignals();
-    loadFiles();
-    const heartbeatTimer = window.setInterval(tick, 5000);
-    const signalTimer = window.setInterval(pollSignals, 1000);
-    const filesTimer = window.setInterval(loadFiles, 5000);
+    function stopFallback() {
+      if (fallbackTimer !== null) {
+        window.clearInterval(fallbackTimer);
+        fallbackTimer = null;
+      }
+    }
+
+    function startFallback() {
+      if (fallbackTimer !== null || cancelled) return;
+      void pollSignals();
+      void loadPresence();
+      void loadFiles();
+      fallbackTimer = window.setInterval(() => {
+        void pollSignals();
+        void loadPresence();
+        void loadFiles();
+      }, 3000);
+    }
+
+    function scheduleReconnect() {
+      if (cancelled || realtimeReconnectTimerRef.current !== null) return;
+      const delay = Math.min(1000 * (2 ** reconnectAttempt), 10000);
+      reconnectAttempt += 1;
+      realtimeReconnectTimerRef.current = window.setTimeout(() => {
+        realtimeReconnectTimerRef.current = null;
+        void connectRealtime();
+      }, delay);
+    }
+
+    async function refreshRoomState() {
+      try {
+        const nextRoom = await api.get<RoomInfo>(`/sessions/${sessionId}/room/`);
+        if (!cancelled) setRoom(nextRoom);
+      } catch {
+        // L'état courant reste affiché jusqu'à la prochaine reconnexion.
+      }
+    }
+
+    async function connectRealtime() {
+      try {
+        const ticketData = await api.post<{ ticket: string; expires_in: number }>(
+          `/sessions/${sessionId}/realtime-ticket/`
+        );
+        if (cancelled) return;
+        const url = buildRealtimeWebSocketUrl({
+          sessionId,
+          ticket: ticketData.ticket,
+          explicitBase: process.env.NEXT_PUBLIC_WS_URL,
+          pageProtocol: window.location.protocol,
+          pageHost: window.location.host,
+        });
+        const socket = new WebSocket(url);
+        realtimeSocketRef.current?.close(1000, "reconnect");
+        realtimeSocketRef.current = socket;
+
+        socket.onopen = () => {
+          reconnectAttempt = 0;
+          stopFallback();
+          void pollSignals(); // récupère un éventuel message créé pendant la poignée de main WS.
+          void loadPresence();
+          void loadFiles();
+        };
+        socket.onmessage = (event) => {
+          void (async () => {
+            try {
+              const payload = JSON.parse(String(event.data || "{}"));
+              if (payload.type === "signal" && payload.message) {
+                const message = payload.message as SignalMessage;
+                if (message.id <= lastSignalIdRef.current) return;
+                lastSignalIdRef.current = message.id;
+                await handleSignal(message);
+              } else if (payload.type === "presence_changed") {
+                await loadPresence();
+              } else if (payload.type === "files_changed") {
+                await loadFiles();
+              } else if (payload.type === "session_state") {
+                await refreshRoomState();
+              }
+            } catch {
+              // Message temps réel malformé : ignoré, le canal reste ouvert.
+            }
+          })();
+        };
+        socket.onerror = () => socket.close();
+        socket.onclose = () => {
+          if (realtimeSocketRef.current === socket) realtimeSocketRef.current = null;
+          if (cancelled) return;
+          startFallback();
+          scheduleReconnect();
+        };
+      } catch {
+        startFallback();
+        scheduleReconnect();
+      }
+    }
+
+    void heartbeat();
+    void loadPresence();
+    void loadFiles();
+    void connectRealtime();
+    const heartbeatTimer = window.setInterval(() => void heartbeat(), 15000);
+    const stalePresenceTimer = window.setInterval(() => void loadPresence(), 30000);
 
     return () => {
       cancelled = true;
+      stopFallback();
       window.clearInterval(heartbeatTimer);
-      window.clearInterval(signalTimer);
-      window.clearInterval(filesTimer);
+      window.clearInterval(stalePresenceTimer);
+      if (realtimeReconnectTimerRef.current !== null) {
+        window.clearTimeout(realtimeReconnectTimerRef.current);
+        realtimeReconnectTimerRef.current = null;
+      }
+      realtimeSocketRef.current?.close(1000, "room-cleanup");
+      realtimeSocketRef.current = null;
     };
-  }, [attendanceId, room, sessionId, handleSignal, createOffer, loadFiles]);
+  }, [attendanceId, room, sessionId, handleSignal, loadPresence, loadFiles]);
 
   async function startSession() {
     setActionBusy(true);
@@ -1648,45 +1764,6 @@ export default function LiveSessionPage() {
     URL.revokeObjectURL(url);
   }
 
-  async function runPythonProjectInWorker(): Promise<string> {
-    const pythonFiles = codeFiles.filter((item) => item.path.toLowerCase().endsWith(".py")).map((item) => ({ path: item.path, content: item.content }));
-    const workerSource = `
-      self.onmessage = async (event) => {
-        try {
-          importScripts("https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js");
-          const pyodide = await loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.27.7/full/" });
-          let output = "";
-          pyodide.setStdout({ batched: (text) => { output += text + "\\n"; } });
-          pyodide.setStderr({ batched: (text) => { output += "Erreur: " + text + "\\n"; } });
-          const root = "/home/pyodide/learneas_project";
-          pyodide.FS.mkdirTree(root);
-          for (const file of event.data.files) {
-            const safe = String(file.path || "").replace(/\\\\/g, "/").replace(/^\\/+/, "").split("/").filter((part) => part && part !== "." && part !== "..").join("/");
-            if (!safe) continue;
-            const absolute = root + "/" + safe;
-            pyodide.FS.mkdirTree(absolute.slice(0, absolute.lastIndexOf("/")));
-            pyodide.FS.writeFile(absolute, String(file.content || ""), { encoding: "utf8" });
-          }
-          const active = String(event.data.active || "main.py").replace(/\\\\/g, "/").replace(/^\\/+/, "").split("/").filter((part) => part && part !== "." && part !== "..").join("/");
-          pyodide.runPython("import os,sys,importlib; os.chdir(" + JSON.stringify(root) + "); sys.path.insert(0," + JSON.stringify(root) + ") if " + JSON.stringify(root) + " not in sys.path else None; importlib.invalidate_caches()");
-          await pyodide.runPythonAsync("exec(compile(open(" + JSON.stringify(active) + ").read(), " + JSON.stringify(active) + ", 'exec'))");
-          self.postMessage({ output: output.trim() || "Exécution Python terminée sans sortie." });
-        } catch (error) {
-          self.postMessage({ output: "Erreur Python: " + (error && error.message ? error.message : String(error)) });
-        }
-      };
-    `;
-    const blobUrl = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
-    const worker = new Worker(blobUrl);
-    return await new Promise<string>((resolve) => {
-      const cleanup = (value: string) => { worker.terminate(); URL.revokeObjectURL(blobUrl); resolve(value); };
-      const timer = window.setTimeout(() => cleanup("Erreur Python: délai d'exécution dépassé (20 s)."), 20000);
-      worker.onmessage = (event) => { window.clearTimeout(timer); cleanup(String(event.data?.output || "Exécution terminée.")); };
-      worker.onerror = () => { window.clearTimeout(timer); cleanup("Erreur Python: moteur isolé indisponible."); };
-      worker.postMessage({ files: pythonFiles, active: codeFileName });
-    });
-  }
-
   async function runCode() {
     if (codeRunning) return;
     setCodeRunning(true);
@@ -1709,9 +1786,20 @@ export default function LiveSessionPage() {
       return;
     }
     if (codeLanguage === "python") {
+      const runner = codeRunnerRef.current?.contentWindow;
+      if (!runner) {
+        setCodeOutput("Erreur Python: runner isolé indisponible.");
+        setCodeRunning(false);
+        return;
+      }
       setCodeOutput("Chargement du moteur Python isolé…");
-      setCodeOutput(await runPythonProjectInWorker());
-      setCodeRunning(false);
+      runner.postMessage({
+        source: "learneas-code-parent",
+        runtime: "python",
+        nonce,
+        active: codeFileName,
+        files: codeFiles.filter((item) => item.path.toLowerCase().endsWith(".py")).map((item) => ({ path: item.path, content: item.content })),
+      }, "*");
       return;
     }
 
@@ -1721,16 +1809,18 @@ export default function LiveSessionPage() {
       return;
     }
 
-    const escaped = JSON.stringify(codeText);
-    const srcDoc = `<!doctype html><html><body><script>
-      const out=[];
-      const fmt=(v)=>typeof v==='string'?v:JSON.stringify(v);
-      console.log=(...a)=>out.push(a.map(fmt).join(' '));
-      console.error=(...a)=>out.push('Erreur: '+a.map(fmt).join(' '));
-      try { (0,eval)(${escaped}); } catch(e) { out.push('Erreur: '+(e && e.stack ? e.stack : e)); }
-      parent.postMessage({source:'learneas-code-runner',nonce:${nonce},output:out.join('\\n') || 'Exécution terminée sans sortie console.'}, '*');
-    <\/script></body></html>`;
-    if (codeRunnerRef.current) codeRunnerRef.current.srcdoc = srcDoc;
+    const runner = codeRunnerRef.current?.contentWindow;
+    if (!runner) {
+      setCodeOutput("Erreur JavaScript: runner isolé indisponible.");
+      setCodeRunning(false);
+      return;
+    }
+    runner.postMessage({
+      source: "learneas-code-parent",
+      runtime: "javascript",
+      nonce,
+      code: codeText,
+    }, "*");
   }
 
 
@@ -2296,11 +2386,11 @@ function CodeWorkspace({
           <div role="separator" aria-label="Redimensionner la console" aria-orientation="vertical" className="cursor-col-resize bg-white/5 transition hover:bg-brand-500/50" onPointerDown={(event) => { draggingRef.current = true; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (draggingRef.current) resizeConsoleFromPointer(event.clientX); }} onPointerUp={(event) => { draggingRef.current = false; event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => { draggingRef.current = false; }} />
           <div className="flex min-h-0 flex-col bg-[#0a0f1b]">
             <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-2.5 py-1.5"><p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Résultat / Console</p><div className="flex items-center gap-1"><button type="button" onClick={() => setConsolePercent((value) => Math.max(value - 10, 18))} className="rounded-md bg-white/5 p-1 text-gray-300 hover:bg-white/10" title="Réduire la console"><Minus size={11} /></button><button type="button" onClick={() => setConsolePercent((value) => Math.min(value + 10, 62))} className="rounded-md bg-white/5 p-1 text-gray-300 hover:bg-white/10" title="Agrandir la console"><Plus size={11} /></button></div></div>
-            {language === "html" ? <iframe title="Aperçu HTML" sandbox="allow-scripts" srcDoc={code} className="min-h-0 flex-1 bg-white" /> : language === "css" ? <iframe title="Aperçu CSS" sandbox="allow-scripts" srcDoc={`<!doctype html><html><head><style>${code}</style></head><body><main class="demo"><h1>Aperçu CSS</h1><p>Modifiez les styles pour voir le résultat.</p><button>Exemple de bouton</button></main></body></html>`} className="min-h-0 flex-1 bg-white" /> : <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-2.5 font-mono text-[11px] leading-[18px] text-gray-300">{output || (language === "python" ? "Cliquez sur Exécuter. Le moteur Python sera chargé au premier lancement." : language === "javascript" ? "Cliquez sur Exécuter pour afficher la console." : "Ce langage reste éditable et partageable, mais son exécution locale est désactivée.")}</pre>}
+            {language === "html" ? <iframe title="Aperçu HTML" sandbox="" referrerPolicy="no-referrer" srcDoc={`<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; font-src data:">${code}`} className="min-h-0 flex-1 bg-white" /> : language === "css" ? <iframe title="Aperçu CSS" sandbox="" referrerPolicy="no-referrer" srcDoc={`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>${code}</style></head><body><main class="demo"><h1>Aperçu CSS</h1><p>Modifiez les styles pour voir le résultat.</p><button>Exemple de bouton</button></main></body></html>`} className="min-h-0 flex-1 bg-white" /> : <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-2.5 font-mono text-[11px] leading-[18px] text-gray-300">{output || (language === "python" ? "Cliquez sur Exécuter. Le moteur Python sera chargé au premier lancement." : language === "javascript" ? "Cliquez sur Exécuter pour afficher la console." : "Ce langage reste éditable et partageable, mais son exécution locale est désactivée.")}</pre>}
           </div>
         </>}
       </div>
-      <iframe ref={runnerRef} title="Exécution JavaScript sécurisée" sandbox="allow-scripts" className="hidden" />
+      <iframe ref={runnerRef} src="/code-runner/index.html" title="Exécution de code isolée" sandbox="allow-scripts" referrerPolicy="no-referrer" className="hidden" />
     </div>
   );
 }

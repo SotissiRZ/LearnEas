@@ -21,7 +21,7 @@ export default function OpportunityCard({ opportunity }: { opportunity: Opportun
         <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-brand-50 text-brand-700">
           {opportunity.employer.logo ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={opportunity.employer.logo} alt="" className="h-full w-full object-cover" />
+            <img loading="lazy" decoding="async" src={opportunity.employer.logo} alt="" className="h-full w-full object-cover" />
           ) : <BriefcaseBusiness size={21} />}
         </div>
         <div className="min-w-0 flex-1">

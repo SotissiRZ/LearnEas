@@ -69,7 +69,7 @@ export default function OpportunityDetailPage() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <main className="card p-6 sm:p-8">
           <div className="flex items-start gap-4">
-            <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-brand-50 text-brand-700">{item.employer.logo ? <img src={item.employer.logo} alt="" className="h-full w-full object-cover" /> : <BriefcaseBusiness size={25} />}</div>
+            <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-brand-50 text-brand-700">{item.employer.logo ? <img loading="lazy" decoding="async" src={item.employer.logo} alt="" className="h-full w-full object-cover" /> : <BriefcaseBusiness size={25} />}</div>
             <div><div className="flex flex-wrap gap-2"><span className="badge bg-brand-50 text-brand-700">{labels[item.kind]}</span>{typeof item.match_score === "number" && <span className="badge bg-violet-50 text-violet-700">Compatibilité {item.match_score}%</span>}</div><h1 className="mt-2 text-2xl font-extrabold sm:text-3xl">{item.title}</h1><p className="mt-1 font-semibold text-gray-600">{item.employer.company_name}</p></div>
           </div>
           <div className="mt-5 flex flex-wrap gap-4 border-y border-gray-100 py-4 text-sm text-gray-600"><span className="flex items-center gap-1.5"><Radio size={15} /> {labels[item.work_mode]}</span>{location && <span className="flex items-center gap-1.5"><MapPin size={15} /> {location}</span>}<span>{labels[item.experience_level]}</span><span>{item.contract_type.replaceAll("_", " ")}</span></div>

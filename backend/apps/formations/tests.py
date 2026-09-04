@@ -2,6 +2,10 @@ from datetime import timedelta
 from decimal import Decimal
 import tempfile
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+from django.test import override_settings
+
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from django.utils import timezone
@@ -11,6 +15,7 @@ from rest_framework.test import APITestCase
 from apps.accounts.models import User
 from apps.catalog.models import Category
 from .models import InteractiveFormation, FormationEnrollment, FormationSession, FormationAttendance, FormationSignal, FormationSessionInvite
+from .realtime import load_realtime_ticket, user_group
 
 
 class InteractiveFormationRegressionTests(APITestCase):
@@ -127,6 +132,55 @@ class InteractiveFormationRegressionTests(APITestCase):
         joined = self.client.post(f"/api/sessions/{session.id}/join/", {}, format="json")
         self.assertEqual(joined.status_code, status.HTTP_201_CREATED, joined.data)
         return session, joined.data["id"]
+
+    @override_settings(
+        RTC_STUN_URL="stun:stun.example.test:3478",
+        RTC_TURN_URL="turn:turn.example.test:3478?transport=udp",
+        RTC_TURN_SECRET="shared-turn-secret",
+        RTC_TURN_TTL_SECONDS=600,
+    )
+    def test_room_returns_ephemeral_turn_credentials_from_backend(self):
+        session, _ = self._started_session_with_student()
+        response = self.client.get(f"/api/sessions/{session.id}/room/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        servers = response.data["ice_servers"]
+        self.assertEqual(servers[0]["urls"], "stun:stun.example.test:3478")
+        turn = servers[1]
+        self.assertEqual(turn["urls"], "turn:turn.example.test:3478?transport=udp")
+        self.assertTrue(turn["username"].endswith(f":{self.student.id}"))
+        self.assertTrue(turn["credential"])
+        self.assertNotEqual(turn["credential"], "shared-turn-secret")
+
+    def test_realtime_ticket_is_short_lived_and_scoped_to_user_and_session(self):
+        session, _ = self._started_session_with_student()
+        response = self.client.post(f"/api/sessions/{session.id}/realtime-ticket/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertLessEqual(response.data["expires_in"], 120)
+        payload = load_realtime_ticket(response.data["ticket"])
+        self.assertEqual(payload["session_id"], session.id)
+        self.assertEqual(payload["user_id"], self.student.id)
+
+    @override_settings(CHANNEL_LAYERS={"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}})
+    def test_signal_is_pushed_to_recipient_realtime_group(self):
+        session, _ = self._started_session_with_student()
+        layer = get_channel_layer()
+        channel_name = async_to_sync(layer.new_channel)("test.realtime.")
+        async_to_sync(layer.group_add)(user_group(session.id, self.organizer.id), channel_name)
+
+        response = self.client.post(
+            f"/api/sessions/{session.id}/signal/",
+            {
+                "recipient_id": self.organizer.id,
+                "kind": "chat",
+                "payload": {"text": "Bonjour realtime"},
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        event = async_to_sync(layer.receive)(channel_name)
+        self.assertEqual(event["type"], "signal.message")
+        self.assertEqual(event["message"]["kind"], "chat")
+        self.assertEqual(event["message"]["payload"]["text"], "Bonjour realtime")
 
     def test_live_hand_raise_is_visible_in_presence(self):
         session, attendance_id = self._started_session_with_student()

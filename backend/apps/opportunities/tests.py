@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APITestCase
 from .models import EmployerProfile, Opportunity, OpportunityApplication
 
@@ -67,6 +68,34 @@ class OpportunitySecurityTests(APITestCase):
         self.client.force_authenticate(self.recruiter)
         response = self.client.post(f"/api/opportunities/applications/{app.id}/review/", {"status": "shortlisted"}, format="json")
         self.assertEqual(response.status_code, 409)
+
+
+    def test_approved_employer_identity_change_requires_reapproval(self):
+        self.client.force_authenticate(self.recruiter)
+        response = self.client.patch(
+            f"/api/opportunities/employer-profile/{self.employer.id}/",
+            {"company_name": "Nouvelle identité SARL"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.employer.refresh_from_db()
+        self.assertEqual(self.employer.status, EmployerProfile.Status.PENDING)
+
+        self.client.force_authenticate(user=None)
+        listing = self.client.get("/api/opportunities/listings/")
+        rows = listing.data.get("results", listing.data) if isinstance(listing.data, dict) else listing.data
+        self.assertFalse(any(row["id"] == self.job.id for row in rows))
+
+    def test_candidate_resume_rejects_fake_pdf_content(self):
+        self.client.force_authenticate(self.student)
+        fake = SimpleUploadedFile("cv.pdf", b"MZ-not-a-pdf", content_type="application/pdf")
+        response = self.client.patch(
+            "/api/opportunities/candidate-profile/me/",
+            {"resume": fake},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("resume", response.data)
 
     def test_hidden_salary_is_not_exposed_publicly(self):
         self.job.salary_min = 100000

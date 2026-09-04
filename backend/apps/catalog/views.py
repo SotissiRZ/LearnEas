@@ -1,3 +1,7 @@
+import json
+
+from django.conf import settings
+from django.db import transaction
 from django.db.models import Q
 from celery.result import AsyncResult
 from rest_framework import viewsets, permissions, filters, status
@@ -12,7 +16,7 @@ from .tasks import normalize_lesson_video, prepare_lesson_streaming
 from apps.common.hls_media import sign_hls_path
 from .serializers import (
     CategorySerializer, CourseListSerializer, CourseDetailSerializer, CourseWriteSerializer,
-    SectionWriteSerializer, LessonWriteSerializer, PDFResourceWriteSerializer,
+    SectionWriteSerializer, LessonWriteSerializer, LessonDirectCompleteSerializer, PDFResourceWriteSerializer,
     PDFProductListSerializer, PDFProductDetailSerializer, PDFProductWriteSerializer,
 )
 
@@ -109,6 +113,157 @@ class LessonViewSet(viewsets.ModelViewSet):
         qs = Lesson.objects.select_related("section__course__instructor")
         return qs if self.request.user.role == "admin" else qs.filter(section__course__instructor=self.request.user)
 
+
+    def _section_for_upload(self, section_id):
+        try:
+            section = Section.objects.select_related("course__instructor").get(pk=section_id)
+        except (Section.DoesNotExist, TypeError, ValueError):
+            return None
+        if self.request.user.role != "admin" and section.course.instructor_id != self.request.user.id:
+            return None
+        return section
+
+    @action(detail=False, methods=["get"], url_path="upload-capabilities")
+    def upload_capabilities(self, request):
+        from .direct_uploads import direct_multipart_enabled, part_size_bytes
+        return Response({
+            "direct_multipart": direct_multipart_enabled(),
+            "part_size_bytes": part_size_bytes(),
+            "max_video_upload_mb": settings.MAX_VIDEO_UPLOAD_MB,
+        })
+
+    @action(detail=False, methods=["post"], url_path="direct-upload-start")
+    def direct_upload_start(self, request):
+        from .direct_uploads import direct_multipart_enabled, initiate_multipart_upload
+
+        if not direct_multipart_enabled():
+            return Response({"detail": "Upload direct indisponible sur ce stockage."}, status=status.HTTP_409_CONFLICT)
+        section = self._section_for_upload(request.data.get("section"))
+        if not section:
+            return Response({"detail": "Section introuvable ou non autorisée."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            size = int(request.data.get("size") or 0)
+            payload = initiate_multipart_upload(
+                user_id=request.user.id,
+                filename=str(request.data.get("filename") or ""),
+                size=size,
+            )
+        except Exception as exc:
+            from rest_framework.exceptions import ValidationError
+            if isinstance(exc, ValidationError):
+                raise
+            return Response({"detail": "Impossible d'initialiser l'upload direct."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"section": section.id, **payload}, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["post"], url_path="direct-upload-part")
+    def direct_upload_part(self, request):
+        from .direct_uploads import presign_upload_part
+        try:
+            part_number = int(request.data.get("part_number") or 0)
+            url = presign_upload_part(
+                user_id=request.user.id,
+                object_key=str(request.data.get("object_key") or ""),
+                upload_id=str(request.data.get("upload_id") or ""),
+                part_number=part_number,
+            )
+        except Exception as exc:
+            from rest_framework.exceptions import ValidationError
+            if isinstance(exc, ValidationError):
+                raise
+            return Response({"detail": "Impossible de signer ce bloc vidéo."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"url": url, "part_number": part_number})
+
+    @action(detail=False, methods=["post"], url_path="direct-upload-complete")
+    def direct_upload_complete(self, request):
+        from .direct_uploads import complete_multipart_upload
+
+        raw_parts = request.data.get("parts", [])
+        if isinstance(raw_parts, str):
+            try:
+                raw_parts = json.loads(raw_parts)
+            except json.JSONDecodeError:
+                raw_parts = []
+        payload = {
+            "section": request.data.get("section"),
+            "title": request.data.get("title"),
+            "order": request.data.get("order", 1),
+            "is_preview": request.data.get("is_preview", False),
+            "description": request.data.get("description", ""),
+            "subtitles_file": request.FILES.get("subtitles_file"),
+            "transcript": request.data.get("transcript", ""),
+            "object_key": request.data.get("object_key"),
+            "upload_id": request.data.get("upload_id"),
+            "expected_size": request.data.get("expected_size"),
+            "parts": raw_parts,
+        }
+        serializer = LessonDirectCompleteSerializer(data=payload, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        result = complete_multipart_upload(
+            user_id=request.user.id,
+            object_key=data["object_key"],
+            upload_id=data["upload_id"],
+            parts=data["parts"],
+            expected_size=data["expected_size"],
+        )
+        try:
+            with transaction.atomic():
+                lesson = Lesson.objects.create(
+                    section=data["section"],
+                    title=data["title"],
+                    video_file=result["object_key"],
+                    duration_minutes=0,
+                    order=data.get("order", 1),
+                    is_preview=data.get("is_preview", False),
+                    description=data.get("description", ""),
+                    subtitles_file=data.get("subtitles_file"),
+                    transcript=data.get("transcript", ""),
+                    streaming_status="pending",
+                    streaming_error="Vidéo en attente de préparation.",
+                )
+
+                def enqueue():
+                    try:
+                        normalize_lesson_video.delay(lesson.id)
+                    except Exception:
+                        Lesson.objects.filter(pk=lesson.id).update(
+                            streaming_status="pending",
+                            streaming_error="Worker vidéo temporairement indisponible.",
+                        )
+
+                transaction.on_commit(enqueue)
+        except Exception:
+            # L'objet a déjà été finalisé dans le bucket : éviter un média orphelin si la
+            # création SQL échoue après coup.
+            try:
+                from django.core.files.storage import default_storage
+                default_storage.delete(result["object_key"])
+            except Exception:
+                pass
+            raise
+
+        return Response({
+            "id": lesson.id,
+            "status": "queued",
+            "streaming_status": lesson.streaming_status,
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["post"], url_path="direct-upload-abort")
+    def direct_upload_abort(self, request):
+        from .direct_uploads import abort_multipart_upload
+        try:
+            abort_multipart_upload(
+                user_id=request.user.id,
+                object_key=str(request.data.get("object_key") or ""),
+                upload_id=str(request.data.get("upload_id") or ""),
+            )
+        except Exception:
+            # L'abandon est best-effort : un nettoyage de cycle de vie du bucket peut aussi
+            # supprimer les multipart incomplets côté fournisseur.
+            pass
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     @action(detail=True, methods=["post"], url_path="repair-video")
     def repair_video(self, request, pk=None):
         """Lance en arrière-plan la conversion d'une vidéo existante vers H.264/AAC."""
@@ -141,7 +296,8 @@ class LessonViewSet(viewsets.ModelViewSet):
         if not lesson.video_file:
             return Response({"detail": "Le streaming adaptatif nécessite un fichier vidéo uploadé."}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            task = prepare_lesson_streaming.delay(lesson.id, force=True)
+            Lesson.objects.filter(pk=lesson.id).update(streaming_status="pending", streaming_error="Vidéo en attente de préparation.")
+            task = normalize_lesson_video.delay(lesson.id)
         except Exception:
             return Response({"detail": "Le worker de transcodage est temporairement indisponible."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         return Response({"task_id": task.id, "status": "queued"}, status=status.HTTP_202_ACCEPTED)

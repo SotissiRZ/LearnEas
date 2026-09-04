@@ -67,7 +67,7 @@ def candidate_skills_for(user, profile=None):
     return unique[:60]
 
 
-def match_opportunity(opportunity, user, profile=None):
+def match_opportunity(opportunity, user, profile=None, candidate_skills=None):
     """Score explicable (0–100) : compétences, métier visé, mobilité et expérience."""
     if profile is None:
         try:
@@ -75,7 +75,8 @@ def match_opportunity(opportunity, user, profile=None):
         except Exception:
             profile = None
 
-    candidate_skills = {normalize_skill(s) for s in candidate_skills_for(user, profile) if normalize_skill(s)}
+    source_skills = candidate_skills if candidate_skills is not None else candidate_skills_for(user, profile)
+    candidate_skills = {normalize_skill(s) for s in source_skills if normalize_skill(s)}
     required = {normalize_skill(s) for s in (opportunity.skills_required or []) if normalize_skill(s)}
     optional = {normalize_skill(s) for s in (opportunity.skills_optional or []) if normalize_skill(s)}
 

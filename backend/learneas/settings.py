@@ -14,6 +14,7 @@ TEST_PAYMENTS_ENABLED = config("TEST_PAYMENTS_ENABLED", default=DEBUG, cast=bool
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="*", cast=Csv())
 
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -27,6 +28,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_filters",
     "drf_spectacular",
+    "channels",
 
     # local apps
     "apps.accounts",
@@ -113,7 +115,7 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 USE_S3 = config("USE_S3", default=False, cast=bool)
-REQUIRE_REMOTE_MEDIA = config("REQUIRE_REMOTE_MEDIA", default=False, cast=bool)
+REQUIRE_REMOTE_MEDIA = config("REQUIRE_REMOTE_MEDIA", default=not DEBUG, cast=bool)
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
@@ -129,7 +131,27 @@ MAX_PDF_UPLOAD_MB = config("MAX_PDF_UPLOAD_MB", default=100, cast=int)
 MAX_IMAGE_UPLOAD_MB = config("MAX_IMAGE_UPLOAD_MB", default=15, cast=int)
 MAX_PROJECT_UPLOAD_MB = config("MAX_PROJECT_UPLOAD_MB", default=50, cast=int)
 FILE_UPLOAD_MAX_MEMORY_SIZE = config("FILE_UPLOAD_MAX_MEMORY_SIZE", default=2 * 1024 * 1024, cast=int)
-PRIVATE_MEDIA_TOKEN_MAX_AGE = config("PRIVATE_MEDIA_TOKEN_MAX_AGE", default=12 * 60 * 60, cast=int)
+
+# Documents utilisateur : signature structurelle + antivirus ClamAV. En production, l'absence
+# de scanner bloque uniquement les uploads documentaires concernés, pas le démarrage du site.
+MALWARE_SCAN_ENABLED = config("MALWARE_SCAN_ENABLED", default=False, cast=bool)
+MALWARE_SCAN_REQUIRED = config("MALWARE_SCAN_REQUIRED", default=not DEBUG, cast=bool)
+CLAMAV_HOST = config("CLAMAV_HOST", default="")
+CLAMAV_PORT = config("CLAMAV_PORT", default=3310, cast=int)
+CLAMAV_TIMEOUT_SECONDS = config("CLAMAV_TIMEOUT_SECONDS", default=30, cast=int)
+
+PRIVATE_MEDIA_TOKEN_MAX_AGE = config("PRIVATE_MEDIA_TOKEN_MAX_AGE", default=15 * 60, cast=int)
+# Les segments d'une longue vidéo HLS doivent rester lisibles jusqu'à la fin de la lecture.
+# Ils ont donc une fenêtre distincte des CV/PDF/fichiers privés classiques.
+HLS_MEDIA_TOKEN_MAX_AGE = config("HLS_MEDIA_TOKEN_MAX_AGE", default=6 * 60 * 60, cast=int)
+
+# En production S3/R2, les vidéos volumineuses sont envoyées directement au bucket par
+# multipart upload. Django ne signe que les blocs puis enregistre l'objet final : Gunicorn
+# ne transporte plus jusqu'à 2 Go par requête. En local (USE_S3=False), le formulaire
+# conserve automatiquement l'upload HTTP classique.
+DIRECT_MEDIA_UPLOADS_ENABLED = config("DIRECT_MEDIA_UPLOADS_ENABLED", default=USE_S3, cast=bool)
+DIRECT_UPLOAD_PART_SIZE_MB = config("DIRECT_UPLOAD_PART_SIZE_MB", default=16, cast=int)
+DIRECT_UPLOAD_URL_TTL_SECONDS = config("DIRECT_UPLOAD_URL_TTL_SECONDS", default=3600, cast=int)
 
 # Normalisation vidéo navigateur : évite les MP4/MOV techniquement valides mais illisibles
 # côté HTML5 (HEVC/H.265, H.264 10-bit, audio incompatible, etc.). ffmpeg est déjà
@@ -216,6 +238,7 @@ REST_FRAMEWORK = {
             default="30000/hour" if DEBUG else "6000/hour",
         ),
         "auth": "10/min",
+        "token_refresh": "60/min",
         "password_reset": "5/hour",
         "checkout": "20/hour",
         "media": config("MEDIA_THROTTLE_RATE", default="5000/hour" if DEBUG else "2000/hour"),
@@ -227,18 +250,38 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(hours=1),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-    "ROTATE_REFRESH_TOKENS": True,
-    "BLACKLIST_AFTER_ROTATION": True,
+    # Le refresh est HttpOnly et partagé par tous les onglets. Ne pas le faire tourner à chaque
+    # requête évite qu'un second onglet invalide le cookie qu'un premier vient de remplacer.
+    # Logout et changement de mot de passe le blacklistent explicitement.
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": False,
     "UPDATE_LAST_LOGIN": True,
 }
+
+# Le refresh JWT n'est jamais exposé à JavaScript : il vit uniquement dans un cookie HttpOnly.
+# En production, le frontend doit idéalement appeler l'API via le proxy same-origin /api (Vercel
+# -> Railway) afin d'éviter la dépendance aux cookies tiers sur Safari/Chrome mobile.
+AUTH_REFRESH_COOKIE_NAME = config("AUTH_REFRESH_COOKIE_NAME", default="learneas_refresh")
+AUTH_REFRESH_COOKIE_PATH = config("AUTH_REFRESH_COOKIE_PATH", default="/api/auth/")
+AUTH_REFRESH_COOKIE_DOMAIN = config("AUTH_REFRESH_COOKIE_DOMAIN", default="").strip() or None
+AUTH_REFRESH_COOKIE_SECURE = config("AUTH_REFRESH_COOKIE_SECURE", default=not DEBUG, cast=bool)
+AUTH_REFRESH_COOKIE_SAMESITE = config("AUTH_REFRESH_COOKIE_SAMESITE", default="Lax")
+AUTH_REFRESH_COOKIE_MAX_AGE = config("AUTH_REFRESH_COOKIE_MAX_AGE", default=7 * 24 * 60 * 60, cast=int)
+if AUTH_REFRESH_COOKIE_SAMESITE not in {"Lax", "Strict", "None"}:
+    raise RuntimeError("AUTH_REFRESH_COOKIE_SAMESITE doit valoir Lax, Strict ou None.")
+if AUTH_REFRESH_COOKIE_SAMESITE == "None" and not AUTH_REFRESH_COOKIE_SECURE:
+    raise RuntimeError("SameSite=None exige AUTH_REFRESH_COOKIE_SECURE=True.")
 
 CORS_ALLOWED_ORIGINS = config(
     "CORS_ALLOWED_ORIGINS",
     default="http://localhost,http://127.0.0.1,http://localhost:3000,http://127.0.0.1:3000",
     cast=Csv(),
 )
+# Nécessaire pour que les réponses login/refresh puissent poser/renvoyer le cookie HttpOnly
+# lorsque l'API est appelée depuis une origine frontend explicitement autorisée.
+CORS_ALLOW_CREDENTIALS = True
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "LearnEas API",
@@ -319,6 +362,28 @@ DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="LearnEas <no-reply@le
 # Redis / Celery (emails asynchrones, tâches planifiées) — service "redis" du docker-compose
 # ---------------------------------------------------------------------------
 REDIS_URL = config("REDIS_URL", default="redis://localhost:6379/0")
+REALTIME_TICKET_MAX_AGE_SECONDS = config("REALTIME_TICKET_MAX_AGE_SECONDS", default=60, cast=int)
+RTC_STUN_URL = config("RTC_STUN_URL", default="stun:stun.l.google.com:19302")
+RTC_TURN_URL = config("RTC_TURN_URL", default="")
+RTC_TURN_SECRET = config("RTC_TURN_SECRET", default="")
+RTC_TURN_TTL_SECONDS = config("RTC_TURN_TTL_SECONDS", default=3600, cast=int)
+RTC_TURN_USERNAME = config("RTC_TURN_USERNAME", default="")
+RTC_TURN_CREDENTIAL = config("RTC_TURN_CREDENTIAL", default="")
+REALTIME_ALLOWED_ORIGINS = config(
+    "REALTIME_ALLOWED_ORIGINS",
+    default=",".join(CORS_ALLOWED_ORIGINS) if CORS_ALLOWED_ORIGINS else "http://localhost:3000",
+    cast=Csv(),
+)
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [REDIS_URL],
+            "capacity": config("REALTIME_CHANNEL_CAPACITY", default=500, cast=int),
+            "expiry": config("REALTIME_CHANNEL_EXPIRY_SECONDS", default=60, cast=int),
+        },
+    }
+}
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
@@ -331,6 +396,15 @@ CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_DEFAULT_QUEUE = "default"
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_ROUTES = {
+    # ffprobe/ffmpeg/HLS : file dédiée, consommée par un worker média séparé.
+    "apps.catalog.tasks.*": {"queue": "media"},
+    # WhatsApp/rappels : ne doivent jamais attendre derrière un transcodage de plusieurs heures.
+    "apps.notifications.tasks.*": {"queue": "notifications"},
+    "apps.enrollments.tasks.*": {"queue": "default"},
+}
 CELERY_BEAT_SCHEDULE = {
     "whatsapp-live-reminders-every-5-minutes": {
         "task": "apps.notifications.tasks.dispatch_whatsapp_live_reminders",
@@ -380,6 +454,8 @@ if not DEBUG:
         raise RuntimeError("SECRET_KEY invalide pour la production.")
     if "*" in ALLOWED_HOSTS:
         raise RuntimeError("ALLOWED_HOSTS='*' est interdit en production.")
+    if not AUTH_REFRESH_COOKIE_SECURE:
+        raise RuntimeError("AUTH_REFRESH_COOKIE_SECURE=False est interdit en production.")
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
     X_FRAME_OPTIONS = "DENY"

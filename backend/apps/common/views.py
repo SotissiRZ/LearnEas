@@ -125,7 +125,7 @@ class HlsMediaView(APIView):
     def get(self, request):
         token = request.query_params.get("token", "")
         try:
-            name = unsign_hls_token(token, max_age=settings.PRIVATE_MEDIA_TOKEN_MAX_AGE)
+            name = unsign_hls_token(token, max_age=settings.HLS_MEDIA_TOKEN_MAX_AGE)
         except Exception:
             return Response({"detail": "Lien streaming invalide ou expiré."}, status=403)
 
