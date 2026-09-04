@@ -504,3 +504,7 @@ KalanPro peut envoyer des confirmations de paiement, rappels de live, relances d
 
 KalanPro ferme désormais la boucle **apprendre → pratiquer → certifier → portfolio → travailler**. Le module Opportunités comprend une marketplace publique, des profils candidats, un matching par compétences, les candidatures internes, un espace recruteur approuvé par l'administration et un vivier de talents opt-in. Les pays utilisent le référentiel KalanPro (pas de saisie libre) et les CV restent privés. Voir `docs/EMPLOI_MISSIONS.md`.
 
+
+### Email transactionnel Resend
+
+KalanPro peut envoyer ses notifications HTML via Resend en complément de WhatsApp. Voir `docs/RESEND_EMAIL.md`. En production, vérifiez le domaine d'expédition dans Resend puis configurez `RESEND_ENABLED=True`, `RESEND_DRY_RUN=False` et `RESEND_API_KEY` sur Railway.

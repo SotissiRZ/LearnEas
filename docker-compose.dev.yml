@@ -59,6 +59,11 @@ services:
       SEED_DEMO: "true"
       PLATFORM_COMMISSION_PERCENT: "15"
       MINIMUM_PAYOUT_AMOUNT: "100"
+      RESEND_ENABLED: ${RESEND_ENABLED:-False}
+      RESEND_DRY_RUN: ${RESEND_DRY_RUN:-True}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_API_BASE: ${RESEND_API_BASE:-https://api.resend.com}
+      RESEND_HTTP_TIMEOUT: ${RESEND_HTTP_TIMEOUT:-15}
     volumes:
       - ./backend:/app
       - static_data_dev:/app/staticfiles

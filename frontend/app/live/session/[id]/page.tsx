@@ -13,6 +13,7 @@ import {
   Hand,
   Loader2,
   Maximize2,
+  Minimize2,
   MessageSquare,
   Mic,
   MicOff,
@@ -216,6 +217,8 @@ export default function LiveSessionPage() {
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
   const [screenSharing, setScreenSharing] = useState(false);
+  const [remoteScreenShareUserId, setRemoteScreenShareUserId] = useState<number | null>(null);
+  const [shareExpanded, setShareExpanded] = useState(false);
   const [presenterPipPosition, setPresenterPipPosition] = useState({ x: 0.745, y: 0.68 });
   const [recording, setRecording] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
@@ -273,6 +276,7 @@ export default function LiveSessionPage() {
   const codeRunNonceRef = useRef(0);
   const whiteboardBroadcastTimerRef = useRef<number | null>(null);
   const whiteboardRecipientsRef = useRef<Set<number>>(new Set());
+  const screenShareRecipientsRef = useRef<Set<number>>(new Set());
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
@@ -427,6 +431,35 @@ export default function LiveSessionPage() {
       });
     }
   }, [attendanceId, room, people, sendSignal, whiteboardStrokes]);
+
+  // L'état du partage est signalé séparément du média afin que chaque client
+  // puisse rester en réunion ou agrandir le partage selon son besoin.
+  useEffect(() => {
+    if (!attendanceId || !room || !screenSharing) {
+      screenShareRecipientsRef.current.clear();
+      return;
+    }
+    const activeIds = new Set(people.map((person) => person.user_id));
+    for (const known of Array.from(screenShareRecipientsRef.current)) {
+      if (!activeIds.has(known)) screenShareRecipientsRef.current.delete(known);
+    }
+    for (const person of people) {
+      if (person.user_id === room.user.id || screenShareRecipientsRef.current.has(person.user_id)) continue;
+      sendSignal(person.user_id, "control", {
+        action: "screen_share_state",
+        active: true,
+        sent_at: new Date().toISOString(),
+      }).then(() => screenShareRecipientsRef.current.add(person.user_id)).catch(() => {});
+    }
+  }, [attendanceId, room, people, screenSharing, sendSignal]);
+
+  useEffect(() => {
+    if (remoteScreenShareUserId === null || !room) return;
+    if (!people.some((person) => person.user_id === remoteScreenShareUserId)) {
+      setRemoteScreenShareUserId(null);
+      setShareExpanded(false);
+    }
+  }, [people, remoteScreenShareUserId, room]);
 
   useEffect(() => {
     if (!attendanceId || !room) return;
@@ -825,7 +858,15 @@ export default function LiveSessionPage() {
       }
 
       if (message.kind === "control") {
-        const action = String(message.payload?.action || "") as ModerationAction;
+        const rawAction = String(message.payload?.action || "");
+        if (rawAction === "screen_share_state") {
+          const active = Boolean(message.payload?.active);
+          setRemoteScreenShareUserId((current) => active ? message.sender_id : (current === message.sender_id ? null : current));
+          if (!active) setShareExpanded(false);
+          setNotice(active ? `${message.sender_name} partage son écran.` : `${message.sender_name} a arrêté le partage d'écran.`);
+          return;
+        }
+        const action = rawAction as ModerationAction;
         if (action === "mute") {
           localStreamRef.current?.getAudioTracks().forEach((track) => {
             track.enabled = false;
@@ -1311,6 +1352,8 @@ export default function LiveSessionPage() {
       const compositeTrack = await startShareComposite(displayStream);
       localStreamRef.current.addTrack(compositeTrack);
       await replaceTrackOnPeers("video", compositeTrack);
+      setShareExpanded(false);
+      setRemoteScreenShareUserId(null);
       setScreenSharing(true);
       syncLocalVideo();
       await localVideoRef.current?.play().catch(() => {});
@@ -1370,6 +1413,15 @@ export default function LiveSessionPage() {
       setCameraOn(false);
     }
 
+    Array.from(screenShareRecipientsRef.current).forEach((recipientId) => {
+      sendSignal(recipientId, "control", {
+        action: "screen_share_state",
+        active: false,
+        sent_at: new Date().toISOString(),
+      }).catch(() => {});
+    });
+    screenShareRecipientsRef.current.clear();
+    setShareExpanded(false);
     setScreenSharing(false);
     syncLocalVideo();
     await localVideoRef.current?.play().catch(() => {});
@@ -1847,16 +1899,23 @@ export default function LiveSessionPage() {
   }
   if (!room) return null;
 
-  const effectiveVideoLayout: "solo" | "gallery" | "focus" = screenSharing
+  const activeScreenShareUserId = screenSharing ? room.user.id : remoteScreenShareUserId;
+  const screenShareActive = activeScreenShareUserId !== null;
+  const remoteScreenShareFeed = remoteScreenShareUserId !== null
+    ? (remoteFeeds.find((feed) => feed.userId === remoteScreenShareUserId) || null)
+    : null;
+  const effectiveVideoLayout: "solo" | "gallery" | "focus" = shareExpanded && screenShareActive
     ? "focus"
     : videoLayout === "auto"
-      ? (remoteFeeds.length === 0 ? "solo" : "gallery")
+      ? (remoteFeeds.length === 0 ? (screenSharing ? "focus" : "solo") : "gallery")
       : videoLayout;
   const organizerIsLocal = room.organizer.id === room.user.id;
-  const focusedRemoteFeed = organizerIsLocal
-    ? null
-    : (remoteFeeds.find((feed) => feed.userId === room.organizer.id) || remoteFeeds[0] || null);
-  const focusLocal = !focusedRemoteFeed || screenSharing;
+  const focusedRemoteFeed = shareExpanded && remoteScreenShareFeed
+    ? remoteScreenShareFeed
+    : organizerIsLocal
+      ? null
+      : (remoteFeeds.find((feed) => feed.userId === room.organizer.id) || remoteFeeds[0] || null);
+  const focusLocal = shareExpanded && screenSharing ? true : !focusedRemoteFeed;
 
   const localTile = (compact = false, className = "") => (
     <VideoTile
@@ -2047,14 +2106,28 @@ export default function LiveSessionPage() {
                       <div>
                         <h2 className="text-sm font-semibold">Scène de la session</h2>
                         <p className="text-[11px] text-gray-400 sm:text-xs">
-                          {screenSharing ? "Votre écran est visible par les participants." : "Vue vidéo de la séance en temps réel."}
+                          {screenSharing
+                            ? "Vous partagez votre écran sans quitter la vue de réunion."
+                            : remoteScreenShareUserId !== null
+                              ? `${people.find((person) => person.user_id === remoteScreenShareUserId)?.name || "Un participant"} partage son écran.`
+                              : "Vue vidéo de la séance en temps réel."}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {screenShareActive && (
+                          <button
+                            onClick={() => setShareExpanded((current) => !current)}
+                            className="toolbar-secondary !px-2 !py-1.5 !text-[10px]"
+                            title={shareExpanded ? "Réduire le partage et retrouver tous les participants" : "Agrandir le partage d'écran"}
+                          >
+                            {shareExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                            {shareExpanded ? "Revenir à la réunion" : "Agrandir le partage"}
+                          </button>
+                        )}
                         <label className="sr-only" htmlFor="video-layout">Disposition vidéo</label>
-                        <select id="video-layout" value={videoLayout} onChange={(event) => setVideoLayout(event.target.value as VideoLayout)} className="rounded-xl border border-white/10 bg-gray-950 px-2 py-1.5 text-[10px] font-medium text-gray-200 outline-none">
+                        <select id="video-layout" value={videoLayout} onChange={(event) => { setVideoLayout(event.target.value as VideoLayout); setShareExpanded(false); }} className="rounded-xl border border-white/10 bg-gray-950 px-2 py-1.5 text-[10px] font-medium text-gray-200 outline-none">
                           <option value="auto">Disposition : Auto</option>
-                          <option value="gallery">Galerie</option>
+                          <option value="gallery">Réunion / galerie</option>
                           <option value="focus">Intervenant</option>
                         </select>
                         <button onClick={toggleFullscreen} className="toolbar-secondary !px-2 !py-1.5 !text-[10px]">

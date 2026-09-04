@@ -679,6 +679,19 @@ class AdminEmailTestView(APIView):
         except DjangoValidationError:
             return Response({"email": ["Adresse email invalide."]}, status=400)
         try:
+            from apps.notifications.email_services import create_admin_email_test_delivery, resend_runtime_status
+            runtime = resend_runtime_status()
+            if runtime.get("ready"):
+                delivery = create_admin_email_test_delivery(user=request.user, recipient=recipient)
+                return Response({
+                    "ok": bool(delivery),
+                    "detail": f"Email de test Resend mis en file pour {recipient}.",
+                    "delivery_id": getattr(delivery, "id", None),
+                    "dry_run": runtime.get("dry_run", False),
+                }, status=202 if delivery else 400)
+        except Exception:
+            logger.exception("Échec du diagnostic Resend KalanPro")
+        try:
             sent = send_mail(
                 subject="Test email KalanPro",
                 message="Votre configuration email KalanPro fonctionne correctement.",
@@ -689,7 +702,7 @@ class AdminEmailTestView(APIView):
         except Exception:
             logger.exception("Échec du diagnostic email KalanPro")
             return Response({"ok": False, "detail": "Échec du test email. Consultez les journaux serveur pour le détail technique."}, status=400)
-        return Response({"ok": bool(sent), "detail": f"Email de test envoyé à {recipient}."})
+        return Response({"ok": bool(sent), "detail": f"Email de test envoyé à {recipient} via le backend email de secours."})
 
 
 class CinetPayReturnView(APIView):

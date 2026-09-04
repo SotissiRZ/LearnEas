@@ -1,7 +1,7 @@
 from django.utils import timezone
 from rest_framework import serializers
 from apps.common.phone import normalize_e164_phone
-from .models import NotificationPreference, WhatsAppDelivery
+from .models import NotificationPreference, WhatsAppDelivery, EmailDelivery
 
 
 def normalize_whatsapp_phone(value: str) -> str:
@@ -18,7 +18,9 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
         fields = [
             "whatsapp_phone", "whatsapp_opt_in", "whatsapp_payment_enabled",
             "whatsapp_live_enabled", "whatsapp_inactivity_enabled",
-            "whatsapp_certificate_enabled", "whatsapp_consent_at", "updated_at",
+            "whatsapp_certificate_enabled", "whatsapp_consent_at",
+            "email_enabled", "email_payment_enabled", "email_live_enabled",
+            "email_inactivity_enabled", "email_certificate_enabled", "updated_at",
         ]
         read_only_fields = ["whatsapp_consent_at", "updated_at"]
 
@@ -51,5 +53,15 @@ class WhatsAppDeliverySerializer(serializers.ModelSerializer):
         fields = [
             "id", "recipient", "event_type", "event_key", "template_name", "language_code",
             "status", "provider_message_id", "error", "created_at", "sent_at", "delivered_at", "read_at",
+        ]
+        read_only_fields = fields
+
+
+class EmailDeliverySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmailDelivery
+        fields = [
+            "id", "recipient", "event_type", "event_key", "subject", "template_key",
+            "status", "provider_message_id", "error", "created_at", "sent_at",
         ]
         read_only_fields = fields

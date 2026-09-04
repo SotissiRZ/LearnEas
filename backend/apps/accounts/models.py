@@ -95,6 +95,12 @@ class PlatformSettings(models.Model):
     whatsapp_live_reminder_minutes = models.PositiveSmallIntegerField(default=30)
     whatsapp_inactivity_days = models.PositiveSmallIntegerField(default=4)
 
+    # Email transactionnel Resend. La clé API reste exclusivement dans l'environnement.
+    resend_enabled = models.BooleanField(default=False)
+    resend_from_name = models.CharField(max_length=120, default="KalanPro")
+    resend_from_email = models.EmailField(default="notifications@kalanpro.com")
+    resend_reply_to = models.EmailField(blank=True, default="support@kalanpro.com")
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

@@ -419,20 +419,29 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
             )
             join_url = f"{settings.FRONTEND_URL.rstrip('/')}/live/session/{session.id}"
             register_url = f"{settings.FRONTEND_URL.rstrip('/')}/register?next=/live/session/{session.id}&email={quote(email)}"
-            send_mail(
-                subject=f"Invitation KalanPro : {session.formation.title}",
-                message=(
-                    f"Bonjour,\n\n"
-                    f"{request.user.get_full_name() or request.user.username} vous invite à participer à la séance "
-                    f"{session.session_number} de « {session.formation.title} » sur KalanPro.\n\n"
-                    f"Rejoindre la séance : {join_url}\n\n"
-                    f"Si vous n'avez pas encore de compte KalanPro, créez-en un avec cette adresse email :\n{register_url}\n\n"
-                    f"Cette invitation donne accès uniquement à cette séance et ne vous inscrit pas à la formation."
-                ),
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[email],
-                fail_silently=True,
-            )
+            try:
+                from apps.notifications.email_services import queue_session_invite_email
+                delivery = queue_session_invite_email(
+                    inviter=request.user, recipient=email, session=session,
+                    join_url=join_url, register_url=register_url,
+                )
+            except Exception:
+                delivery = None
+            if delivery is None:
+                send_mail(
+                    subject=f"Invitation KalanPro : {session.formation.title}",
+                    message=(
+                        f"Bonjour,\n\n"
+                        f"{request.user.get_full_name() or request.user.username} vous invite à participer à la séance "
+                        f"{session.session_number} de « {session.formation.title} » sur KalanPro.\n\n"
+                        f"Rejoindre la séance : {join_url}\n\n"
+                        f"Si vous n'avez pas encore de compte KalanPro, créez-en un avec cette adresse email :\n{register_url}\n\n"
+                        f"Cette invitation donne accès uniquement à cette séance et ne vous inscrit pas à la formation."
+                    ),
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[email],
+                    fail_silently=True,
+                )
             payload = self._invite_payload(invite)
             if settings.DEBUG:
                 payload["dev_join_url"] = join_url
@@ -553,11 +562,21 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
                     return Response({"payload": ["Le message est limité à 2000 caractères."]}, status=400)
                 payload = {"text": text, "sent_at": payload.get("sent_at")}
             if kind == FormationSignal.Kind.CONTROL:
-                self._require_organizer(request, session)
-                action_name = payload.get("action")
-                if action_name not in {"mute", "camera_off", "remove"}:
-                    return Response({"payload": ["Action de modération invalide."]}, status=400)
-                payload = {"action": action_name}
+                action_name = str(payload.get("action") or "")
+                if action_name == "screen_share_state":
+                    # Etat d'interface collaboratif : chaque participant autorisé
+                    # peut annoncer le début/la fin de SON partage. Aucun droit de
+                    # modération n'est accordé par cette action.
+                    payload = {
+                        "action": "screen_share_state",
+                        "active": bool(payload.get("active")),
+                        "sent_at": payload.get("sent_at"),
+                    }
+                else:
+                    self._require_organizer(request, session)
+                    if action_name not in {"mute", "camera_off", "remove"}:
+                        return Response({"payload": ["Action de modération invalide."]}, status=400)
+                    payload = {"action": action_name}
             if kind == FormationSignal.Kind.CODE:
                 allowed_languages = {"javascript", "html", "css", "python", "java", "c", "cpp", "text"}
                 allowed_frameworks = {"none", "react", "nextjs", "django", "drf", "fastapi", "flask", "express"}

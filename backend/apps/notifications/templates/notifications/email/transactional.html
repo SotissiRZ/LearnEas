@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>{{ subject }}</title>
+  <style>
+    @media only screen and (max-width: 620px) {
+      .kp-shell { width: 100% !important; }
+      .kp-card { border-radius: 0 !important; }
+      .kp-pad { padding-left: 22px !important; padding-right: 22px !important; }
+      .kp-title { font-size: 26px !important; line-height: 32px !important; }
+      .kp-button { display: block !important; width: auto !important; text-align: center !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background:#f2f5f9;color:#12213b;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">{{ intro|default:title }}</div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f2f5f9;">
+    <tr><td align="center" style="padding:32px 12px;">
+      <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" class="kp-shell kp-card" style="width:600px;max-width:600px;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 12px 30px rgba(11,27,54,.08);">
+        <tr><td class="kp-pad" style="padding:24px 34px;background:#0b1b36;border-bottom:4px solid #ff641a;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
+            <td valign="middle">
+              <span style="display:inline-block;width:40px;height:40px;line-height:40px;text-align:center;border-radius:10px;background:#ffffff;color:#0b1b36;font-size:22px;font-weight:900;vertical-align:middle;">K</span>
+              <span style="display:inline-block;margin-left:10px;color:#ffffff;font-size:22px;font-weight:800;vertical-align:middle;letter-spacing:-.4px;">Kalan<span style="color:#ff641a;">Pro</span></span>
+            </td>
+            <td align="right" valign="middle" style="color:#b8c6db;font-size:11px;">Formation · Mentorat · Emploi</td>
+          </tr></table>
+        </td></tr>
+        <tr><td class="kp-pad" style="padding:34px 38px 12px;">
+          {% if eyebrow %}<div style="display:inline-block;padding:6px 10px;border-radius:999px;background:#fff2eb;color:#d84f0c;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;">{{ eyebrow }}</div>{% endif %}
+          <h1 class="kp-title" style="margin:14px 0 12px;color:#0b1b36;font-size:30px;line-height:37px;letter-spacing:-.7px;">{{ title }}</h1>
+          {% if greeting %}<p style="margin:0 0 12px;font-size:15px;line-height:24px;color:#243650;font-weight:700;">{{ greeting }}</p>{% endif %}
+          {% if intro %}<p style="margin:0;font-size:15px;line-height:25px;color:#52627a;">{{ intro }}</p>{% endif %}
+        </td></tr>
+        {% if details %}
+        <tr><td class="kp-pad" style="padding:18px 38px 4px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f7f9fc;border:1px solid #e5ebf3;border-radius:14px;overflow:hidden;">
+            {% for item in details %}<tr>
+              <td style="padding:11px 14px;color:#718096;font-size:12px;font-weight:700;border-bottom:1px solid #edf1f6;">{{ item.label }}</td>
+              <td align="right" style="padding:11px 14px;color:#12213b;font-size:13px;font-weight:800;border-bottom:1px solid #edf1f6;">{{ item.value }}</td>
+            </tr>{% endfor %}
+          </table>
+        </td></tr>
+        {% endif %}
+        {% if body %}<tr><td class="kp-pad" style="padding:18px 38px 0;"><p style="margin:0;font-size:14px;line-height:23px;color:#617089;">{{ body }}</p></td></tr>{% endif %}
+        {% if cta_url %}<tr><td class="kp-pad" style="padding:26px 38px 10px;">
+          <a class="kp-button" href="{{ cta_url }}" style="display:inline-block;padding:14px 22px;border-radius:12px;background:#ff641a;color:#ffffff;text-decoration:none;font-size:14px;font-weight:800;box-shadow:0 8px 18px rgba(255,100,26,.22);">{{ cta_label|default:"Ouvrir KalanPro" }} →</a>
+        </td></tr>{% endif %}
+        <tr><td class="kp-pad" style="padding:22px 38px 30px;">
+          {% if footer_note %}<p style="margin:0 0 12px;color:#8390a4;font-size:11px;line-height:18px;">{{ footer_note }}</p>{% endif %}
+          <p style="margin:0;color:#9aa6b6;font-size:11px;line-height:18px;">Besoin d'aide ? Écrivez à <a href="mailto:{{ support_email }}" style="color:#d84f0c;text-decoration:none;">{{ support_email }}</a>.</p>
+        </td></tr>
+        <tr><td align="center" style="padding:18px 24px;background:#0b1b36;color:#9fb0c8;font-size:10px;line-height:16px;">© KalanPro · Apprenez. Évoluez. Trouvez un emploi.</td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>

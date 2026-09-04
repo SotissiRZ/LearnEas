@@ -358,6 +358,15 @@ EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="KalanPro <no-reply@kalanpro.com>")
 
+# Resend Email API — canal transactionnel principal. La clé API ne doit jamais être
+# stockée en base ni exposée au frontend. RESEND_DRY_RUN=True en local permet de
+# valider tout le workflow sans appeler l'API externe.
+RESEND_ENABLED = config("RESEND_ENABLED", default=False, cast=bool)
+RESEND_DRY_RUN = config("RESEND_DRY_RUN", default=True, cast=bool)
+RESEND_API_KEY = config("RESEND_API_KEY", default="")
+RESEND_API_BASE = config("RESEND_API_BASE", default="https://api.resend.com")
+RESEND_HTTP_TIMEOUT = config("RESEND_HTTP_TIMEOUT", default=15, cast=int)
+
 # ---------------------------------------------------------------------------
 # Redis / Celery (emails asynchrones, tâches planifiées) — service "redis" du docker-compose
 # ---------------------------------------------------------------------------

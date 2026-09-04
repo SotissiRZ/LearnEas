@@ -165,6 +165,11 @@ class RegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        try:
+            from apps.notifications.email_services import queue_welcome_email
+            transaction.on_commit(lambda user=user: queue_welcome_email(user))
+        except Exception:
+            pass
         refresh = EmailTokenObtainPairSerializer.get_token(user)
         response = Response(
             {
@@ -442,18 +447,24 @@ class PasswordResetRequestView(APIView):
         token = default_token_generator.make_token(user)
         reset_url = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}"
 
-        send_mail(
-            subject="Réinitialisation de votre mot de passe KalanPro",
-            message=(
-                f"Bonjour {user.first_name or user.username},\n\n"
-                f"Cliquez sur ce lien pour choisir un nouveau mot de passe :\n{reset_url}\n\n"
-                f"Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.\n\n"
-                f"L'équipe KalanPro"
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=True,
-        )
+        try:
+            from apps.notifications.email_services import queue_password_reset_email
+            delivery = queue_password_reset_email(user, reset_url)
+        except Exception:
+            delivery = None
+        if delivery is None:
+            send_mail(
+                subject="Réinitialisation de votre mot de passe KalanPro",
+                message=(
+                    f"Bonjour {user.first_name or user.username},\n\n"
+                    f"Cliquez sur ce lien pour choisir un nouveau mot de passe :\n{reset_url}\n\n"
+                    f"Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.\n\n"
+                    f"L'équipe KalanPro"
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=True,
+            )
 
         response_data = {"detail": "Si un compte existe avec cet email, un lien de réinitialisation a été envoyé."}
         # En développement (DEBUG=True), on renvoie aussi le lien directement : cela évite

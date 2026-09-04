@@ -33,6 +33,9 @@ class PlatformSettingsAdmin(admin.ModelAdmin):
             "whatsapp_inactivity_template_name", "whatsapp_certificate_template_name",
             "whatsapp_test_template_name", "whatsapp_live_reminder_minutes", "whatsapp_inactivity_days",
         )}),
+        ("Email Resend", {"fields": (
+            "resend_enabled", "resend_from_name", "resend_from_email", "resend_reply_to",
+        )}),
     )
 
     def has_add_permission(self, request):

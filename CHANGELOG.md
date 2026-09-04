@@ -1,3 +1,14 @@
+# v59 — Partage d’écran contrôlable sans quitter la réunion
+
+- Suppression du verrou qui forçait systématiquement `screenSharing` en mode focus.
+- En mode Auto, un partage avec plusieurs participants reste dans la vue réunion/galerie.
+- Nouveau bouton `Agrandir le partage / Revenir à la réunion` indépendant du plein écran.
+- En focus, les autres participants restent visibles en vignettes.
+- L’état du partage (`screen_share_state`) est diffusé aux participants afin que chacun choisisse sa propre disposition.
+- `screen_share_state` est autorisé pour les participants sans ouvrir les actions de modération, qui restent réservées à l’organisateur.
+- Test backend ajouté pour la signalisation de partage par un participant.
+- Documentation : `docs/LIVE_SCREEN_SHARE_V59.md`.
+
 # v57 — Salle live adaptative & planning modifiable
 
 - Mode vidéo **Auto** : lorsque l'utilisateur est seul, la scène d'attente reste principale et sa caméra devient une petite vignette en bas à droite.
@@ -910,3 +921,13 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 
 - Ajout de tests backend pour l'API Domain, le filtrage par domaine et la non-régression du nombre de requêtes SQL sur la liste de cours.
 - Audit mobile et tests statiques de sécurité frontend conservés.
+
+## v58 — Resend + emails transactionnels KalanPro
+
+- Resend Email API ajouté comme canal transactionnel parallèle à WhatsApp.
+- Nouveau journal `EmailDelivery` idempotent et asynchrone via Celery.
+- Template HTML professionnel responsive KalanPro + fallback texte.
+- Emails : bienvenue, paiement, rappel live/mentorat, certificat, mot de passe, invitation, relance opt-in et test admin.
+- Préférences Email/WhatsApp séparées dans les profils utilisateur.
+- Configuration Resend administrable (activation, expéditeur, reply-to), clé API conservée uniquement en environnement.
+- `RESEND_DRY_RUN` pour tester localement sans envoi réel.

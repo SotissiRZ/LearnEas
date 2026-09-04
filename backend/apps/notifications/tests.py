@@ -39,3 +39,58 @@ class WhatsAppNotificationTests(TestCase):
         client.force_authenticate(other)
         response = client.patch("/api/notifications/preferences/", {"whatsapp_opt_in": True}, format="json")
         self.assertEqual(response.status_code, 400)
+
+class ResendEmailNotificationTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="email-student", email="email@example.com", password="StrongPass123!", first_name="Awa")
+        NotificationPreference.objects.create(user=self.user, email_enabled=True)
+        cfg = PlatformSettings.load()
+        cfg.resend_enabled = True
+        cfg.resend_from_name = "KalanPro"
+        cfg.resend_from_email = "notifications@kalanpro.com"
+        cfg.save(update_fields=["resend_enabled", "resend_from_name", "resend_from_email"])
+
+    @override_settings(RESEND_ENABLED=True, RESEND_DRY_RUN=True)
+    def test_resend_dry_run_and_professional_template(self):
+        from .email_services import queue_email_event, send_email, render_email
+        from .models import EmailDelivery
+        delivery = queue_email_event(
+            user=self.user,
+            event_type=EmailDelivery.EventType.TEST,
+            event_key="email:test:dry-run",
+            subject="Test KalanPro",
+            context={
+                "eyebrow": "Test",
+                "title": "Notification professionnelle",
+                "greeting": "Bonjour Awa,",
+                "intro": "Ceci est un test.",
+                "cta_label": "Ouvrir KalanPro",
+                "cta_url": "https://kalanpro.com",
+            },
+            force=True,
+        )
+        self.assertIsNotNone(delivery)
+        html, text = render_email(delivery)
+        self.assertIn("Kalan", html)
+        self.assertIn("#ff641a", html)
+        self.assertIn("Ouvrir KalanPro", html)
+        self.assertIn("https://kalanpro.com", text)
+        send_email(delivery.id)
+        delivery.refresh_from_db()
+        self.assertEqual(delivery.status, EmailDelivery.Status.SIMULATED)
+
+    @override_settings(RESEND_ENABLED=True, RESEND_DRY_RUN=True)
+    def test_user_can_disable_email_channel(self):
+        from .email_services import queue_email_event
+        from .models import EmailDelivery
+        pref = self.user.notification_preferences
+        pref.email_enabled = False
+        pref.save(update_fields=["email_enabled"])
+        delivery = queue_email_event(
+            user=self.user,
+            event_type=EmailDelivery.EventType.PAYMENT,
+            event_key="email:test:disabled",
+            subject="Paiement",
+            context={"title": "Paiement"},
+        )
+        self.assertIsNone(delivery)

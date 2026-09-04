@@ -261,6 +261,23 @@ class InteractiveFormationRegressionTests(APITestCase):
         )
         self.assertEqual(allowed.status_code, status.HTTP_201_CREATED, allowed.data)
 
+    def test_participant_can_signal_own_screen_share_state(self):
+        session, _ = self._started_session_with_student()
+        response = self.client.post(
+            f"/api/sessions/{session.id}/signal/",
+            {
+                "recipient_id": self.organizer.id,
+                "kind": "control",
+                "payload": {"action": "screen_share_state", "active": True},
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        signal = FormationSignal.objects.get(id=response.data["id"])
+        self.assertEqual(signal.sender_id, self.student.id)
+        self.assertEqual(signal.payload["action"], "screen_share_state")
+        self.assertTrue(signal.payload["active"])
+
     def test_live_room_file_upload_list_and_download(self):
         session, _ = self._started_session_with_student()
         with tempfile.TemporaryDirectory() as tmpdir, self.settings(MEDIA_ROOT=tmpdir):

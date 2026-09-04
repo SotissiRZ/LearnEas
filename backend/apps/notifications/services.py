@@ -9,7 +9,8 @@ from django.db import IntegrityError
 from django.utils import timezone
 
 from apps.accounts.models import PlatformSettings
-from .models import NotificationPreference, WhatsAppDelivery
+from .models import NotificationPreference, WhatsAppDelivery, EmailDelivery
+from .email_services import queue_email_event
 from .serializers import normalize_whatsapp_phone
 
 logger = logging.getLogger(__name__)
@@ -211,13 +212,35 @@ def queue_payment_confirmation(order_id):
         return None
     name = order.user.first_name or order.user.get_full_name() or order.user.username
     amount = f"{Decimal(order.total_amount):f} {order.currency}"
-    return queue_whatsapp_event(
+    wa = queue_whatsapp_event(
         user=order.user,
         event_type=WhatsAppDelivery.EventType.PAYMENT,
         event_key=f"payment:{order.id}",
         variables=[name, order.invoice_number, amount],
         metadata={"order_id": order.id},
     )
+    email = queue_email_event(
+        user=order.user,
+        event_type=EmailDelivery.EventType.PAYMENT,
+        event_key=f"email:payment:{order.id}",
+        subject=f"Paiement confirmé · {order.invoice_number}",
+        context={
+            "eyebrow": "Paiement confirmé",
+            "title": "Votre paiement a bien été reçu",
+            "greeting": f"Bonjour {name},",
+            "intro": "Votre commande KalanPro est confirmée. Vos contenus et services associés sont maintenant disponibles dans votre espace.",
+            "details": [
+                {"label": "Référence", "value": order.invoice_number},
+                {"label": "Montant", "value": amount},
+                {"label": "Statut", "value": "Payé"},
+            ],
+            "cta_label": "Accéder à mon espace",
+            "cta_url": f"{settings.FRONTEND_URL.rstrip('/')}/dashboard",
+            "footer_note": "Conservez cet email comme confirmation de votre transaction.",
+        },
+        metadata={"order_id": order.id},
+    )
+    return {"whatsapp": wa, "email": email}
 
 
 def queue_certificate_ready(certificate_id):
@@ -228,10 +251,31 @@ def queue_certificate_ready(certificate_id):
         return None
     name = certificate.user.first_name or certificate.student_name or certificate.user.username
     verify_url = f"{settings.FRONTEND_URL.rstrip('/')}/certificates/verify/{certificate.verification_code}"
-    return queue_whatsapp_event(
+    wa = queue_whatsapp_event(
         user=certificate.user,
         event_type=WhatsAppDelivery.EventType.CERTIFICATE,
         event_key=f"certificate:{certificate.id}:{certificate.verification_code}",
         variables=[name, certificate.content_title, verify_url],
         metadata={"certificate_id": certificate.id},
     )
+    email = queue_email_event(
+        user=certificate.user,
+        event_type=EmailDelivery.EventType.CERTIFICATE,
+        event_key=f"email:certificate:{certificate.id}:{certificate.verification_code}",
+        subject=f"Votre certificat KalanPro est disponible · {certificate.content_title}",
+        context={
+            "eyebrow": "Certification",
+            "title": "Votre certificat est prêt",
+            "greeting": f"Félicitations {name} !",
+            "intro": f"Vous avez satisfait aux critères de réussite pour « {certificate.content_title} ». Votre certificat KalanPro est désormais vérifiable en ligne.",
+            "details": [
+                {"label": "Formation", "value": certificate.content_title},
+                {"label": "Code de vérification", "value": certificate.verification_code},
+            ],
+            "cta_label": "Voir et vérifier le certificat",
+            "cta_url": verify_url,
+            "footer_note": "Le lien de vérification peut être partagé avec un recruteur, un client ou une entreprise.",
+        },
+        metadata={"certificate_id": certificate.id},
+    )
+    return {"whatsapp": wa, "email": email}
