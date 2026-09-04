@@ -264,7 +264,7 @@ class PaymentConfigurationTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("decimal_places", response.data)
 
-    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", DEFAULT_FROM_EMAIL="LearnEas <no-reply@example.com>")
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", DEFAULT_FROM_EMAIL="KalanPro <no-reply@example.com>")
     def test_admin_can_test_email_configuration(self):
         response = self.client.post("/api/payments/admin/test-email/", {"email": "diagnostic@example.com"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)

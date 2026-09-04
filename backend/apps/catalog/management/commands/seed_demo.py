@@ -19,43 +19,43 @@ User = get_user_model()
 
 
 class Command(BaseCommand):
-    help = "Génère des données de démonstration complètes pour LearnEas (Afrique)"
+    help = "Génère des données de démonstration complètes pour KalanPro (Afrique)"
 
     def handle(self, *args, **options):
         self.stdout.write("Création des utilisateurs...")
-        admin = self._user("admin", "admin@learneas.com", "admin1234", role="admin",
-                            is_staff=True, is_superuser=True, first_name="Admin", last_name="LearnEas")
+        admin = self._user("admin", "admin@kalanpro.com", "admin1234", role="admin",
+                            is_staff=True, is_superuser=True, first_name="Admin", last_name="KalanPro")
 
         sarah = self._user(
-            "sarah_dev", "sarah@learneas.com", "instructor1234", role="instructor",
+            "sarah_dev", "sarah@kalanpro.com", "instructor1234", role="instructor",
             first_name="Sarah", last_name="Benali", country="Maroc",
             domain="Développement web", years_experience=7,
             headline="Développeuse Full-Stack · Django & React",
         )
         koffi = self._user(
-            "koffi_data", "koffi@learneas.com", "instructor1234", role="instructor",
+            "koffi_data", "koffi@kalanpro.com", "instructor1234", role="instructor",
             first_name="Koffi", last_name="Adjei", country="Côte d'Ivoire",
             domain="Data & Intelligence Artificielle", years_experience=6,
             headline="Data Scientist · Python & Machine Learning",
         )
         amina = self._user(
-            "amina_design", "amina@learneas.com", "instructor1234", role="instructor",
+            "amina_design", "amina@kalanpro.com", "instructor1234", role="instructor",
             first_name="Amina", last_name="Diop", country="Sénégal",
             domain="Design & UI/UX", years_experience=5,
             headline="Designer UI/UX freelance",
         )
 
         students = [
-            self._user("student_fatou", "fatou@learneas.com", "student1234", role="student",
+            self._user("student_fatou", "fatou@kalanpro.com", "student1234", role="student",
                        first_name="Fatou", last_name="Ndiaye", country="Sénégal"),
-            self._user("student_jean", "jean@learneas.com", "student1234", role="student",
+            self._user("student_jean", "jean@kalanpro.com", "student1234", role="student",
                        first_name="Jean", last_name="Mbeki", country="Cameroun"),
-            self._user("student_aicha", "aicha@learneas.com", "student1234", role="student",
+            self._user("student_aicha", "aicha@kalanpro.com", "student1234", role="student",
                        first_name="Aïcha", last_name="Traoré", country="Mali"),
         ]
 
         recruiter = self._user(
-            "recruiter_demo", "recruteur@learneas.com", "recruiter1234", role="student",
+            "recruiter_demo", "recruteur@kalanpro.com", "recruiter1234", role="student",
             first_name="Moussa", last_name="Koné", country="Côte d'Ivoire",
             headline="Responsable recrutement · Demo Digital Africa",
         )
@@ -367,7 +367,7 @@ class Command(BaseCommand):
         demo_profile = ensure_portfolio_profile(students[0])
         demo_profile.is_public = True
         demo_profile.title = "Développeuse backend junior · Django & API REST"
-        demo_profile.about = "Je construis des API web structurées et je développe mon portfolio à travers des projets pratiques LearnEas."
+        demo_profile.about = "Je construis des API web structurées et je développe mon portfolio à travers des projets pratiques KalanPro."
         demo_profile.skills = ["Python", "Django", "Django REST Framework", "API REST"]
         demo_profile.open_to_work = True
         demo_profile.save()
@@ -439,7 +439,7 @@ class Command(BaseCommand):
             ("Comment fonctionne une formation interactive ?",
              "Une formation interactive se déroule en direct par visioconférence, en petit groupe, "
              "selon un planning de séances défini par l'instructeur."),
-            ("Puis-je devenir instructeur sur LearnEas ?",
+            ("Puis-je devenir instructeur sur KalanPro ?",
              "Oui, rendez-vous dans votre tableau de bord puis 'Devenir instructeur' pour publier "
              "vos propres cours, PDF et formations interactives."),
             ("Le certificat est-il reconnu ?",
@@ -451,14 +451,14 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("\n\u2714 Données de démonstration créées avec succès.\n"))
         self.stdout.write("Comptes disponibles (mot de passe entre parenthèses) :")
-        self.stdout.write("  Admin........... admin@learneas.com (admin1234)")
-        self.stdout.write("  Instructeur..... sarah@learneas.com (instructor1234) · Dév. web")
-        self.stdout.write("  Instructeur..... koffi@learneas.com (instructor1234) · Data & IA")
-        self.stdout.write("  Instructeur..... amina@learneas.com (instructor1234) · Design")
-        self.stdout.write("  Étudiant........ fatou@learneas.com (student1234)")
-        self.stdout.write("  Étudiant........ jean@learneas.com (student1234)")
-        self.stdout.write("  Étudiant........ aicha@learneas.com (student1234)")
-        self.stdout.write("  Recruteur....... recruteur@learneas.com (recruiter1234) · Demo Digital Africa")
+        self.stdout.write("  Admin........... admin@kalanpro.com (admin1234)")
+        self.stdout.write("  Instructeur..... sarah@kalanpro.com (instructor1234) · Dév. web")
+        self.stdout.write("  Instructeur..... koffi@kalanpro.com (instructor1234) · Data & IA")
+        self.stdout.write("  Instructeur..... amina@kalanpro.com (instructor1234) · Design")
+        self.stdout.write("  Étudiant........ fatou@kalanpro.com (student1234)")
+        self.stdout.write("  Étudiant........ jean@kalanpro.com (student1234)")
+        self.stdout.write("  Étudiant........ aicha@kalanpro.com (student1234)")
+        self.stdout.write("  Recruteur....... recruteur@kalanpro.com (recruiter1234) · Demo Digital Africa")
 
     # ------------------------------------------------------------------ helpers
     def _user(self, username, email, password, role, **extra):

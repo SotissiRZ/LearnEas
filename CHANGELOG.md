@@ -1,3 +1,13 @@
+# v52 — KalanPro branding & interface
+
+- Renommage public de la plateforme en KalanPro.
+- Nouvelle palette navy + orange appliquée via Tailwind.
+- Refonte complète de la page d’accueil.
+- Nouvelle navigation, footer, page À propos et écrans d’authentification.
+- Sidebars instructeur/admin harmonisées.
+- Migration des paramètres et comptes de démonstration existants.
+- Correctifs Docker dev conservés pour un démarrage local plus robuste.
+
 # v51 — Realtime WebSocket, TURN éphémère, CSP stricte et tests E2E
 
 - Backend basculé en ASGI/Daphne avec Django Channels + `channels-redis`; Redis devient aussi le bus realtime des salles live.
@@ -32,8 +42,8 @@
 - Nouveau module `apps.opportunities` : entreprises, profils candidats, opportunités et candidatures.
 - Marketplace publique `/opportunities` : emplois, stages, freelance et missions avec filtres pays/type/mode/niveau.
 - Matching candidat explicable 0–100 basé sur compétences du profil, portfolio, certificats actifs, métier recherché, expérience et préférences de pays/mode/type.
-- Profil candidat avec CV privé, pays choisis dans le référentiel LearnEas et visibilité recruteur opt-in ; sélection multi-pays adaptée mobile (liste + recherche, sans saisie libre).
-- Candidatures LearnEas avec snapshot immuable des compétences, certificats actifs, projets vérifiés et copie du CV effectivement transmis au moment de la candidature.
+- Profil candidat avec CV privé, pays choisis dans le référentiel KalanPro et visibilité recruteur opt-in ; sélection multi-pays adaptée mobile (liste + recherche, sans saisie libre).
+- Candidatures KalanPro avec snapshot immuable des compétences, certificats actifs, projets vérifiés et copie du CV effectivement transmis au moment de la candidature.
 - Espace recruteur : validation entreprise, publication, pipeline de candidatures et vivier de talents.
 - Back-office : nouvel onglet Recrutement pour approuver/refuser/suspendre les entreprises et contrôler les annonces.
 - Confidentialité : les CV ne sont plus accessibles directement sous `/media/`; la rémunération masquée n'est pas exposée publiquement ; les candidatures retirées ne peuvent pas être réactivées par un recruteur.
@@ -42,7 +52,7 @@
 
 # v47 — Certificats vérifiables, QR et registre immuable
 
-- Chaque certificat dispose désormais d’un **QR code public** pointant vers le registre LearnEas.
+- Chaque certificat dispose désormais d’un **QR code public** pointant vers le registre KalanPro.
 - La page de vérification accepte le **numéro de certificat ou le code UUID**, et affiche explicitement Valide / Révoqué / Expiré.
 - Snapshot serveur des preuves au moment de l’émission : émetteur, compétences et projets pratiques approuvés avec note, barème, validateur et date.
 - Ajout d’une **empreinte SHA-256** du snapshot public pour détecter les altérations de données.
@@ -64,8 +74,8 @@
 - Workflow de correction : remis → approuvé / modifications demandées / rejeté, avec note et feedback instructeur.
 - Le certificat exige désormais la progression pédagogique **et** l’approbation de tous les projets obligatoires publiés ; les certificats déjà émis ne sont jamais invalidés rétroactivement.
 - Nouveau **portfolio professionnel** apprenant : slug public, bio, compétences, liens professionnels, statut ouvert aux opportunités et contrôles de confidentialité.
-- Publication d’un projet approuvé avec badge **Vérifié par LearnEas** et snapshot serveur immuable du cours, du projet, de l’instructeur, de la date, de la note et du barème.
-- Ajout possible de réalisations externes non vérifiées afin que le portfolio puisse également représenter le travail réalisé hors LearnEas.
+- Publication d’un projet approuvé avec badge **Vérifié par KalanPro** et snapshot serveur immuable du cours, du projet, de l’instructeur, de la date, de la note et du barème.
+- Ajout possible de réalisations externes non vérifiées afin que le portfolio puisse également représenter le travail réalisé hors KalanPro.
 - Page publique `/portfolio/<slug>` sans email ni téléphone ; le pays et les notes ne sont affichés que si l’apprenant l’autorise.
 - Les fichiers de projet restent privés via les médias protégés/signés ; Nginx bloque l’accès direct aux remises et aux révisions.
 - Nouveaux espaces : `Mes projets`, `Mon portfolio`, `Projets & corrections`, ainsi qu’un onglet Projet dans le lecteur de cours.
@@ -83,15 +93,15 @@
 - Export `.ics` du planning d'une cohorte pour l'ajouter à un calendrier externe.
 - Nouvelle marketplace publique **Mentorat 1:1** : offres publiables par les instructeurs, durée, tarif, langue, fuseau et politique de réservation/annulation.
 - Gestion des créneaux avec verrou transactionnel/contrainte SQL empêchant deux réservations actives du même rendez-vous.
-- Checkout payant du mentorat intégré au moteur LearnEas existant (EUR comptable, conversion/devise locale, CinetPay/Stripe/etc.) avec snapshot financier et commission plateforme.
+- Checkout payant du mentorat intégré au moteur KalanPro existant (EUR comptable, conversion/devise locale, CinetPay/Stripe/etc.) avec snapshot financier et commission plateforme.
 - Une réservation payante conserve le créneau 45 min avant checkout puis jusqu'à 2 h après création de la commande pour absorber les confirmations Mobile Money différées.
-- Création automatique d'une **salle vidéo LearnEas privée** par créneau ; l'apprenant confirmé n'obtient accès qu'à sa séance. Les conteneurs techniques sont exclus du catalogue et des certificats.
+- Création automatique d'une **salle vidéo KalanPro privée** par créneau ; l'apprenant confirmé n'obtient accès qu'à sa séance. Les conteneurs techniques sont exclus du catalogue et des certificats.
 - Espace apprenant pour suivre, payer, rejoindre ou annuler ses rendez-vous ; espace instructeur pour créer des offres, publier des créneaux, ouvrir la salle et clôturer la séance avec une note de suivi.
 - Application du délai minimum d'annulation côté apprenant ; aucun remboursement silencieux n'est déclenché par une simple annulation de rendez-vous.
 - Rappels WhatsApp v44 étendus aux rendez-vous de mentorat, pour l'apprenant et le mentor lorsque chacun a opté pour le canal.
 - Redirection de retour de paiement vers l'espace mentorat pour une commande composée uniquement de mentorat.
 - **Pays sans saisie libre** : inscription, profils apprenant/instructeur et paramètres légaux utilisent désormais un référentiel pays/territoires, avec les marchés d'Afrique francophone placés en tête.
-- **Téléphones sans indicatif saisi manuellement** : WhatsApp et retraits Mobile Money proposent un sélecteur pays/indicatif puis un champ pour le numéro national ; LearnEas reconstruit et valide le format E.164 côté serveur.
+- **Téléphones sans indicatif saisi manuellement** : WhatsApp et retraits Mobile Money proposent un sélecteur pays/indicatif puis un champ pour le numéro national ; KalanPro reconstruit et valide le format E.164 côté serveur.
 - Les valeurs pays sont normalisées/validées côté API afin qu'un client ne puisse pas contourner les listes de l'interface.
 - Sécurisation du cycle mentorat/paiement : une commande externe encore en attente conserve le verrou du créneau, une commande définitivement échouée le libère, et une confirmation payée tardive ne perd pas silencieusement la réservation.
 - Les offres/créneaux ayant un historique de réservation ne peuvent plus être supprimés physiquement : ils doivent être dépubliés/désactivés afin de conserver la traçabilité financière et pédagogique.
@@ -134,14 +144,14 @@
 
 # v42 — Mobile Money Afrique francophone (CinetPay)
 
-- Ajout d’un vrai driver **CinetPay Mobile Money** au moteur de paiement LearnEas, sans exposer les secrets au frontend.
+- Ajout d’un vrai driver **CinetPay Mobile Money** au moteur de paiement KalanPro, sans exposer les secrets au frontend.
 - Prise en charge initiale de **XOF** et **XAF**, activées avec le taux CFA fixe de **655,957 pour 1 EUR** et zéro décimale.
 - Les comptes dont le pays est Sénégal/Côte d’Ivoire/Mali/Burkina Faso/Bénin/Togo/Niger privilégient automatiquement XOF lors de la première visite ; Cameroun/Congo/Gabon/Tchad/RCA privilégient XAF. Le choix manuel de devise reste prioritaire et mémorisé.
 - Checkout CinetPay limité au canal `MOBILE_MONEY`, avec redirection vers le guichet sécurisé CinetPay et affichage du montant réellement facturé.
 - Normalisation automatique des montants CinetPay au multiple de 5 exigé par le prestataire, enregistrée dans la commande avant initialisation du paiement.
 - Webhook CinetPay sécurisé par **X-TOKEN HMAC SHA-256** puis vérification serveur via `/payment/check` avant toute délivrance de cours/PDF/formation.
 - Le webhook est idempotent et ne marque pas prématurément comme échoués les états d’attente opérateur.
-- Ajout d’une page de retour de paiement LearnEas qui vérifie la commande et attend la confirmation opérateur/webhook avant d’accorder l’accès.
+- Ajout d’une page de retour de paiement KalanPro qui vérifie la commande et attend la confirmation opérateur/webhook avant d’accorder l’accès.
 - Ajout des variables `CINETPAY_*` et `BACKEND_PUBLIC_URL` pour Railway/Vercel et les environnements locaux.
 - L’admin peut ajouter/activer CinetPay et définir ses devises. Le preset démarre en live désactivé/XOF ; les variables sandbox restent prévues pour un futur environnement de test CinetPay.
 - **Migration requise :** `payments.0010_cinetpay_mobile_money`.
@@ -150,7 +160,7 @@
 
 # v41 — Vignette présentateur déplaçable pendant le partage d’écran
 
-- Le partage d’écran ne remplace plus visuellement le présentateur : LearnEas fabrique un **flux composite écran + caméra** envoyé aux autres participants.
+- Le partage d’écran ne remplace plus visuellement le présentateur : KalanPro fabrique un **flux composite écran + caméra** envoyé aux autres participants.
 - La caméra du présentateur apparaît en **petite vignette Picture-in-Picture** au-dessus de la présentation.
 - La vignette est **déplaçable par glisser-déposer** ; sa position est intégrée au flux partagé et donc visible au même endroit pour les autres participants.
 - Le présentateur conserve localement une prévisualisation nette de l’écran, avec une vignette DOM indépendante afin que le déplacement reste fluide.
@@ -235,7 +245,7 @@
 
 # v34 — Euro comme devise comptable de base
 
-- La devise comptable de base de LearnEas passe de **MAD à EUR** : prix catalogue, revenus instructeurs, commissions, retraits et total de base sont désormais exprimés en euros.
+- La devise comptable de base de KalanPro passe de **MAD à EUR** : prix catalogue, revenus instructeurs, commissions, retraits et total de base sont désormais exprimés en euros.
 - **EUR est forcé actif avec un taux égal à 1** et devient la devise de checkout par défaut après migration. MAD reste disponible comme devise secondaire et son taux devient le nombre de MAD pour 1 EUR.
 - Migration de données prudente : les montants existants en MAD sont convertis en EUR avec le taux EUR/MAD déjà configuré dans la table des devises, afin d'éviter de transformer par erreur un prix de 300 MAD en 300 EUR. Les montants réellement facturés des commandes historiques (`total_amount` + `currency`) restent inchangés.
 - Tous les autres taux sont automatiquement rebasés de « devise par 1 MAD » vers « devise par 1 EUR ».
@@ -276,7 +286,7 @@
 - Le programme du cours est réhydraté avec la session JWT : un administrateur voit et peut lire toutes les leçons et ressources PDF, même verrouillées pour le public.
 - Ajout d'un espace de **vérification administrateur** dédié pour les cours, PDF et formations, y compris les contenus non publiés.
 - Refonte visuelle de l'onglet admin **Contenus** : cartes éditoriales, états, indicateurs, accès de vérification, fiche publique, publication, mise en avant et suppression.
-- Ajout d'un **paiement test LearnEas** local : simulation d'un paiement réussi sans carte ni API externe lorsque `TEST_PAYMENTS_ENABLED=True`. Le mode est désactivable et doit rester désactivé en production.
+- Ajout d'un **paiement test KalanPro** local : simulation d'un paiement réussi sans carte ni API externe lorsque `TEST_PAYMENTS_ENABLED=True`. Le mode est désactivable et doit rester désactivé en production.
 - Le panier est vidé immédiatement à la déconnexion pour éviter qu'un nouveau compte retrouve les articles du compte précédent.
 - Tests de régression ajoutés pour le MIME PDF, l'accès admin complet et le paiement test.
 
@@ -299,7 +309,7 @@
 - Limites médias backend rendues configurables (`MAX_VIDEO_UPLOAD_MB`, `MAX_PDF_UPLOAD_MB`, `MAX_IMAGE_UPLOAD_MB`) avec bascule rapide des gros fichiers vers le stockage temporaire disque.
 - Validation frontend des formats et tailles vidéo avant l'envoi, avec message d'erreur 413 explicite et progression conservée.
 - Formats vidéo explicitement supportés : MP4, WebM, MOV et M4V.
-- Correction du lecteur PDF bloqué par la CSP Nginx : `frame-src` autorise désormais les ressources LearnEas de même origine et les blobs, sans rendre le site lui-même intégrable par un tiers.
+- Correction du lecteur PDF bloqué par la CSP Nginx : `frame-src` autorise désormais les ressources KalanPro de même origine et les blobs, sans rendre le site lui-même intégrable par un tiers.
 - Le point d'accès média signé est exempté de `X-Frame-Options: DENY` uniquement pour les médias privés, avec `frame-ancestors` limité aux frontends configurés.
 - Les médias privés servis localement utilisent `SAMEORIGIN`, `Accept-Ranges` et restent `private, no-store` afin de préserver lecture, recherche, zoom et navigation native des PDF/vidéos.
 - Durée de validité des URLs médias signées rendue configurable et portée à 12 h par défaut pour éviter les coupures lors de longues sessions d'apprentissage.
@@ -377,7 +387,7 @@
 
 - L'organisateur peut inviter un apprenant **non inscrit à la formation** avec son adresse email.
 - L'invitation donne accès uniquement à la séance concernée et ne crée aucune inscription à la formation.
-- Une adresse correspondant déjà à un compte LearnEas obtient immédiatement l'accès invité ; une adresse sans compte reste en attente jusqu'à l'inscription avec le même email.
+- Une adresse correspondant déjà à un compte KalanPro obtient immédiatement l'accès invité ; une adresse sans compte reste en attente jusqu'à l'inscription avec le même email.
 - Email d'invitation avec lien direct vers la salle et lien d'inscription prérempli.
 - Les invités apparaissent avec le rôle **Invité** dans les présences live.
 - États d'invitation visibles par l'organisateur : compte trouvé, compte à créer, séance rejointe, invitation révoquée.
@@ -699,13 +709,13 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 
 | Rôle | Email | Mot de passe |
 |---|---|---|
-| Admin | admin@learneas.com | admin1234 |
-| Instructeur (Dév. web) | sarah@learneas.com | instructor1234 |
-| Instructeur (Data & IA) | koffi@learneas.com | instructor1234 |
-| Instructeur (Design) | amina@learneas.com | instructor1234 |
-| Étudiant | fatou@learneas.com | student1234 |
-| Étudiant | jean@learneas.com | student1234 |
-| Étudiant | aicha@learneas.com | student1234 |
+| Admin | admin@kalanpro.com | admin1234 |
+| Instructeur (Dév. web) | sarah@kalanpro.com | instructor1234 |
+| Instructeur (Data & IA) | koffi@kalanpro.com | instructor1234 |
+| Instructeur (Design) | amina@kalanpro.com | instructor1234 |
+| Étudiant | fatou@kalanpro.com | student1234 |
+| Étudiant | jean@kalanpro.com | student1234 |
+| Étudiant | aicha@kalanpro.com | student1234 |
 
 ## Ce qui reste à faire (transparence)
 
@@ -762,7 +772,7 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
   solde disponible, demande de retrait et historique des versements.
 - Ajout d’une vue **Avis & questions** avec consultation des notes et réponse aux questions liées aux
   leçons de l’instructeur.
-- Ajout d’une vue **Séances live** avec filtres, accès à la salle LearnEas et rapports de présence
+- Ajout d’une vue **Séances live** avec filtres, accès à la salle KalanPro et rapports de présence
   (heures d’entrée/sortie et durée).
 - Ajout de la **messagerie instructeur** dans le shell du dashboard et possibilité de démarrer une
   conversation depuis la liste des étudiants.
@@ -805,7 +815,7 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 
 - Nouvel onglet apprenant **Mes certificats** avec recherche, filtres, statut, consultation, impression/enregistrement PDF, partage et vérification publique.
 - Certificat de cours configurable : activation, délivrance automatique, seuil de progression, validité, titre, sous-titre, description, signataire, couleur, préfixe et informations visibles.
-- Certificat de formation interactive configurable selon le **taux de présence réel** enregistré dans les séances LearnEas.
+- Certificat de formation interactive configurable selon le **taux de présence réel** enregistré dans les séances KalanPro.
 - Espace instructeur **Certificats** : configuration par contenu, candidats éligibles, délivrance individuelle, registre, révocation et réémission.
 - Espace admin **Certificats** : paramètres globaux, surcharge par contenu, registre global, délivrance forcée exceptionnelle, révocation/réémission et activation de la vérification publique.
 - Chaque certificat conserve un snapshot des informations au moment de l'émission et dispose d'un numéro ainsi que d'un code de vérification uniques.
@@ -814,7 +824,7 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 
 ## v36 — Vidéos non téléchargeables depuis l’interface
 
-- Suppression des boutons **Télécharger** et **Ouvrir la source** du lecteur vidéo LearnEas.
+- Suppression des boutons **Télécharger** et **Ouvrir la source** du lecteur vidéo KalanPro.
 - Le lecteur HTML5 annonce `nodownload` et `noremoteplayback`, désactive le glisser-déposer et le menu contextuel sur la zone vidéo.
 - Les médias vidéo privés restent servis uniquement via des URLs signées et en `Content-Disposition: inline`, avec cache privé/no-store.
 - Une navigation navigateur explicitement déclarée comme `document`, `iframe`, `object` ou `embed` vers un média vidéo privé est refusée ; les requêtes normales du lecteur `<video>` continuent de fonctionner.

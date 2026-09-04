@@ -76,7 +76,7 @@ export default function StudentFormationsPage() {
                       <span className="ml-auto">
                         {s.can_join ? (
                           <Link href={`/live/session/${s.id}`} className="flex items-center gap-1 font-semibold text-brand-700">
-                            <Video size={14} /> Rejoindre sur LearnEas
+                            <Video size={14} /> Rejoindre sur KalanPro
                           </Link>
                         ) : (
                           <span className="flex items-center gap-1 text-gray-400"><Lock size={14} /> Salle indisponible</span>

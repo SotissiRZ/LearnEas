@@ -593,7 +593,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-wrap gap-2">
         {audioOnly && <span className="rounded-full bg-emerald-500/90 px-2.5 py-1 text-[10px] font-bold text-white shadow">AUDIO ~48 kb/s</span>}
         {!audioOnly && dataSaver && streamingReady && <span className="rounded-full bg-sky-600/90 px-2.5 py-1 text-[10px] font-bold text-white shadow">ÉCONOMIE ≤360p</span>}
-        {!audioOnly && hlsActive && <span className="rounded-full bg-black/65 px-2.5 py-1 text-[10px] font-semibold text-white/80 shadow">HLS adaptatif</span>}
+        {!audioOnly && hlsActive && <span className="rounded-full bg-black/60 px-2.5 py-1 text-[10px] font-semibold text-white/80 shadow">HLS adaptatif</span>}
       </div>
 
       {!playing && !error && !loading && (
@@ -609,7 +609,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
 
       {loading && !error && (
         <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-black/10">
-          <div className="flex items-center gap-2 rounded-full bg-black/70 px-4 py-2 text-xs font-medium text-white/85">
+          <div className="flex items-center gap-2 rounded-full bg-black/70 px-4 py-2 text-xs font-medium text-white/80">
             <Loader2 size={15} className="animate-spin" /> Chargement…
           </div>
         </div>
@@ -620,7 +620,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
           <div className="max-w-xl">
             <p className="text-base font-semibold">La vidéo ne peut pas être lue</p>
             <p className="mt-2 text-sm leading-6 text-white/70">{error}</p>
-            <p className="mt-2 text-xs text-white/45">LearnEas utilise HLS adaptatif quand il est disponible et garde le MP4 comme solution de secours.</p>
+            <p className="mt-2 text-xs text-white/40">KalanPro utilise HLS adaptatif quand il est disponible et garde le MP4 comme solution de secours.</p>
             {repairMessage && <p className="mt-3 rounded-lg bg-white/10 px-3 py-2 text-xs leading-5 text-white/75">{repairMessage}</p>}
             <div className="mt-5 flex flex-wrap justify-center gap-2">
               <button type="button" onClick={retry} disabled={repairing} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-gray-950 disabled:opacity-50">Réessayer</button>
@@ -731,7 +731,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
                 <div className="absolute bottom-12 right-0 w-[19rem] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-white/10 bg-gray-950/95 p-2 text-sm shadow-2xl backdrop-blur">
                   {resolvedHlsSrc && !audioOnly && (
                     <>
-                      <p className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/45">Qualité vidéo</p>
+                      <p className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/40">Qualité vidéo</p>
                       <div className="grid grid-cols-3 gap-1">
                         <button
                           type="button"
@@ -761,7 +761,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
                           {dataSaver ? <WifiOff size={17} className="text-sky-300" /> : <Wifi size={17} className="text-white/60" />}
                           <span>
                             <span className="block text-xs font-semibold text-white">Économie de données</span>
-                            <span className="block text-[10px] text-white/45">Auto plafonné à 360p</span>
+                            <span className="block text-[10px] text-white/40">Auto plafonné à 360p</span>
                           </span>
                         </span>
                         <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${dataSaver ? "bg-sky-500 text-white" : "bg-white/10 text-white/50"}`}>{dataSaver ? "ON" : "OFF"}</span>
@@ -779,14 +779,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
                         <Headphones size={17} className={audioOnly ? "text-emerald-300" : "text-white/60"} />
                         <span>
                           <span className="block text-xs font-semibold text-white">Audio uniquement</span>
-                          <span className="block text-[10px] text-white/45">~48 kb/s · consommation minimale</span>
+                          <span className="block text-[10px] text-white/40">~48 kb/s · consommation minimale</span>
                         </span>
                       </span>
                       <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${audioOnly ? "bg-emerald-500 text-white" : "bg-white/10 text-white/50"}`}>{audioOnly ? "ON" : "OFF"}</span>
                     </button>
                   )}
 
-                  <p className="mt-2 border-t border-white/10 px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/45">Vitesse de lecture</p>
+                  <p className="mt-2 border-t border-white/10 px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/40">Vitesse de lecture</p>
                   <div className="grid grid-cols-4 gap-1">
                     {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((value) => (
                       <button
@@ -802,7 +802,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
                       </button>
                     ))}
                   </div>
-                  <div className="mt-2 border-t border-white/10 px-2 py-2 text-[11px] leading-5 text-white/45">
+                  <div className="mt-2 border-t border-white/10 px-2 py-2 text-[11px] leading-5 text-white/40">
                     Espace/K lecture · J/L ±10 s · M son · F plein écran · C sous-titres
                   </div>
                 </div>
@@ -826,7 +826,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       )}
 
       {streamingStatus === "processing" && !resolvedHlsSrc && (
-        <div className="pointer-events-none absolute right-3 top-3 z-10 rounded-full bg-black/65 px-2.5 py-1 text-[10px] font-medium text-white/65">Optimisation faible débit en cours…</div>
+        <div className="pointer-events-none absolute right-3 top-3 z-10 rounded-full bg-black/60 px-2.5 py-1 text-[10px] font-medium text-white/60">Optimisation faible débit en cours…</div>
       )}
 
       <div className="sr-only" aria-live="polite">{playing ? "Lecture" : "Pause"}</div>

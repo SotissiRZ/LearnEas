@@ -45,7 +45,7 @@ export default function OpportunitiesPage() {
     <div className="container-app py-10">
       <section className="mb-8 rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-brand-950 px-6 py-10 text-white sm:px-10">
         <div className="max-w-3xl">
-          <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold"><BriefcaseBusiness size={14} /> LearnEas Opportunités</span>
+          <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold"><BriefcaseBusiness size={14} /> KalanPro Opportunités</span>
           <h1 className="mt-4 text-3xl font-extrabold sm:text-4xl">Transformez vos compétences en opportunités professionnelles.</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">Emplois, stages et missions freelance sélectionnés pour les talents d'Afrique francophone. Votre portfolio, vos projets vérifiés et vos certificats renforcent votre candidature.</p>
         </div>

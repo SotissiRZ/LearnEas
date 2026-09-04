@@ -144,7 +144,7 @@ def _course_evidence(enrollment):
 def _issuer_snapshot():
     config = PlatformSettings.load()
     return {
-        "name": (config.legal_company_name or config.site_name or "LearnEas").strip(),
+        "name": (config.legal_company_name or config.site_name or "KalanPro").strip(),
         "country": (config.legal_country or "").strip(),
     }
 

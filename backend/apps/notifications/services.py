@@ -130,7 +130,7 @@ def send_delivery(delivery_id):
     config = PlatformSettings.load()
     if not (config.whatsapp_enabled and getattr(settings, "WHATSAPP_ENABLED", False)):
         delivery.status = WhatsAppDelivery.Status.SKIPPED
-        delivery.error = "WhatsApp désactivé dans la configuration LearnEas."
+        delivery.error = "WhatsApp désactivé dans la configuration KalanPro."
         delivery.save(update_fields=["status", "error"])
         return delivery
     if getattr(settings, "WHATSAPP_DRY_RUN", True):

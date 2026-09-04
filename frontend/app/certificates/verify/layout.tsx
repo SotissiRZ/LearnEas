@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Vérifier un certificat · LearnEas",
-  description: "Registre public de vérification des certificats LearnEas.",
+  title: "Vérifier un certificat · KalanPro",
+  description: "Registre public de vérification des certificats KalanPro.",
   robots: { index: false, follow: false },
 };
 

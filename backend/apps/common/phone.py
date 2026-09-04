@@ -3,7 +3,7 @@ import re
 _E164_RE = re.compile(r"^\+[1-9]\d{7,14}$")
 
 # Indicatifs proposés par le sélecteur frontend. La validation API refuse ainsi
-# un préfixe international qui ne fait pas partie du référentiel LearnEas.
+# un préfixe international qui ne fait pas partie du référentiel KalanPro.
 KNOWN_DIAL_CODES = (
     '+1', '+1242', '+1246', '+1264', '+1268', '+1345', '+1441', '+1473', '+1664', '+1670', '+1671',
     '+1684', '+1758', '+1767', '+1784', '+1787', '+1809', '+1868', '+1869', '+1876', '+20', '+211',
@@ -30,7 +30,7 @@ KNOWN_DIAL_CODES = (
 def normalize_e164_phone(value: str, *, required: bool = False) -> str:
     """Normalise un numéro international sans dépendre d'un fournisseur.
 
-    L'UI LearnEas construit désormais le préfixe depuis un sélecteur d'indicatif, mais
+    L'UI KalanPro construit désormais le préfixe depuis un sélecteur d'indicatif, mais
     l'API garde une validation stricte pour empêcher les numéros arbitraires.
     """
     value = str(value or "").strip()
@@ -42,9 +42,9 @@ def normalize_e164_phone(value: str, *, required: bool = False) -> str:
             raise ValueError("Numéro requis.")
         return ""
     if not value.startswith("+"):
-        raise ValueError("Utilisez un indicatif international sélectionné dans la liste LearnEas.")
+        raise ValueError("Utilisez un indicatif international sélectionné dans la liste KalanPro.")
     if not _E164_RE.match(value):
         raise ValueError("Numéro international invalide. Vérifiez l'indicatif et le numéro national.")
     if not any(value.startswith(prefix) for prefix in KNOWN_DIAL_CODES):
-        raise ValueError("Indicatif téléphonique non reconnu. Sélectionnez un indicatif dans la liste LearnEas.")
+        raise ValueError("Indicatif téléphonique non reconnu. Sélectionnez un indicatif dans la liste KalanPro.")
     return value

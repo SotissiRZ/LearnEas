@@ -25,7 +25,7 @@ export default function VerifyCertificatePage(){
     <div className="mx-auto mb-6 max-w-4xl text-center">
       {status==="active"?<CheckCircle2 className="mx-auto text-emerald-600" size={38}/>:status==="revoked"?<ShieldX className="mx-auto text-red-600" size={38}/>:<Clock3 className="mx-auto text-amber-600" size={38}/>}      
       <h1 className="mt-2 text-2xl font-bold">{status==="active"?"Certificat authentique et valide":status==="revoked"?"Certificat authentique mais révoqué":"Certificat authentique mais expiré"}</h1>
-      <p className="mt-2 text-sm text-gray-500">Le registre public LearnEas confirme l'identité du détenteur, le contenu suivi et les preuves figées lors de l'émission.</p>
+      <p className="mt-2 text-sm text-gray-500">Le registre public KalanPro confirme l'identité du détenteur, le contenu suivi et les preuves figées lors de l'émission.</p>
       <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-600"><ShieldCheck size={13}/> N° {cert.certificate_number}</div>
     </div>
     <CertificateCard certificate={cert} publicMode />

@@ -77,12 +77,12 @@ export default function OpportunityDetailPage() {
           {item.responsibilities.length > 0 && <section className="mt-7"><h2 className="text-lg font-bold">Missions</h2><ul className="mt-3 space-y-2">{item.responsibilities.map((x) => <li key={x} className="flex gap-2 text-sm text-gray-700"><CheckCircle2 size={16} className="mt-0.5 shrink-0 text-brand-600" /> {x}</li>)}</ul></section>}
           {item.requirements.length > 0 && <section className="mt-7"><h2 className="text-lg font-bold">Profil recherché</h2><ul className="mt-3 space-y-2">{item.requirements.map((x) => <li key={x} className="flex gap-2 text-sm text-gray-700"><CheckCircle2 size={16} className="mt-0.5 shrink-0 text-brand-600" /> {x}</li>)}</ul></section>}
           <section className="mt-7"><h2 className="text-lg font-bold">Compétences</h2><div className="mt-3 flex flex-wrap gap-2">{item.skills_required.map((x) => <span key={x} className="rounded-full bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700">{x}</span>)}{item.skills_optional.map((x) => <span key={x} className="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600">{x} · bonus</span>)}</div></section>
-          <section className="mt-8 rounded-2xl bg-gray-50 p-5"><h2 className="font-bold">À propos de {item.employer.company_name}</h2><p className="mt-2 text-sm leading-6 text-gray-600">{item.employer.description || "Entreprise vérifiée sur LearnEas."}</p>{item.employer.website_url && <a href={item.employer.website_url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-brand-700">Site de l'entreprise <ExternalLink size={13} /></a>}</section>
+          <section className="mt-8 rounded-2xl bg-gray-50 p-5"><h2 className="font-bold">À propos de {item.employer.company_name}</h2><p className="mt-2 text-sm leading-6 text-gray-600">{item.employer.description || "Entreprise vérifiée sur KalanPro."}</p>{item.employer.website_url && <a href={item.employer.website_url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-brand-700">Site de l'entreprise <ExternalLink size={13} /></a>}</section>
         </main>
 
         <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
           <div className="card p-5">
-            <div className="flex items-center gap-2 text-sm font-bold"><ShieldCheck size={17} className="text-brand-600" /> Candidature LearnEas</div>
+            <div className="flex items-center gap-2 text-sm font-bold"><ShieldCheck size={17} className="text-brand-600" /> Candidature KalanPro</div>
             <p className="mt-2 text-xs leading-5 text-gray-500">Vos compétences, projets validés et certificats peuvent être joints comme preuves vérifiables. Le recruteur n'accède pas à vos données privées avant votre candidature.</p>
             <div className="mt-4 rounded-xl bg-gray-50 p-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Rémunération</p><p className="mt-1 text-sm font-bold text-ink">{salaryLabel(item)}</p></div>
             {item.application_deadline && <p className="mt-3 text-xs font-medium text-amber-700">Clôture : {new Date(item.application_deadline).toLocaleString("fr-FR")}</p>}
@@ -90,7 +90,7 @@ export default function OpportunityDetailPage() {
               <div className="mt-4 space-y-3">
                 <textarea value={coverLetter} onChange={(e) => setCoverLetter(e.target.value)} rows={5} placeholder="Message au recruteur (optionnel)" className="input-admin w-full" />
                 <label className="block text-xs font-semibold text-gray-600">CV spécifique (PDF/DOC/DOCX, optionnel)<input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setResume(e.target.files?.[0] || null)} className="mt-1 block w-full text-xs" /></label>
-                <label className="flex items-start gap-2 text-xs text-gray-600"><input type="checkbox" checked={sharePortfolio} onChange={(e) => setSharePortfolio(e.target.checked)} className="mt-0.5" /><span>Joindre mon portfolio et mes preuves LearnEas à cette candidature.</span></label>
+                <label className="flex items-start gap-2 text-xs text-gray-600"><input type="checkbox" checked={sharePortfolio} onChange={(e) => setSharePortfolio(e.target.checked)} className="mt-0.5" /><span>Joindre mon portfolio et mes preuves KalanPro à cette candidature.</span></label>
                 <button onClick={apply} disabled={submitting || !item.is_open} className="btn-primary w-full">{submitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Envoyer ma candidature</button>
               </div>
             )}

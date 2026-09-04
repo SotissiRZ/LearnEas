@@ -1,27 +1,27 @@
-# LearnEas — Emplois, stages et missions (v48)
+# KalanPro — Emplois, stages et missions (v48)
 
 ## Objectif
 
-Fermer la boucle produit **apprendre → pratiquer → certifier → portfolio → travailler** avec un marché d'opportunités intégré à LearnEas et adapté à l'Afrique francophone.
+Fermer la boucle produit **apprendre → pratiquer → certifier → portfolio → travailler** avec un marché d'opportunités intégré à KalanPro et adapté à l'Afrique francophone.
 
 ## Côté candidat
 
 - Profil candidat privé par défaut.
 - Compétences, métiers recherchés, disponibilité, modes de travail et pays préférés.
-- Pays choisis exclusivement dans le référentiel LearnEas ; aucune saisie libre de pays. La sélection multiple est utilisable au tactile et propose une recherche dans la liste.
+- Pays choisis exclusivement dans le référentiel KalanPro ; aucune saisie libre de pays. La sélection multiple est utilisable au tactile et propose une recherche dans la liste.
 - CV privé (PDF/DOC/DOCX) servi uniquement par un endpoint authentifié.
 - Activation explicite du mode « visible par les recruteurs ».
 - Matching explicable 0–100 basé principalement sur les compétences du profil, les projets vérifiés et les certificats actifs, puis le métier recherché, l'expérience et les préférences de lieu, mode de travail et type d'opportunité.
 - Candidature interne avec lettre, CV facultatif et partage facultatif du portfolio.
-- Snapshot des preuves au moment de la candidature : compétences, certificats actifs, projets LearnEas vérifiés et copie du CV transmis. Une modification ultérieure du CV de profil ne change pas une ancienne candidature.
+- Snapshot des preuves au moment de la candidature : compétences, certificats actifs, projets KalanPro vérifiés et copie du CV transmis. Une modification ultérieure du CV de profil ne change pas une ancienne candidature.
 - Suivi : envoyée, en étude, présélection, entretien, offre, retenu, non retenu, retirée.
 
 ## Côté recruteur
 
-Un compte LearnEas peut demander un espace entreprise sans perdre son rôle apprenant/instructeur.
+Un compte KalanPro peut demander un espace entreprise sans perdre son rôle apprenant/instructeur.
 
 1. Le recruteur renseigne l'entreprise.
-2. Le pays est choisi dans la liste LearnEas.
+2. Le pays est choisi dans la liste KalanPro.
 3. L'administrateur approuve ou refuse la demande.
 4. Une entreprise approuvée peut publier des emplois, stages, missions et offres freelance.
 5. Elle peut consulter les candidatures et le vivier de talents qui ont explicitement activé leur visibilité.
@@ -40,14 +40,14 @@ Champs principaux :
 - rémunération facultative ;
 - compétences requises et bonus ;
 - date limite ;
-- candidature interne LearnEas ou lien externe ;
+- candidature interne KalanPro ou lien externe ;
 - statut brouillon / publiée / clôturée / archivée.
 
 Une rémunération masquée par le recruteur n'est pas exposée dans l'API publique.
 
 ## Administration
 
-Le back-office LearnEas ajoute l'onglet **Recrutement** :
+Le back-office KalanPro ajoute l'onglet **Recrutement** :
 
 - demandes recruteur ;
 - approbation / refus / suspension ;

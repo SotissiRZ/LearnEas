@@ -1,10 +1,10 @@
-# Certificats vérifiables LearnEas — v47
+# Certificats vérifiables KalanPro — v47
 
 ## Objectif
 
-Un certificat LearnEas n'est plus seulement une page imprimable. Il devient une **preuve publique vérifiable** reliée à un registre serveur, avec QR code, numéro unique, état actuel et snapshot immuable des éléments pédagogiques au moment de l'émission.
+Un certificat KalanPro n'est plus seulement une page imprimable. Il devient une **preuve publique vérifiable** reliée à un registre serveur, avec QR code, numéro unique, état actuel et snapshot immuable des éléments pédagogiques au moment de l'émission.
 
-> Un certificat LearnEas atteste les critères configurés sur la plateforme. Il ne devient pas automatiquement un diplôme d'État ni une qualification réglementée.
+> Un certificat KalanPro atteste les critères configurés sur la plateforme. Il ne devient pas automatiquement un diplôme d'État ni une qualification réglementée.
 
 ## Données figées lors de l'émission
 
@@ -13,7 +13,7 @@ Chaque nouveau certificat v47 enregistre notamment :
 - nom du détenteur ;
 - cours ou formation ;
 - instructeur ;
-- émetteur LearnEas / raison sociale et pays ;
+- émetteur KalanPro / raison sociale et pays ;
 - résultat ;
 - date d'achèvement ;
 - durée ;

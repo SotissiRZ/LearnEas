@@ -95,7 +95,7 @@ Le script vérifie :
 - CSP principale avec nonce/strict-dynamic ;
 - runner sans `allow-same-origin` et sans `eval` dans la page live ;
 - absence du poll signal permanent à 1 s ;
-- absence de JWT LearnEas persisté en local/session storage.
+- absence de JWT KalanPro persisté en local/session storage.
 
 E2E :
 

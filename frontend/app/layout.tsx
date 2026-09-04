@@ -7,10 +7,8 @@ import AppHydrator from "@/components/layout/AppHydrator";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "LearnEas · La formation en ligne pensée pour l'Afrique",
-  description:
-    "LearnEas est la plateforme africaine de formation en ligne : cours complets (playlists vidéo), " +
-    "formations interactives en direct et ressources PDF, avec paiement par Mobile Money, carte ou PayPal.",
+  title: "KalanPro · Apprendre, progresser, travailler",
+  description: "KalanPro réunit formations, mentorat, projets, certificats et opportunités professionnelles pour l'Afrique francophone.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -19,7 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="flex min-h-screen flex-col font-sans">
         <AppHydrator />
         <Navbar />
-        <div className="h-16 shrink-0" aria-hidden="true" />
+        <div className="h-[72px] shrink-0" aria-hidden="true" />
         <main className="flex-1">{children}</main>
         <Footer />
       </body>

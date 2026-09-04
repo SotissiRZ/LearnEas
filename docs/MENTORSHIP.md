@@ -1,4 +1,4 @@
-# Cohortes et mentorat 1:1 — LearnEas v45
+# Cohortes et mentorat 1:1 — KalanPro v45
 
 ## Cohortes live
 
@@ -8,7 +8,7 @@ Les formations live classiques sont désormais présentées comme des **cohortes
 - un fuseau horaire IANA (ex. `Africa/Abidjan`) ;
 - un nombre minimum et maximum de participants ;
 - une date/heure de clôture des inscriptions ;
-- un planning de séances LearnEas ;
+- un planning de séances KalanPro ;
 - un export calendrier `.ics`.
 
 Les nouvelles inscriptions sont bloquées lorsque la cohorte est complète, lorsque la date limite est passée ou dès que la cohorte a effectivement démarré. Le checkout conserve le verrouillage transactionnel des dernières places.
@@ -26,7 +26,7 @@ Un instructeur peut créer une offre de mentorat avec :
 - publication/brouillon ;
 - créneaux de disponibilité.
 
-Chaque créneau génère une séance live LearnEas privée. Le conteneur technique n'est jamais publié dans le catalogue des cohortes et les certificats y sont désactivés. Un apprenant confirmé reçoit une invitation uniquement pour la séance réservée.
+Chaque créneau génère une séance live KalanPro privée. Le conteneur technique n'est jamais publié dans le catalogue des cohortes et les certificats y sont désactivés. Un apprenant confirmé reçoit une invitation uniquement pour la séance réservée.
 
 ## Cycle d'une réservation
 
@@ -37,7 +37,7 @@ réservation
       ↓
 pending_payment (si payant)
       ↓
-checkout LearnEas / Mobile Money / carte
+checkout KalanPro / Mobile Money / carte
       ↓
 confirmed
       ↓

@@ -672,14 +672,14 @@ class AdminEmailTestView(APIView):
             return Response({"email": ["Adresse email invalide."]}, status=400)
         try:
             sent = send_mail(
-                subject="Test email LearnEas",
-                message="Votre configuration email LearnEas fonctionne correctement.",
+                subject="Test email KalanPro",
+                message="Votre configuration email KalanPro fonctionne correctement.",
                 from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[recipient],
                 fail_silently=False,
             )
         except Exception:
-            logger.exception("Échec du diagnostic email LearnEas")
+            logger.exception("Échec du diagnostic email KalanPro")
             return Response({"ok": False, "detail": "Échec du test email. Consultez les journaux serveur pour le détail technique."}, status=400)
         return Response({"ok": bool(sent), "detail": f"Email de test envoyé à {recipient}."})
 

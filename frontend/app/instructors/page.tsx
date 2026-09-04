@@ -48,7 +48,7 @@ export default async function InstructorsPage() {
         </span>
         <h1 className="text-3xl font-extrabold text-ink sm:text-4xl">Nos instructeurs</h1>
         <p className="max-w-3xl text-sm text-gray-500 sm:text-base">
-          Découvrez les formateurs LearnEas, leurs expertises et les cours qu&apos;ils animent.
+          Découvrez les formateurs KalanPro, leurs expertises et les cours qu&apos;ils animent.
           Chaque carte met en avant le domaine, l&apos;expérience et l&apos;activité pédagogique.
         </p>
       </div>
@@ -87,7 +87,7 @@ export default async function InstructorsPage() {
                     <p className="line-clamp-2 text-sm leading-6 text-gray-600">
                       {instructor.bio?.trim()
                         ? instructor.bio
-                        : `${instructor.headline || "Expert LearnEas"} spécialisé(e) en ${instructor.domain.toLowerCase()}.`}
+                        : `${instructor.headline || "Expert KalanPro"} spécialisé(e) en ${instructor.domain.toLowerCase()}.`}
                     </p>
                   </div>
 

@@ -38,7 +38,7 @@ class PrivateMediaView(APIView):
             return Response({"detail": "Chemin média invalide."}, status=403)
 
         def allow_embedding(response):
-            # Un média signé peut être affiché dans le lecteur LearnEas, sans rendre
+            # Un média signé peut être affiché dans le lecteur KalanPro, sans rendre
             # l'ensemble du site intégrable dans une iframe. Les origines autorisées
             # sont limitées aux frontends explicitement configurés.
             origins = {"'self'"}
@@ -58,14 +58,14 @@ class PrivateMediaView(APIView):
         content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
         is_video = content_type.startswith("video/")
 
-        # Les vidéos LearnEas sont destinées au lecteur intégré. Une navigation directe
+        # Les vidéos KalanPro sont destinées au lecteur intégré. Une navigation directe
         # (nouvel onglet / iframe de téléchargement) est refusée lorsque le navigateur
         # l'identifie explicitement comme un document. Cela ne remplace pas un DRM, mais
         # élimine les voies de téléchargement proposées par l'interface et les navigations
         # directes les plus courantes tout en laissant fonctionner les requêtes <video>.
         fetch_dest = (request.headers.get("Sec-Fetch-Dest") or "").lower()
         if is_video and fetch_dest in {"document", "iframe", "object", "embed"}:
-            return Response({"detail": "Cette vidéo doit être lue depuis le lecteur LearnEas."}, status=403)
+            return Response({"detail": "Cette vidéo doit être lue depuis le lecteur KalanPro."}, status=403)
 
         if getattr(settings, "USE_S3", False):
             if not default_storage.exists(name):

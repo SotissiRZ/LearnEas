@@ -128,7 +128,7 @@ class Opportunity(models.Model):
         PROJECT = "project", "Forfait mission"
 
     class ApplyMode(models.TextChoices):
-        INTERNAL = "internal", "Candidature LearnEas"
+        INTERNAL = "internal", "Candidature KalanPro"
         EXTERNAL = "external", "Lien externe"
 
     class Status(models.TextChoices):

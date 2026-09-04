@@ -1,8 +1,8 @@
-# Projets pratiques et portfolio — LearnEas v46
+# Projets pratiques et portfolio — KalanPro v46
 
 ## Objectif
 
-La couche `apps.projects` transforme une formation LearnEas en preuve de compétence : l'instructeur publie un projet, l'apprenant remet un travail, l'instructeur corrige, puis un travail validé peut être publié dans un portfolio professionnel.
+La couche `apps.projects` transforme une formation KalanPro en preuve de compétence : l'instructeur publie un projet, l'apprenant remet un travail, l'instructeur corrige, puis un travail validé peut être publié dans un portfolio professionnel.
 
 Le flux cible est : **apprendre → pratiquer → faire corriger → prouver → partager**.
 
@@ -72,9 +72,9 @@ Chaque apprenant dispose d'un profil portfolio avec :
 
 L'apprenant peut ajouter deux types de réalisations :
 
-### Projet LearnEas vérifié
+### Projet KalanPro vérifié
 
-Un projet approuvé peut être publié avec un badge de vérification LearnEas. Les preuves suivantes sont copiées dans un snapshot serveur immuable :
+Un projet approuvé peut être publié avec un badge de vérification KalanPro. Les preuves suivantes sont copiées dans un snapshot serveur immuable :
 
 - cours ;
 - projet ;
@@ -87,7 +87,7 @@ L'apprenant peut modifier la présentation publique (titre, description, couvert
 
 ### Projet externe
 
-L'apprenant peut également ajouter manuellement une réalisation externe avec description, couverture, URL, dépôt et compétences. Ces éléments ne reçoivent pas le badge vérifié LearnEas.
+L'apprenant peut également ajouter manuellement une réalisation externe avec description, couverture, URL, dépôt et compétences. Ces éléments ne reçoivent pas le badge vérifié KalanPro.
 
 ## Confidentialité
 
@@ -95,7 +95,7 @@ Le portfolio est privé par défaut. Seuls les éléments explicitement publics 
 
 La réponse publique ne contient ni email ni téléphone. Le pays n'est affiché que si l'utilisateur l'autorise.
 
-Les fichiers de remise et leurs révisions restent privés : Nginx bloque leur accès direct et LearnEas utilise le mécanisme de média protégé/signé existant. Les images de couverture destinées à une publication portfolio peuvent, elles, être servies comme médias de présentation.
+Les fichiers de remise et leurs révisions restent privés : Nginx bloque leur accès direct et KalanPro utilise le mécanisme de média protégé/signé existant. Les images de couverture destinées à une publication portfolio peuvent, elles, être servies comme médias de présentation.
 
 ## API principale
 

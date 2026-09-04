@@ -1,4 +1,4 @@
-# --- LearnEas frontend (Next.js, build multi-étapes) ---
+# --- KalanPro frontend (Next.js, build multi-étapes) ---
 
 # 1) Installation des dépendances
 FROM node:20-slim AS deps

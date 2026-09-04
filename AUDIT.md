@@ -10,7 +10,7 @@
 - Candidature unique protégée par contrainte SQL + transaction ; une entreprise ne peut pas candidater à sa propre annonce.
 - Snapshot des compétences, certificats actifs et projets vérifiés au moment de la candidature.
 - Rémunération masquée supprimée de la représentation API publique.
-- Pays validés par le référentiel LearnEas ; sélection multi-pays tactile côté candidat.
+- Pays validés par le référentiel KalanPro ; sélection multi-pays tactile côté candidat.
 - Les candidatures retirées ne peuvent pas être réactivées par le recruteur.
 - Limite actuelle : les tests Django runtime doivent être exécutés dans Docker, Django n'étant pas installé dans l'environnement de génération.
 
@@ -30,7 +30,7 @@
 
 ---
 
-# Audit technique LearnEas — v45
+# Audit technique KalanPro — v45
 
 Date : 2026-09-04
 
@@ -44,14 +44,14 @@ La v45 ajoute les cohortes, le mentorat 1:1 et les référentiels pays/télépho
 - parsing YAML de `docker-compose.yml` et JSON de la configuration frontend ;
 - référentiel frontend : 233 pays/territoires, 29 marchés prioritaires, tous avec indicatif ;
 - référentiel backend : 233 pays et validation des alias historiques (RDC, Côte d’Ivoire, etc.) ;
-- validation E.164 côté serveur et rejet des indicatifs absents du référentiel LearnEas ;
+- validation E.164 côté serveur et rejet des indicatifs absents du référentiel KalanPro ;
 - contrôle statique des préfixes de migrations : aucun numéro dupliqué.
 
 Les tests Django et le build Next.js complets ne sont pas annoncés comme exécutés dans l’environnement de génération : Django et les dépendances `node_modules` n’y sont pas installés. Ils doivent être rejoués dans Docker/CI après extraction.
 
 ---
 
-# Audit technique LearnEas — v28
+# Audit technique KalanPro — v28
 
 Date : 2026-08-31
 

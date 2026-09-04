@@ -1,4 +1,4 @@
-# LearnEas
+# KalanPro
 
 > **v47 — Certificats vérifiables :** QR code public, recherche par numéro/UUID, preuves pédagogiques figées, historique de révocation/réémission et empreinte SHA-256.
 
@@ -49,13 +49,13 @@ Les utilisateurs de test sont créés par la commande Django `seed_demo`.
 
 | Rôle | Nom | Username | Email | Mot de passe |
 |---|---|---|---|---|
-| Administrateur | Admin LearnEas | `admin` | `admin@learneas.com` | `admin1234` |
-| Instructeur | Sarah Benali | `sarah_dev` | `sarah@learneas.com` | `instructor1234` |
-| Instructeur | Koffi Adjei | `koffi_data` | `koffi@learneas.com` | `instructor1234` |
-| Instructeur | Amina Diop | `amina_design` | `amina@learneas.com` | `instructor1234` |
-| Étudiant | Fatou Ndiaye | `student_fatou` | `fatou@learneas.com` | `student1234` |
-| Étudiant | Jean Mbeki | `student_jean` | `jean@learneas.com` | `student1234` |
-| Étudiant | Aïcha Traoré | `student_aicha` | `aicha@learneas.com` | `student1234` |
+| Administrateur | Admin KalanPro | `admin` | `admin@kalanpro.com` | `admin1234` |
+| Instructeur | Sarah Benali | `sarah_dev` | `sarah@kalanpro.com` | `instructor1234` |
+| Instructeur | Koffi Adjei | `koffi_data` | `koffi@kalanpro.com` | `instructor1234` |
+| Instructeur | Amina Diop | `amina_design` | `amina@kalanpro.com` | `instructor1234` |
+| Étudiant | Fatou Ndiaye | `student_fatou` | `fatou@kalanpro.com` | `student1234` |
+| Étudiant | Jean Mbeki | `student_jean` | `jean@kalanpro.com` | `student1234` |
+| Étudiant | Aïcha Traoré | `student_aicha` | `aicha@kalanpro.com` | `student1234` |
 
 ### Créer / recréer les données de démonstration
 
@@ -112,7 +112,7 @@ Admin Django : **http://localhost/admin**
 ### Cohortes & mentorat 1:1 (v45)
 
 - Les formations synchrones sont structurées en **cohortes** : nom de promotion, places min/max, clôture des inscriptions, fuseau horaire et planning exportable en `.ics`.
-- Les instructeurs peuvent publier des **offres de mentorat individuel**, ouvrir des créneaux, fixer durée/prix/délais et recevoir des réservations dans une salle vidéo LearnEas privée.
+- Les instructeurs peuvent publier des **offres de mentorat individuel**, ouvrir des créneaux, fixer durée/prix/délais et recevoir des réservations dans une salle vidéo KalanPro privée.
 - Les séances payantes passent par le checkout existant et alimentent automatiquement les revenus/commissions instructeur ; Mobile Money et devises locales restent compatibles.
 - L'apprenant dispose de **Mes rendez-vous de mentorat** et le mentor d'un espace de gestion dédié.
 - Les rappels WhatsApp peuvent prévenir les deux parties avant le rendez-vous.
@@ -142,7 +142,7 @@ Admin Django : **http://localhost/admin**
 
 ### Mobile Money Afrique francophone (v42)
 
-LearnEas intègre désormais CinetPay comme premier connecteur Mobile Money de production. La comptabilité interne reste en EUR, tandis que XOF/XAF servent à l’affichage et au paiement local.
+KalanPro intègre désormais CinetPay comme premier connecteur Mobile Money de production. La comptabilité interne reste en EUR, tandis que XOF/XAF servent à l’affichage et au paiement local.
 
 Variables serveur :
 
@@ -165,7 +165,7 @@ Après avoir renseigné les clés : **Administration → Paramètres → Paiemen
 
 En local, le guichet CinetPay peut être initialisé, mais le webhook ne pourra pas atteindre `localhost`. Pour tester le cycle complet, utilisez un tunnel HTTPS public vers Nginx/Django ou déployez temporairement le backend sur Railway puis définissez `BACKEND_PUBLIC_URL`.
 
-La délivrance du contenu ne dépend jamais du simple retour navigateur : LearnEas vérifie le webhook HMAC et relit le statut directement auprès de CinetPay avant de marquer la commande comme payée.
+La délivrance du contenu ne dépend jamais du simple retour navigateur : KalanPro vérifie le webhook HMAC et relit le statut directement auprès de CinetPay avant de marquer la commande comme payée.
 
 ### Apprentissage
 - Espace d'apprentissage dédié (`/learn/[slug]`) : lecteur vidéo, sidebar curriculum, suivi de
@@ -175,7 +175,7 @@ La délivrance du contenu ne dépend jamais du simple retour navigateur : LearnE
 
 ### Salle live / visioconférence
 - Salle WebRTC interne avec caméra et microphone, présence réelle et suivi du temps de connexion.
-- Lorsqu’un participant coupe sa caméra, LearnEas **arrête réellement la piste vidéo** (`MediaStreamTrack.stop()`), libère le périphérique et détache la piste WebRTC. Le prochain allumage recrée une nouvelle capture ; la modération organisateur applique la même règle.
+- Lorsqu’un participant coupe sa caméra, KalanPro **arrête réellement la piste vidéo** (`MediaStreamTrack.stop()`), libère le périphérique et détache la piste WebRTC. Le prochain allumage recrée une nouvelle capture ; la modération organisateur applique la même règle.
 - Partage d'écran natif navigateur, chat de séance, levée de main et panneau des participants.
 - Choix du microphone et de la caméra pendant la séance, ainsi que mode plein écran.
 - Pour l'organisateur : commandes de modération (couper micro/caméra, retirer un participant).
@@ -184,7 +184,7 @@ La délivrance du contenu ne dépend jamais du simple retour navigateur : LearnE
 - Enregistrement local côté organisateur de la grille vidéo et du mix audio disponibles au moment de l'enregistrement ; le fichier WebM est téléchargé sur le poste de l'organisateur et n'est pas stocké automatiquement sur le serveur.
 - **Mini-IDE collaboratif multi-fichiers** : création/renommage/suppression de fichiers, projets libres/POO et modèles React, Next.js, Django, Django REST Framework, FastAPI, Flask et Node/Express.
 - Coloration syntaxique et thèmes d’éditeur ; console redimensionnable. JavaScript et Python s’exécutent dans un runner dédié chargé dans une iframe `sandbox="allow-scripts"` à origine opaque, puis dans des Web Workers limités en temps ; les aperçus HTML/CSS sont séparés et n’autorisent aucun script.
-- Les projets framework côté serveur (Django/DRF/FastAPI/Flask/Express/Next.js) sont éditables et collaboratifs, mais ne sont **pas exécutés sur le serveur LearnEas** : aucun moteur d’exécution de code arbitraire multi-tenant n’est activé par défaut.
+- Les projets framework côté serveur (Django/DRF/FastAPI/Flask/Express/Next.js) sont éditables et collaboratifs, mais ne sont **pas exécutés sur le serveur KalanPro** : aucun moteur d’exécution de code arbitraire multi-tenant n’est activé par défaut.
 - Tableau blanc collaboratif avec dessin souris/tactile, couleurs, épaisseur, annulation et effacement synchronisés.
 - La signalisation entrante et les événements de présence/fichiers utilisent **WebSocket / Django Channels / Redis** ; un fallback HTTP à 3 s reste disponible si le canal realtime tombe. Le heartbeat HTTP est limité à 15 s.
 - Pour une production fiable derrière des NAT/réseaux mobiles, un **TURN** reste nécessaire. Les credentials TURN peuvent être générés temporairement côté backend avec `RTC_TURN_SECRET`; aucun secret TURN n’est compilé dans le frontend. Pour des classes nombreuses, prévoir une architecture **SFU** plutôt qu'un maillage WebRTC pair-à-pair.
@@ -239,7 +239,7 @@ Une demande instructeur reste au statut **En attente** tant qu’un administrate
 
 Les certificats v47 possèdent un QR code de vérification, un numéro unique recherchable, un état public (valide/révoqué/expiré), un snapshot des compétences et projets validés, une empreinte SHA-256 et un historique de réémission qui conserve les anciennes versions. Voir `docs/CERTIFICATES_VERIFIABLES.md`.
 
-LearnEas permet désormais à un instructeur d’ajouter des projets évalués aux cours. Un projet peut être requis pour l’obtention du certificat, conserver l’historique des remises et être corrigé avec note et feedback. Une réalisation approuvée peut ensuite être publiée dans un portfolio public avec un badge de vérification LearnEas ; les preuves de validation sont figées côté serveur et ne peuvent pas être altérées par l’apprenant. Les réalisations externes peuvent aussi être ajoutées, sans badge vérifié.
+KalanPro permet désormais à un instructeur d’ajouter des projets évalués aux cours. Un projet peut être requis pour l’obtention du certificat, conserver l’historique des remises et être corrigé avec note et feedback. Une réalisation approuvée peut ensuite être publiée dans un portfolio public avec un badge de vérification KalanPro ; les preuves de validation sont figées côté serveur et ne peuvent pas être altérées par l’apprenant. Les réalisations externes peuvent aussi être ajoutées, sans badge vérifié.
 
 La page publique du portfolio n’expose ni email ni téléphone, et les fichiers de remise restent privés. Voir `docs/PROJECTS_PORTFOLIO.md`.
 
@@ -366,7 +366,7 @@ et exécution backend/Celery sous utilisateur non privilégié après bootstrap.
 Avant exposition Internet, configurez obligatoirement :
 
 1. `SECRET_KEY` aléatoire long, `DEBUG=False`, `ALLOWED_HOSTS` et HTTPS réel (`USE_HTTPS=True`).
-2. Les clés **live et test séparées** des prestataires activés. Pour Stripe, configurez `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` et `STRIPE_TEST_SECRET_KEY` / `STRIPE_TEST_WEBHOOK_SECRET` selon les environnements. Pour YouCan Pay, le token utilisé par LearnEas doit autoriser la création et la consultation des factures ; renseignez un token sandbox séparé si votre compte en fournit un. Pour GeniusPay, renseignez les couples clé/secret et secrets webhook distincts sandbox/live.
+2. Les clés **live et test séparées** des prestataires activés. Pour Stripe, configurez `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` et `STRIPE_TEST_SECRET_KEY` / `STRIPE_TEST_WEBHOOK_SECRET` selon les environnements. Pour YouCan Pay, le token utilisé par KalanPro doit autoriser la création et la consultation des factures ; renseignez un token sandbox séparé si votre compte en fournit un. Pour GeniusPay, renseignez les couples clé/secret et secrets webhook distincts sandbox/live.
 3. Les URLs webhook HTTPS : `/api/payments/stripe/webhook/` et `/api/payments/geniuspay/webhook/`. YouCan Pay est réconcilié côté serveur en relisant l’état de la facture lors du retour/vérification.
 4. Un SMTP réel pour les emails transactionnels puis utilisez **Admin → Paramètres → Test email**.
 5. Un serveur TURN pour fiabiliser les classes WebRTC sur réseaux mobiles/NAT restrictifs. Préférez `RTC_TURN_SECRET` avec des credentials temporaires ; n’exposez jamais le secret dans `NEXT_PUBLIC_*`. Configurez aussi `REALTIME_ALLOWED_ORIGINS` et `NEXT_PUBLIC_WS_URL=wss://<backend-railway>/ws` lorsque frontend et backend sont sur des domaines distincts.
@@ -410,11 +410,11 @@ restent des **release gates obligatoires** de la CI/Docker avant déploiement.
 - Stockage objet/CDN pour les médias volumineux et supervision de la qualité des séances WebRTC.
 - Système d'abonnement "Premium" (accès illimité à un catalogue) en complément de l'achat à l'unité.
 
-Bon lancement avec **LearnEas** 🚀
+Bon lancement avec **KalanPro** 🚀
 
 ### Authentification API et CSRF
 
-L’API LearnEas (`/api/...`) utilise JWT (`Authorization: Bearer ...`) et **pas** les sessions Django. Cette séparation évite qu’un cookie de session créé par `/admin/` impose à tort un jeton CSRF aux endpoints publics comme `/api/auth/login/` ou `/api/auth/register/`. Le Django Admin continue, lui, à utiliser les sessions et la protection CSRF standard de Django.
+L’API KalanPro (`/api/...`) utilise JWT (`Authorization: Bearer ...`) et **pas** les sessions Django. Cette séparation évite qu’un cookie de session créé par `/admin/` impose à tort un jeton CSRF aux endpoints publics comme `/api/auth/login/` ou `/api/auth/register/`. Le Django Admin continue, lui, à utiliser les sessions et la protection CSRF standard de Django.
 
 
 ## Exécution de code dans les séances live
@@ -423,7 +423,7 @@ La salle live charge un runner distinct sous `/code-runner/` dans une iframe `sa
 
 ### Paiement test local
 
-En développement, `TEST_PAYMENTS_ENABLED=True` expose dans le checkout un moyen **Paiement test LearnEas**. Il simule un paiement réussi sans contacter Stripe, YouCan Pay ou GeniusPay et accorde les accès comme après une transaction confirmée.
+En développement, `TEST_PAYMENTS_ENABLED=True` expose dans le checkout un moyen **Paiement test KalanPro**. Il simule un paiement réussi sans contacter Stripe, YouCan Pay ou GeniusPay et accorde les accès comme après une transaction confirmée.
 
 En production, imposez :
 
@@ -437,7 +437,7 @@ Le mode test interne ne doit jamais être activé sur un environnement public.
 
 ## Compatibilité vidéo
 
-LearnEas ne se fie plus uniquement à l'extension du fichier. Lors d'un upload MP4/WebM/MOV/M4V, le backend inspecte les pistes avec `ffprobe`. Un MP4 déjà encodé en **H.264/AAC yuv420p** est conservé sans réencodage ; un fichier utilisant HEVC/H.265, H.264 10-bit ou un autre codec moins compatible est automatiquement normalisé par `ffmpeg` vers **MP4 H.264/AAC + faststart**. Les médias privés conservent le support HTTP Range. Les URLs HTTPS directes ainsi que YouTube/Vimeo restent prises en charge.
+KalanPro ne se fie plus uniquement à l'extension du fichier. Lors d'un upload MP4/WebM/MOV/M4V, le backend inspecte les pistes avec `ffprobe`. Un MP4 déjà encodé en **H.264/AAC yuv420p** est conservé sans réencodage ; un fichier utilisant HEVC/H.265, H.264 10-bit ou un autre codec moins compatible est automatiquement normalisé par `ffmpeg` vers **MP4 H.264/AAC + faststart**. Les médias privés conservent le support HTTP Range. Les URLs HTTPS directes ainsi que YouTube/Vimeo restent prises en charge.
 
 Pour réparer les vidéos uploadées avant cette version :
 
@@ -453,7 +453,7 @@ L'administrateur et l'instructeur propriétaire disposent aussi d'un bouton **R�
 
 ### Streaming adaptatif / faible connexion (v43)
 
-Après l'upload d'un fichier vidéo, LearnEas prépare automatiquement en arrière-plan un paquet HLS privé. Selon la résolution d'origine, le worker produit jusqu'à **240p, 360p, 480p et 720p** ainsi qu'une playlist **audio seule ~48 kb/s**. Le fichier MP4 normalisé reste conservé comme fallback.
+Après l'upload d'un fichier vidéo, KalanPro prépare automatiquement en arrière-plan un paquet HLS privé. Selon la résolution d'origine, le worker produit jusqu'à **240p, 360p, 480p et 720p** ainsi qu'une playlist **audio seule ~48 kb/s**. Le fichier MP4 normalisé reste conservé comme fallback.
 
 Le lecteur propose :
 
@@ -476,9 +476,9 @@ docker compose exec backend python manage.py prepare_course_streaming --force
 ```
 
 Les manifests et segments sont privés : le frontend ne reçoit que des URL signées expirantes. En Docker local les segments passent par nginx/X-Accel-Redirect ; en production avec `USE_S3=True`, ils utilisent le stockage objet présigné.
-Si le frontend est sur **Vercel** et les segments sur un domaine S3/R2 distinct, définissez aussi `NEXT_PUBLIC_MEDIA_ORIGIN=https://votre-cdn.example.com` au build frontend et autorisez les requêtes `GET`/`HEAD` depuis le domaine LearnEas dans la politique CORS du bucket. Cela permet à hls.js de charger les segments sans élargir inutilement la CSP à tous les domaines.
+Si le frontend est sur **Vercel** et les segments sur un domaine S3/R2 distinct, définissez aussi `NEXT_PUBLIC_MEDIA_ORIGIN=https://votre-cdn.example.com` au build frontend et autorisez les requêtes `GET`/`HEAD` depuis le domaine KalanPro dans la politique CORS du bucket. Cela permet à hls.js de charger les segments sans élargir inutilement la CSP à tous les domaines.
 
-Pour les **uploads vidéo volumineux**, LearnEas utilise aussi un multipart upload direct navigateur → S3/R2 lorsque `DIRECT_MEDIA_UPLOADS_ENABLED=True`. Le bucket doit autoriser `PUT` depuis l'origine Vercel/LearnEas et exposer l'en-tête `ETag` (`ExposeHeaders: ["ETag"]`) afin que le navigateur puisse finaliser chaque multipart upload. Les URL de blocs sont courtes et signées côté backend ; les credentials S3 ne sont jamais envoyés au navigateur.
+Pour les **uploads vidéo volumineux**, KalanPro utilise aussi un multipart upload direct navigateur → S3/R2 lorsque `DIRECT_MEDIA_UPLOADS_ENABLED=True`. Le bucket doit autoriser `PUT` depuis l'origine Vercel/KalanPro et exposer l'en-tête `ETag` (`ExposeHeaders: ["ETag"]`) afin que le navigateur puisse finaliser chaque multipart upload. Les URL de blocs sont courtes et signées côté backend ; les credentials S3 ne sont jamais envoyés au navigateur.
 
 Variables disponibles :
 
@@ -493,8 +493,8 @@ HLS_AUDIO_ONLY_BITRATE=48k
 
 ## WhatsApp transactionnel (v44)
 
-LearnEas peut envoyer des confirmations de paiement, rappels de live, relances de cours inactifs et notifications de certificat via Meta WhatsApp Cloud API. Le canal est **opt-in**, les secrets restent côté backend, et un mode simulation permet les tests locaux sans envoi réel. Voir `docs/WHATSAPP.md` pour les templates, variables d'environnement, webhook et configuration Railway/Celery Beat.
+KalanPro peut envoyer des confirmations de paiement, rappels de live, relances de cours inactifs et notifications de certificat via Meta WhatsApp Cloud API. Le canal est **opt-in**, les secrets restent côté backend, et un mode simulation permet les tests locaux sans envoi réel. Voir `docs/WHATSAPP.md` pour les templates, variables d'environnement, webhook et configuration Railway/Celery Beat.
 ## Emplois, stages & missions (v48)
 
-LearnEas ferme désormais la boucle **apprendre → pratiquer → certifier → portfolio → travailler**. Le module Opportunités comprend une marketplace publique, des profils candidats, un matching par compétences, les candidatures internes, un espace recruteur approuvé par l'administration et un vivier de talents opt-in. Les pays utilisent le référentiel LearnEas (pas de saisie libre) et les CV restent privés. Voir `docs/EMPLOI_MISSIONS.md`.
+KalanPro ferme désormais la boucle **apprendre → pratiquer → certifier → portfolio → travailler**. Le module Opportunités comprend une marketplace publique, des profils candidats, un matching par compétences, les candidatures internes, un espace recruteur approuvé par l'administration et un vivier de talents opt-in. Les pays utilisent le référentiel KalanPro (pas de saisie libre) et les CV restent privés. Voir `docs/EMPLOI_MISSIONS.md`.
 

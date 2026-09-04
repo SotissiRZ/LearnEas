@@ -21,7 +21,7 @@ def prepare_lesson_streaming(self, lesson_id: int, force: bool = False):
     if not lesson.video_file:
         Lesson.objects.filter(pk=lesson_id).update(
             streaming_status=StreamingStatus.FAILED,
-            streaming_error="Le HLS nécessite un fichier vidéo uploadé sur LearnEas.",
+            streaming_error="Le HLS nécessite un fichier vidéo uploadé sur KalanPro.",
             streaming_updated_at=timezone.now(),
         )
         return {"lesson_id": lesson_id, "status": "no_file", "detail": "Aucun fichier vidéo local."}

@@ -27,7 +27,7 @@ def ensure_room_formation(offering: MentorshipOffering) -> InteractiveFormation:
     room = InteractiveFormation.objects.create(
         instructor=offering.instructor,
         title=f"Mentorat privé · {offering.title}",
-        description="Conteneur technique LearnEas pour les rendez-vous de mentorat 1:1.",
+        description="Conteneur technique KalanPro pour les rendez-vous de mentorat 1:1.",
         kind=FormationKind.MENTORSHIP,
         level="beginner",
         language=offering.language,

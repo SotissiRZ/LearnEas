@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "== LearnEas backend entrypoint =="
+echo "== KalanPro backend entrypoint =="
 
 if [ "${SKIP_BOOTSTRAP:-false}" != "true" ]; then
 # --- Attente de la base de données (Postgres) ---

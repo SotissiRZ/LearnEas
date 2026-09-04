@@ -12,7 +12,7 @@ export default function InstructorShell({ children }: { children: ReactNode }) {
   if (!hydrated || !user || !["instructor", "admin"].includes(user.role)) return <>{children}</>;
 
   return (
-    <div className="lg:fixed lg:inset-x-0 lg:bottom-0 lg:top-16 lg:z-30 lg:overflow-hidden lg:bg-white">
+    <div className="lg:fixed lg:inset-x-0 lg:bottom-0 lg:top-[72px] lg:z-30 lg:overflow-hidden lg:bg-slate-50">
       <div className="container-app py-4 lg:h-full lg:max-w-none lg:px-0 lg:py-0">
         <div className="grid gap-4 lg:relative lg:block lg:h-full lg:min-h-0">
           <InstructorSidebar />

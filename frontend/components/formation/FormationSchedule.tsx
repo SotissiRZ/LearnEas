@@ -18,7 +18,7 @@ export default function FormationSchedule({ initialFormation }: { initialFormati
           <span className="ml-auto">
             {s.can_join ? (
               <a href={`/live/session/${s.id}`} className="flex items-center gap-1 font-semibold text-brand-700">
-                <Video size={14} /> Rejoindre sur LearnEas
+                <Video size={14} /> Rejoindre sur KalanPro
               </a>
             ) : (
               <span className="flex items-center gap-1 text-gray-400"><Lock size={14} /> {formation.is_enrolled ? "En attente du démarrage" : "Réservé aux inscrits"}</span>

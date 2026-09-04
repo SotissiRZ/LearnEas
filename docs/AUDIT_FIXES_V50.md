@@ -1,4 +1,4 @@
-# LearnEas v50 — Correctifs P1 sécurité, performance et exploitation
+# KalanPro v50 — Correctifs P1 sécurité, performance et exploitation
 
 ## Authentification
 

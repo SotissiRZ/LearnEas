@@ -393,19 +393,19 @@ export default function LearnClient({ course }: { course: Course }) {
   return (
     <div ref={mainRef} className="min-h-screen bg-[#f5f7f9] text-gray-950">
       {/* Workspace header, volontairement neutre : ergonomie type plateforme de formation sans copier le branding LinkedIn. */}
-      <div className="sticky top-16 z-40 border-b border-white/10 bg-[#0b1728] text-white shadow-sm">
+      <div className="sticky top-[72px] z-40 border-b border-white/10 bg-[#0b1728] text-white shadow-sm">
         <div className="flex h-14 items-center gap-2 px-3 sm:px-5">
           <Link href={`/courses/${course.slug}`} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white/80 hover:bg-white/10 hover:text-white" aria-label="Retour au cours">
             <ChevronLeft size={21} />
           </Link>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-medium text-white/55">{course.title}</p>
+            <p className="truncate text-xs font-medium text-white/60">{course.title}</p>
             <p className="truncate text-sm font-semibold">{activeLesson?.title || "Lecture du cours"}</p>
           </div>
           {enrollment && (
             <div className="hidden min-w-36 sm:block">
               <div className="mb-1 flex justify-between text-[10px] text-white/50"><span>Progression</span><span>{enrollment.progress_percent}%</span></div>
-              <div className="h-1 overflow-hidden rounded-full bg-white/15"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${enrollment.progress_percent}%` }} /></div>
+              <div className="h-1 overflow-hidden rounded-full bg-white/20"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${enrollment.progress_percent}%` }} /></div>
             </div>
           )}
           <button
@@ -458,7 +458,7 @@ export default function LearnClient({ course }: { course: Course }) {
                     onRepair={canRepairActiveVideo ? repairActiveVideo : undefined}
                   />
                 ) : (
-                  <div className="grid h-full place-items-center text-center text-white/45">
+                  <div className="grid h-full place-items-center text-center text-white/40">
                     <div><PlayCircle size={54} className="mx-auto" /><p className="mt-3 text-sm">Aucune vidéo pour cette leçon.</p></div>
                   </div>
                 )}
@@ -600,7 +600,7 @@ export default function LearnClient({ course }: { course: Course }) {
 
       {mobileSidebarOpen && (
         <div className="fixed inset-0 z-[80] lg:hidden">
-          <button className="absolute inset-0 bg-black/55" onClick={() => setMobileSidebarOpen(false)} aria-label="Fermer le sommaire" />
+          <button className="absolute inset-0 bg-black/60" onClick={() => setMobileSidebarOpen(false)} aria-label="Fermer le sommaire" />
           <aside className="absolute inset-y-0 left-0 flex w-[88vw] max-w-sm flex-col bg-white shadow-2xl">
             <div className="flex h-14 items-center justify-between border-b border-gray-200 px-4">
               <p className="font-bold">Contenu du cours</p>

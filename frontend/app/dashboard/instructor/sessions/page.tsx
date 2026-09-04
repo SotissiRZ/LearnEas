@@ -96,7 +96,7 @@ export default function InstructorSessionsPage() {
     <div className="min-w-0">
       <div className="mb-5">
         <h1 className="text-xl font-bold">Séances live</h1>
-        <p className="mt-1 text-sm text-gray-500">Démarrez vos salles LearnEas et consultez des durées de présence réellement observées.</p>
+        <p className="mt-1 text-sm text-gray-500">Démarrez vos salles KalanPro et consultez des durées de présence réellement observées.</p>
       </div>
 
       {error && <div className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</div>}
@@ -128,7 +128,7 @@ export default function InstructorSessionsPage() {
       </div>
 
       {report && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" onClick={() => setReport(null)}>
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => setReport(null)}>
           <div className="card max-h-[82vh] w-full max-w-3xl overflow-hidden" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-start justify-between border-b border-gray-100 px-5 py-4">
               <div>

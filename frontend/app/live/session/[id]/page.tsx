@@ -153,7 +153,7 @@ function projectTemplate(framework: CodeFramework): CodeProjectFile[] {
     file("package.json", `{"scripts":{"dev":"vite","build":"vite build"},"dependencies":{"vite":"latest","react":"latest","react-dom":"latest"}}`),
   ];
   if (framework === "nextjs") return [
-    file("app/page.jsx", `export default function Page() {\n  return <main><h1>LearnEas avec Next.js</h1></main>;\n}`),
+    file("app/page.jsx", `export default function Page() {\n  return <main><h1>KalanPro avec Next.js</h1></main>;\n}`),
     file("app/layout.jsx", `export default function RootLayout({ children }) {\n  return <html lang="fr"><body>{children}</body></html>;\n}`),
     file("app/globals.css", `body { margin: 0; font-family: system-ui; }`),
     file("package.json", `{"scripts":{"dev":"next dev","build":"next build","start":"next start"},"dependencies":{"next":"latest","react":"latest","react-dom":"latest"}}`),
@@ -178,7 +178,7 @@ function projectTemplate(framework: CodeFramework): CodeProjectFile[] {
     file("requirements.txt", `fastapi\nuvicorn`),
   ];
   if (framework === "flask") return [
-    file("app.py", `from flask import Flask, jsonify\nfrom services.greeting import greeting\n\napp = Flask(__name__)\n\n@app.get("/")\ndef home():\n    return jsonify(message=greeting("LearnEas"))`),
+    file("app.py", `from flask import Flask, jsonify\nfrom services.greeting import greeting\n\napp = Flask(__name__)\n\n@app.get("/")\ndef home():\n    return jsonify(message=greeting("KalanPro"))`),
     file("services/greeting.py", `def greeting(name):\n    return f"Bonjour {name}"`),
     file("requirements.txt", `flask`),
   ];
@@ -187,7 +187,7 @@ function projectTemplate(framework: CodeFramework): CodeProjectFile[] {
     file("routes/api.js", `const router = require("express").Router();\nrouter.get("/", (req, res) => res.json({ message: "Bonjour Express" }));\nmodule.exports = router;`),
     file("package.json", `{"scripts":{"start":"node server.js"},"dependencies":{"express":"latest"}}`),
   ];
-  return [file("main.js", `class Apprenant {\n  constructor(nom) { this.nom = nom; }\n  saluer() { return \`Bonjour ${'${this.nom}'}\`; }\n}\n\nconsole.log(new Apprenant("LearnEas").saluer());`)];
+  return [file("main.js", `class Apprenant {\n  constructor(nom) { this.nom = nom; }\n  saluer() { return \`Bonjour ${'${this.nom}'}\`; }\n}\n\nconsole.log(new Apprenant("KalanPro").saluer());`)];
 }
 
 export default function LiveSessionPage() {
@@ -230,11 +230,11 @@ export default function LiveSessionPage() {
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("video");
   const [codeLanguage, setCodeLanguage] = useState<CodeLanguage>("javascript");
   const [codeFileName, setCodeFileName] = useState("main.js");
-  const [codeText, setCodeText] = useState(`// Atelier LearnEas\nfunction bienvenue(nom) {\n  return \`Bonjour \${nom} !\`;\n}\n\nconsole.log(bienvenue("LearnEas"));`);
+  const [codeText, setCodeText] = useState(`// Atelier KalanPro\nfunction bienvenue(nom) {\n  return \`Bonjour \${nom} !\`;\n}\n\nconsole.log(bienvenue("KalanPro"));`);
   const [codeFramework, setCodeFramework] = useState<CodeFramework>("none");
   const [activeCodeFileId, setActiveCodeFileId] = useState("main");
   const [codeFiles, setCodeFiles] = useState<CodeProjectFile[]>([
-    { id: "main", path: "main.js", language: "javascript", content: `// Atelier LearnEas\nfunction bienvenue(nom) {\n  return \`Bonjour \${nom} !\`;\n}\n\nconsole.log(bienvenue("LearnEas"));` },
+    { id: "main", path: "main.js", language: "javascript", content: `// Atelier KalanPro\nfunction bienvenue(nom) {\n  return \`Bonjour \${nom} !\`;\n}\n\nconsole.log(bienvenue("KalanPro"));` },
   ]);
   const [codeOutput, setCodeOutput] = useState("");
   const [codeRunning, setCodeRunning] = useState(false);
@@ -1585,7 +1585,7 @@ export default function LiveSessionPage() {
           context.fillStyle = "#ffffff";
           context.font = "32px sans-serif";
           context.textAlign = "center";
-          context.fillText("LearnEas · séance en direct", canvas.width / 2, canvas.height / 2);
+          context.fillText("KalanPro · séance en direct", canvas.width / 2, canvas.height / 2);
         } else {
           const columns = Math.ceil(Math.sqrt(videoElements.length));
           const rows = Math.ceil(videoElements.length / columns);
@@ -1617,7 +1617,7 @@ export default function LiveSessionPage() {
           const url = URL.createObjectURL(blob);
           const anchor = document.createElement("a");
           anchor.href = url;
-          anchor.download = `learneas-session-${sessionId}-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`;
+          anchor.download = `kalanpro-session-${sessionId}-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`;
           document.body.appendChild(anchor);
           anchor.click();
           anchor.remove();
@@ -1850,9 +1850,9 @@ export default function LiveSessionPage() {
       <div className="mx-auto flex h-full max-w-[1820px] flex-col px-2.5 py-2.5 sm:px-4">
         <div className="mb-2 grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 xl:grid-cols-[minmax(260px,1fr)_auto_minmax(260px,1fr)]">
           <div className="flex min-w-0 items-center gap-2.5">
-            {room.organizer.avatar ? <img loading="lazy" decoding="async" src={room.organizer.avatar} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-white/10" /> : <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/15 text-[11px] font-bold text-brand-200">{room.organizer.name.charAt(0).toUpperCase()}</span>}
+            {room.organizer.avatar ? <img loading="lazy" decoding="async" src={room.organizer.avatar} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-white/10" /> : <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 text-[11px] font-bold text-brand-200">{room.organizer.name.charAt(0).toUpperCase()}</span>}
             <div className="min-w-0">
-              <p className="truncate text-[9px] font-semibold uppercase tracking-[0.16em] text-brand-300">Salle LearnEas · Séance {room.session_number} · {room.organizer.name}</p>
+              <p className="truncate text-[9px] font-semibold uppercase tracking-[0.16em] text-brand-300">Salle KalanPro · Séance {room.session_number} · {room.organizer.name}</p>
               <h1 className="mt-0.5 max-w-[300px] truncate text-base font-bold sm:max-w-[420px] sm:text-lg 2xl:max-w-[520px]" title={room.title}>{room.title}</h1>
             </div>
           </div>
@@ -2108,7 +2108,7 @@ export default function LiveSessionPage() {
                         <div key={person.user_id} className={`rounded-2xl border px-2.5 py-2 ${person.hand_raised ? "border-amber-400/40 bg-amber-400/10" : "border-white/10 bg-black/20"}`}>
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex min-w-0 items-center gap-2">
-                              {person.avatar ? <img loading="lazy" decoding="async" src={person.avatar} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" /> : <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/15 text-[11px] font-bold text-brand-200">{person.name.charAt(0).toUpperCase()}</span>}
+                              {person.avatar ? <img loading="lazy" decoding="async" src={person.avatar} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" /> : <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-500/20 text-[11px] font-bold text-brand-200">{person.name.charAt(0).toUpperCase()}</span>}
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2"><p className="truncate text-xs font-medium text-white">{person.name}</p>{person.hand_raised && <Hand size={13} className="shrink-0 text-amber-300" />}</div>
                                 <p className="text-[10px] text-gray-400">{person.role === "organizer" ? "Organisateur" : person.role === "admin" ? "Administrateur" : person.role === "guest" ? "Invité" : "Participant"}</p>
@@ -2254,7 +2254,7 @@ export default function LiveSessionPage() {
             )}
 
             <div className={`fixed bottom-2 left-1/2 z-20 flex max-w-[calc(100%-1rem)] -translate-x-1/2 flex-nowrap items-center justify-center gap-1 overflow-x-auto whitespace-nowrap rounded-2xl border border-white/10 bg-gray-900/95 shadow-2xl backdrop-blur pointer-events-auto ${controlsCompact ? "px-1.5 py-1" : "w-auto lg:min-w-[980px] max-w-[1600px] px-2.5 py-1.5"}`}>
-              <button type="button" onClick={() => setControlsCompact((value) => !value)} className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/10 text-gray-200 hover:bg-white/15" title={controlsCompact ? "Déployer les contrôles" : "Réduire les contrôles"}>{controlsCompact ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}</button>
+              <button type="button" onClick={() => setControlsCompact((value) => !value)} className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/10 text-gray-200 hover:bg-white/20" title={controlsCompact ? "Déployer les contrôles" : "Réduire les contrôles"}>{controlsCompact ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}</button>
               <ControlButton compact={controlsCompact} active={micOn} onClick={toggleMic} label={micOn ? "Micro" : "Micro coupé"}>{micOn ? <Mic size={15} /> : <MicOff size={15} />}</ControlButton>
               <ControlButton compact={controlsCompact} active={cameraOn} onClick={() => void toggleCamera()} label={cameraOn ? (screenSharing ? "Masquer la caméra du présentateur" : "Caméra") : (screenSharing ? "Afficher la caméra du présentateur" : "Caméra coupée")}>{cameraOn ? <Video size={15} /> : <VideoOff size={15} />}</ControlButton>
               <ControlButton compact={controlsCompact} active={screenSharing} onClick={screenSharing ? () => stopScreenShare() : () => startScreenShare()} disabled={recording} label={screenSharing ? "Arrêter le partage" : "Partager l'écran"}>{screenSharing ? <ScreenShareOff size={15} /> : <ScreenShare size={15} />}</ControlButton>
@@ -2350,7 +2350,7 @@ function CodeWorkspace({
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0b1020]">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-1.5 border-b border-white/10 px-2.5 py-1.5">
         <div className="flex min-w-0 items-center gap-2">
-          <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-brand-500/15 text-brand-200"><Code2 size={15} /></div>
+          <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-brand-500/20 text-brand-200"><Code2 size={15} /></div>
           <div className="min-w-0"><h2 className="truncate text-xs font-semibold text-white">Éditeur partagé</h2><p className="text-[9px] text-gray-500">Coloration syntaxique et synchronisation en direct.</p></div>
         </div>
         <div className="flex flex-wrap items-center gap-1">
@@ -2362,7 +2362,7 @@ function CodeWorkspace({
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-white/10 bg-black/15 px-2.5 py-1.5">
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-white/10 bg-black/20 px-2.5 py-1.5">
         <label className="flex items-center gap-1 text-[10px] text-gray-400">Projet<select value={framework} onChange={(event) => onFrameworkChange(event.target.value as CodeFramework)} className="rounded-lg border border-white/10 bg-gray-950 px-2 py-1 text-[11px] text-white outline-none focus:border-brand-400"><option value="none">Libre / POO</option><option value="react">React</option><option value="nextjs">Next.js</option><option value="django">Django</option><option value="drf">Django REST</option><option value="fastapi">FastAPI</option><option value="flask">Flask</option><option value="express">Node / Express</option></select></label>
         <label className="flex items-center gap-1 text-[10px] text-gray-400">Langage<select value={language} onChange={(event) => onLanguageChange(event.target.value as CodeLanguage)} className="rounded-lg border border-white/10 bg-gray-950 px-2 py-1 text-[11px] text-white outline-none focus:border-brand-400"><option value="javascript">JavaScript</option><option value="html">HTML</option><option value="css">CSS</option><option value="python">Python</option><option value="java">Java</option><option value="c">C</option><option value="cpp">C++</option><option value="text">Texte</option></select></label>
         <label className="flex items-center gap-1 text-[10px] text-gray-400">Thème<select value={theme} onChange={(event) => setTheme(event.target.value as CodeTheme)} className="rounded-lg border border-white/10 bg-gray-950 px-2 py-1 text-[11px] text-white outline-none focus:border-brand-400"><option value="midnight">Midnight</option><option value="dracula">Dracula</option><option value="light">Clair</option></select></label>
@@ -2372,14 +2372,14 @@ function CodeWorkspace({
       <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-white/10 bg-black/10 px-2 py-1">
         <FolderOpen size={13} className="mr-1 shrink-0 text-gray-500" />
         {files.map((file) => <div key={file.id} className={`flex shrink-0 items-center rounded-lg border ${file.id === activeFileId ? "border-brand-400/40 bg-brand-400/10" : "border-white/10 bg-white/[0.03]"}`}><button type="button" onClick={() => onSelectFile(file.id)} className="max-w-[180px] truncate px-2 py-1 font-mono text-[10px] text-gray-200" title={file.path}>{file.path}</button>{files.length > 1 && <button type="button" onClick={() => onRemoveFile(file.id)} className="px-1.5 text-gray-500 hover:text-red-300" aria-label={`Fermer ${file.path}`}><X size={11} /></button>}</div>)}
-        <button type="button" onClick={onAddFile} disabled={files.length >= 30} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-dashed border-white/15 px-2 py-1 text-[10px] text-gray-400 hover:text-white disabled:opacity-40"><FilePlus size={11} /> Fichier</button>
+        <button type="button" onClick={onAddFile} disabled={files.length >= 30} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-dashed border-white/20 px-2 py-1 text-[10px] text-gray-400 hover:text-white disabled:opacity-40"><FilePlus size={11} /> Fichier</button>
       </div>
 
       <div ref={editorGridRef} className="grid min-h-0 flex-1" style={{ gridTemplateColumns: consoleCollapsed ? "minmax(0,1fr)" : `minmax(0, ${100 - consolePercent}fr) 5px minmax(190px, ${consolePercent}fr)` }}>
         <div className="relative min-h-0 overflow-hidden border-r border-white/10 font-mono text-[12px] leading-5" style={{ background: palette.background }}>
-          <div className="absolute inset-y-0 left-0 z-20 w-10 overflow-hidden border-r border-white/10 bg-black/15 text-right" style={{ color: palette.lineNumber }} aria-hidden="true"><div style={{ transform: `translateY(-${scrollTop}px)` }} className="py-2.5 pr-2">{lineNumbers.map((line) => <div key={line} className="h-5 select-none">{line}</div>)}</div></div>
+          <div className="absolute inset-y-0 left-0 z-20 w-10 overflow-hidden border-r border-white/10 bg-black/20 text-right" style={{ color: palette.lineNumber }} aria-hidden="true"><div style={{ transform: `translateY(-${scrollTop}px)` }} className="py-2.5 pr-2">{lineNumbers.map((line) => <div key={line} className="h-5 select-none">{line}</div>)}</div></div>
           <pre aria-hidden="true" className="pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre py-2.5 pl-12 pr-3 font-mono text-[12px] leading-5" style={{ color: palette.text }}><code style={{ display: "block", transform: `translate(${-scrollLeft}px, ${-scrollTop}px)` }} dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>
-          <textarea ref={textareaRef} value={code} onChange={(event) => onCodeChange(event.target.value.slice(0, 100000))} maxLength={100000} onKeyDown={handleEditorKeyDown} onScroll={(event) => { setScrollTop(event.currentTarget.scrollTop); setScrollLeft(event.currentTarget.scrollLeft); }} spellCheck={false} autoCapitalize="off" autoCorrect="off" className="absolute inset-0 z-10 h-full w-full resize-none overflow-auto bg-transparent py-2.5 pl-12 pr-3 font-mono text-[12px] leading-5 text-transparent outline-none selection:bg-brand-500/25" style={{ caretColor: theme === "light" ? "#0f172a" : "#ffffff" }} aria-label="Éditeur de code LearnEas" />
+          <textarea ref={textareaRef} value={code} onChange={(event) => onCodeChange(event.target.value.slice(0, 100000))} maxLength={100000} onKeyDown={handleEditorKeyDown} onScroll={(event) => { setScrollTop(event.currentTarget.scrollTop); setScrollLeft(event.currentTarget.scrollLeft); }} spellCheck={false} autoCapitalize="off" autoCorrect="off" className="absolute inset-0 z-10 h-full w-full resize-none overflow-auto bg-transparent py-2.5 pl-12 pr-3 font-mono text-[12px] leading-5 text-transparent outline-none selection:bg-brand-500/25" style={{ caretColor: theme === "light" ? "#0f172a" : "#ffffff" }} aria-label="Éditeur de code KalanPro" />
         </div>
 
         {!consoleCollapsed && <>
@@ -2474,7 +2474,7 @@ function SidebarButton({ active, onClick, children }: { active: boolean; onClick
 }
 
 function MiniAction({ onClick, danger, children }: { onClick: () => void; danger?: boolean; children: React.ReactNode }) {
-  return <button type="button" onClick={onClick} className={`rounded-lg px-1.5 py-1 text-[9px] font-semibold transition ${danger ? "bg-red-500/10 text-red-300 hover:bg-red-500/20" : "bg-white/10 text-gray-300 hover:bg-white/15"}`}>{children}</button>;
+  return <button type="button" onClick={onClick} className={`rounded-lg px-1.5 py-1 text-[9px] font-semibold transition ${danger ? "bg-red-500/10 text-red-300 hover:bg-red-500/20" : "bg-white/10 text-gray-300 hover:bg-white/20"}`}>{children}</button>;
 }
 
 function EmptyPanel({ children }: { children: React.ReactNode }) {
@@ -2483,7 +2483,7 @@ function EmptyPanel({ children }: { children: React.ReactNode }) {
 
 function ControlButton({ active, label, onClick, disabled, children, compact = false }: { active: boolean; label: string; onClick: () => void; disabled?: boolean; children: React.ReactNode; compact?: boolean }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} title={label} className={`inline-flex shrink-0 items-center justify-center rounded-xl font-medium transition ${compact ? "h-8 w-8 p-0" : "gap-1 px-2.5 py-1.5 text-[11px]"} ${active ? "bg-brand-600 text-white" : "bg-white/10 text-gray-200 hover:bg-white/15"} ${disabled ? "cursor-not-allowed opacity-50" : ""}`}>
+    <button type="button" onClick={onClick} disabled={disabled} title={label} className={`inline-flex shrink-0 items-center justify-center rounded-xl font-medium transition ${compact ? "h-8 w-8 p-0" : "gap-1 px-2.5 py-1.5 text-[11px]"} ${active ? "bg-brand-600 text-white" : "bg-white/10 text-gray-200 hover:bg-white/20"} ${disabled ? "cursor-not-allowed opacity-50" : ""}`}>
       {children}{!compact && <span>{label}</span>}
     </button>
   );
@@ -2497,7 +2497,7 @@ function VideoTile({ title, subtitle, footer, videoRef, muted, handRaised, avata
       {!videoEnabled && (
         <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-gray-900 to-gray-950">
           <div className="text-center">
-            {avatar ? <img loading="lazy" decoding="async" src={avatar} alt="" className="mx-auto h-16 w-16 rounded-full object-cover ring-2 ring-white/10" /> : <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-brand-500/15 text-2xl font-bold text-brand-200 ring-2 ring-white/10">{initial}</div>}
+            {avatar ? <img loading="lazy" decoding="async" src={avatar} alt="" className="mx-auto h-16 w-16 rounded-full object-cover ring-2 ring-white/10" /> : <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-brand-500/20 text-2xl font-bold text-brand-200 ring-2 ring-white/10">{initial}</div>}
             <p className="mt-2 text-xs font-semibold text-white">{title}</p>
             <p className="text-[10px] text-gray-500">Caméra désactivée</p>
           </div>
@@ -2592,7 +2592,7 @@ function RemoteVideo({ feed, handRaised, avatar, onElement }: { feed: RemoteFeed
 
 function inviteStatusLabel(status: SessionInvite["status"]) {
   if (status === "accepted") return "A rejoint la séance";
-  if (status === "account_exists") return "Compte LearnEas trouvé";
+  if (status === "account_exists") return "Compte KalanPro trouvé";
   if (status === "pending_account") return "En attente de création du compte";
   return "Invitation révoquée";
 }

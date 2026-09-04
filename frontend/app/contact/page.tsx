@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 
 export default function ContactPage() {
   const [sent, setSent] = useState(false);
-  const [supportEmail, setSupportEmail] = useState("support@learneas.com");
+  const [supportEmail, setSupportEmail] = useState("support@kalanpro.com");
 
   useEffect(() => {
     api.get<{ support_email: string }>("/auth/platform-settings/")

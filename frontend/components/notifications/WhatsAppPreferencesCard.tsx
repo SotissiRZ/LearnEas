@@ -60,9 +60,9 @@ export default function WhatsAppPreferencesCard() {
           onChange={(whatsapp_phone) => setForm({ ...form, whatsapp_phone })}
           preferredCountry={user?.country}
           label="Numéro WhatsApp"
-          helperText="Choisissez le pays / indicatif puis saisissez uniquement le numéro national. LearnEas enregistre automatiquement le format international E.164."
+          helperText="Choisissez le pays / indicatif puis saisissez uniquement le numéro national. KalanPro enregistre automatiquement le format international E.164."
         />
-        <Toggle title="Activer WhatsApp" description="Consentement aux notifications transactionnelles LearnEas." checked={form.whatsapp_opt_in} onChange={v=>toggle("whatsapp_opt_in",v)}/>
+        <Toggle title="Activer WhatsApp" description="Consentement aux notifications transactionnelles KalanPro." checked={form.whatsapp_opt_in} onChange={v=>toggle("whatsapp_opt_in",v)}/>
         {form.whatsapp_opt_in && <div className="grid gap-2 rounded-xl border border-gray-100 bg-gray-50 p-3 sm:grid-cols-2">
           <Toggle compact title="Paiements confirmés" checked={form.whatsapp_payment_enabled} onChange={v=>toggle("whatsapp_payment_enabled",v)}/>
           <Toggle compact title="Rappels de live" checked={form.whatsapp_live_enabled} onChange={v=>toggle("whatsapp_live_enabled",v)}/>

@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { GraduationCap, Loader2, Mail, AlertCircle } from "lucide-react";
+import { Loader2, Mail, AlertCircle } from "lucide-react";
+import BrandLogo from "@/components/layout/BrandLogo";
 import { useAuth } from "@/hooks/useAuth";
 import { ApiError } from "@/lib/api";
 import PasswordInput from "@/components/ui/PasswordInput";
@@ -51,14 +52,13 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="container-app flex min-h-[70vh] items-center justify-center py-16">
-      <div className="card w-full max-w-md p-8">
-        <div className="mb-6 flex flex-col items-center gap-2">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-brand-600 text-white">
-            <GraduationCap size={24} />
-          </div>
-          <h1 className="text-2xl font-extrabold">Content de vous revoir</h1>
-          <p className="text-sm text-gray-500">Connectez-vous à votre compte LearnEas</p>
+    <div className="relative flex min-h-[calc(100vh-72px)] items-center justify-center overflow-hidden bg-navy-950 px-4 py-12">
+      <div className="absolute inset-0 bg-hero-radial" />
+      <div className="relative w-full max-w-md rounded-3xl border border-white/10 bg-white p-6 shadow-2xl sm:p-8">
+        <div className="mb-7 flex flex-col items-center gap-3 text-center">
+          <div className="rounded-2xl bg-navy-950 px-4 py-3"><BrandLogo /></div>
+          <div><h1 className="text-2xl font-black text-navy-950">Content de vous revoir</h1>
+          <p className="mt-1 text-sm text-slate-500">Connectez-vous à votre compte KalanPro</p></div>
         </div>
 
         <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
@@ -68,7 +68,7 @@ export default function LoginPage() {
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input
                 type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 py-2.5 pl-10 pr-3 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                className="w-full rounded-lg border border-slate-200 py-2.5 pl-10 pr-3 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                 placeholder="vous@exemple.com"
               />
             </div>
@@ -95,7 +95,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-gray-500">
+        <p className="mt-6 text-center text-sm text-slate-500">
           Pas encore de compte ? <Link href="/register" className="font-semibold text-brand-700">Inscrivez-vous</Link>
         </p>
       </div>

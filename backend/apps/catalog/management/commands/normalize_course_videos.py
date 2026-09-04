@@ -17,7 +17,7 @@ from apps.common.media_metadata import _run_ffmpeg_normalization
 class Command(BaseCommand):
     help = (
         "Analyse les vidéos de leçons déjà stockées et convertit les fichiers incompatibles "
-        "vers MP4 H.264/AAC pour le lecteur HTML5 LearnEas."
+        "vers MP4 H.264/AAC pour le lecteur HTML5 KalanPro."
     )
 
     def add_arguments(self, parser):

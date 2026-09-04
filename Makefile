@@ -1,7 +1,7 @@
 .PHONY: help build up down logs ps restart dev dev-down migrate seed superuser shell backend-shell nginx-reload clean
 
 help:
-	@echo "LearnEas — commandes Docker disponibles :"
+	@echo "KalanPro — commandes Docker disponibles :"
 	@echo "  make build         Construit les images (production)"
 	@echo "  make up            Démarre toute la stack en arrière-plan (production)"
 	@echo "  make down          Arrête et supprime les conteneurs (production)"

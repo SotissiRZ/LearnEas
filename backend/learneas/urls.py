@@ -8,6 +8,10 @@ from django.conf.urls.static import static
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from apps.accounts.views import CookieTokenRefreshView
 
+admin.site.site_header = "KalanPro · Administration"
+admin.site.site_title = "KalanPro Admin"
+admin.site.index_title = "Centre de contrôle KalanPro"
+
 def health(request):
     try:
         with connection.cursor() as cursor:

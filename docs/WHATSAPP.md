@@ -1,6 +1,6 @@
-# WhatsApp transactionnel — LearnEas v44
+# WhatsApp transactionnel — KalanPro v44
 
-LearnEas utilise **Meta WhatsApp Cloud API** directement. Aucun token Meta n'est exposé au frontend.
+KalanPro utilise **Meta WhatsApp Cloud API** directement. Aucun token Meta n'est exposé au frontend.
 
 ## 1. Flux implémentés
 
@@ -14,7 +14,7 @@ Les messages business-initiated sont envoyés avec des **templates approuvés** 
 | Certificat disponible | `learneas_certificate_ready` | `{{1}}` prénom/nom, `{{2}}` contenu, `{{3}}` URL de vérification |
 | Test administrateur | `hello_world` | aucune |
 
-Les noms des quatre templates LearnEas sont modifiables dans **Administration → Paramètres → WhatsApp transactionnel**.
+Les noms des quatre templates KalanPro sont modifiables dans **Administration → Paramètres → WhatsApp transactionnel**.
 
 ## 2. Consentement utilisateur
 

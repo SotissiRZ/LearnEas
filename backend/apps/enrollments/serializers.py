@@ -84,7 +84,7 @@ class CertificateEventSerializer(serializers.ModelSerializer):
 
     def get_actor_name(self, obj):
         if not obj.actor:
-            return "Système LearnEas"
+            return "Système KalanPro"
         return obj.actor.get_full_name() or obj.actor.username
 
 

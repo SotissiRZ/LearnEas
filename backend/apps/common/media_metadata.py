@@ -4,7 +4,7 @@ Les valeurs calculées ici sont la source de vérité : le client ne doit plus d
 à l'instructeur de saisir manuellement la durée d'une vidéo ou le nombre de pages.
 
 Les navigateurs n'acceptent pas tous les codecs contenus dans un fichier ``.mp4``/``.mov``.
-LearnEas normalise donc automatiquement les uploads incompatibles vers un MP4 H.264/AAC
+KalanPro normalise donc automatiquement les uploads incompatibles vers un MP4 H.264/AAC
 (yuv420p) afin que le lecteur fonctionne de façon prévisible sur Chrome, Edge, Firefox,
 Safari, Android et iOS.
 """
@@ -267,7 +267,7 @@ def prepare_video_upload(file_obj) -> tuple[Any, int]:
         raise serializers.ValidationError({
             "video_file": (
                 "Cette vidéo ne peut pas être préparée pour le lecteur web. "
-                "Vérifiez qu'elle contient une piste vidéo valide ; LearnEas accepte puis convertit "
+                "Vérifiez qu'elle contient une piste vidéo valide ; KalanPro accepte puis convertit "
                 "automatiquement MP4, MOV, M4V et WebM vers H.264/AAC."
             )
         }) from exc
@@ -292,7 +292,7 @@ def prepare_video_upload(file_obj) -> tuple[Any, int]:
 def normalize_video_upload(file_obj):
     """Compatibilité historique : normalise dans le contexte appelant et renvoie le fichier.
 
-    Le pipeline LearnEas de production appelle désormais :func:`prepare_video_upload` depuis
+    Le pipeline KalanPro de production appelle désormais :func:`prepare_video_upload` depuis
     Celery ; cette fonction est conservée pour les appels internes/anciens sans dupliquer la logique.
     """
     prepared, _duration = prepare_video_upload(file_obj)

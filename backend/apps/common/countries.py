@@ -1,4 +1,4 @@
-"""Référentiel statique des pays proposés par l'interface LearnEas.
+"""Référentiel statique des pays proposés par l'interface KalanPro.
 
 Généré pour éviter les saisies libres tout en conservant les valeurs historiques
 déjà stockées dans User.country.
@@ -20,7 +20,7 @@ def canonical_country_name(value: str) -> str:
                 code = alias_code
                 break
     if not code:
-        raise ValueError("Pays non reconnu. Sélectionnez un pays dans la liste LearnEas.")
+        raise ValueError("Pays non reconnu. Sélectionnez un pays dans la liste KalanPro.")
     # Le premier nom déclaré pour ce code est la valeur canonique.
     for name in COUNTRY_NAMES:
         if COUNTRY_ALIASES.get(name) == code:

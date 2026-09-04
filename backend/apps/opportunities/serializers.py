@@ -151,7 +151,7 @@ class CandidateProfileSerializer(serializers.ModelSerializer):
     def validate_salary_currency(self, value):
         code = str(value or "").strip().upper()
         if not Currency.objects.filter(code=code, is_active=True).exists():
-            raise serializers.ValidationError("Sélectionnez une devise active dans LearnEas.")
+            raise serializers.ValidationError("Sélectionnez une devise active dans KalanPro.")
         return code
 
     def validate_resume(self, value):
@@ -243,7 +243,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
     def validate_salary_currency(self, value):
         code = str(value or "").strip().upper()
         if not Currency.objects.filter(code=code, is_active=True).exists():
-            raise serializers.ValidationError("Sélectionnez une devise active dans LearnEas.")
+            raise serializers.ValidationError("Sélectionnez une devise active dans KalanPro.")
         return code
 
     def to_representation(self, instance):

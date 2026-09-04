@@ -82,7 +82,7 @@ class CurrencySerializer(serializers.ModelSerializer):
 
     def validate_decimal_places(self, value):
         if value > 2:
-            raise serializers.ValidationError("Le nombre de décimales doit être compris entre 0 et 2 pour les commandes LearnEas.")
+            raise serializers.ValidationError("Le nombre de décimales doit être compris entre 0 et 2 pour les commandes KalanPro.")
         return value
 
     def validate(self, attrs):

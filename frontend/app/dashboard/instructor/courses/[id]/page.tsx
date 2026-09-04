@@ -355,7 +355,7 @@ function AddLessonForm({
           <label className="mb-0.5 block text-xs font-medium text-gray-500">Fichier vidéo</label>
           <input key={fileInputKey} type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.m4v" onChange={(e) => setFile(e.target.files?.[0] || null)}
             className="w-full rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm" />
-          <p className="mt-1 text-xs text-gray-400">MP4, WebM, MOV ou M4V · jusqu’à {MAX_VIDEO_UPLOAD_MB >= 1024 ? `${(MAX_VIDEO_UPLOAD_MB / 1024).toFixed(MAX_VIDEO_UPLOAD_MB % 1024 ? 1 : 0)} Go` : `${MAX_VIDEO_UPLOAD_MB} Mo`}. LearnEas convertit automatiquement les codecs incompatibles en MP4 H.264/AAC.</p>
+          <p className="mt-1 text-xs text-gray-400">MP4, WebM, MOV ou M4V · jusqu’à {MAX_VIDEO_UPLOAD_MB >= 1024 ? `${(MAX_VIDEO_UPLOAD_MB / 1024).toFixed(MAX_VIDEO_UPLOAD_MB % 1024 ? 1 : 0)} Go` : `${MAX_VIDEO_UPLOAD_MB} Mo`}. KalanPro convertit automatiquement les codecs incompatibles en MP4 H.264/AAC.</p>
         </div>
       ) : (
         <div>

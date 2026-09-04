@@ -1,4 +1,4 @@
-# --- LearnEas backend (Django + DRF + Channels/Daphne) ---
+# --- KalanPro backend (Django + DRF + Channels/Daphne) ---
 FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

@@ -47,7 +47,7 @@ class IsInstructorOrAdminOnly(permissions.BasePermission):
 
 
 class IsAdminRoleOrReadOnly(permissions.BasePermission):
-    """Lecture publique, écriture réservée au rôle admin LearnEas."""
+    """Lecture publique, écriture réservée au rôle admin KalanPro."""
 
     def has_permission(self, request, view):
         if request.method in permissions.SAFE_METHODS:

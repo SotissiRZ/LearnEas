@@ -38,20 +38,20 @@ class PlatformSettings(models.Model):
     Une seule ligne (pk=1) est utilisée. Les valeurs d'environnement restent des
     valeurs de repli pour les installations existantes.
     """
-    site_name = models.CharField(max_length=120, default="LearnEas")
-    support_email = models.EmailField(default="support@learneas.com")
+    site_name = models.CharField(max_length=120, default="KalanPro")
+    support_email = models.EmailField(default="support@kalanpro.com")
     registration_enabled = models.BooleanField(default=True)
     instructor_applications_enabled = models.BooleanField(default=True)
     platform_commission_percent = models.PositiveSmallIntegerField(default=15)
     minimum_payout_amount = models.DecimalField(max_digits=10, decimal_places=2, default=10)
 
     # Identité juridique / conformité
-    legal_company_name = models.CharField(max_length=180, blank=True, default="LearnEas")
+    legal_company_name = models.CharField(max_length=180, blank=True, default="KalanPro")
     legal_address = models.TextField(blank=True)
     legal_country = models.CharField(max_length=100, blank=True, default="Maroc")
     legal_registration_number = models.CharField(max_length=120, blank=True)
     legal_tax_number = models.CharField(max_length=120, blank=True)
-    privacy_email = models.EmailField(blank=True, default="privacy@learneas.com")
+    privacy_email = models.EmailField(blank=True, default="privacy@kalanpro.com")
     terms_updated_at = models.DateField(null=True, blank=True)
     privacy_updated_at = models.DateField(null=True, blank=True)
     refund_policy_days = models.PositiveSmallIntegerField(default=14)
@@ -67,16 +67,16 @@ class PlatformSettings(models.Model):
     certificate_default_subtitle = models.CharField(max_length=220, blank=True)
     certificate_default_signatory_name = models.CharField(max_length=180, blank=True)
     certificate_default_signatory_title = models.CharField(max_length=180, blank=True)
-    certificate_default_accent_color = models.CharField(max_length=20, default="#1f6f5c")
-    certificate_default_number_prefix = models.CharField(max_length=30, default="LE-CERT")
+    certificate_default_accent_color = models.CharField(max_length=20, default="#ff641a")
+    certificate_default_number_prefix = models.CharField(max_length=30, default="KP-CERT")
 
     # WhatsApp transactionnel — les secrets Meta restent uniquement en variables d’environnement.
     whatsapp_enabled = models.BooleanField(default=False)
     whatsapp_template_language = models.CharField(max_length=16, default="fr")
-    whatsapp_payment_template_name = models.CharField(max_length=120, default="learneas_payment_confirmed")
-    whatsapp_live_template_name = models.CharField(max_length=120, default="learneas_live_reminder")
-    whatsapp_inactivity_template_name = models.CharField(max_length=120, default="learneas_inactivity_reminder")
-    whatsapp_certificate_template_name = models.CharField(max_length=120, default="learneas_certificate_ready")
+    whatsapp_payment_template_name = models.CharField(max_length=120, default="kalanpro_payment_confirmed")
+    whatsapp_live_template_name = models.CharField(max_length=120, default="kalanpro_live_reminder")
+    whatsapp_inactivity_template_name = models.CharField(max_length=120, default="kalanpro_inactivity_reminder")
+    whatsapp_certificate_template_name = models.CharField(max_length=120, default="kalanpro_certificate_ready")
     whatsapp_test_template_name = models.CharField(max_length=120, default="hello_world")
     whatsapp_live_reminder_minutes = models.PositiveSmallIntegerField(default=30)
     whatsapp_inactivity_days = models.PositiveSmallIntegerField(default=4)

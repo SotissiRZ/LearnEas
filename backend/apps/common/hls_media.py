@@ -32,7 +32,7 @@ def unsign_hls_token(token: str, *, max_age: int) -> str:
 
 
 def resolve_hls_reference(playlist_name: str, reference: str) -> str:
-    # Les manifests générés par LearnEas contiennent uniquement des références relatives.
+    # Les manifests générés par KalanPro contiennent uniquement des références relatives.
     # On refuse volontairement les URL absolues pour empêcher un manifeste privé de devenir
     # un proxy vers un hôte tiers.
     raw = str(reference or "").strip()
@@ -44,7 +44,7 @@ def resolve_hls_reference(playlist_name: str, reference: str) -> str:
 
 
 def rewrite_hls_playlist(playlist_name: str, body: str) -> str:
-    """Réécrit toutes les URI d'un manifeste vers des URL signées LearnEas."""
+    """Réécrit toutes les URI d'un manifeste vers des URL signées KalanPro."""
     output: list[str] = []
     for original_line in body.splitlines():
         line = original_line.strip()

@@ -58,7 +58,7 @@ export default function MentorshipBookingCard({ offering }: { offering: Mentorsh
       </div>
 
       <div className="mt-5 space-y-2 text-sm text-gray-600">
-        <p className="flex items-center gap-2"><Video size={16} /> Visioconférence privée LearnEas</p>
+        <p className="flex items-center gap-2"><Video size={16} /> Visioconférence privée KalanPro</p>
         <p className="flex items-center gap-2"><CalendarClock size={16} /> Réservation au moins {offering.booking_notice_hours} h à l'avance</p>
         <p className="flex items-center gap-2"><CheckCircle2 size={16} /> Annulation apprenant au moins {offering.cancellation_notice_hours} h avant</p>
       </div>

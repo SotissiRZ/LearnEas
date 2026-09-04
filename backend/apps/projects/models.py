@@ -8,7 +8,7 @@ from django.utils.text import slugify
 
 
 class ProjectAssignment(models.Model):
-    """Projet pratique rattaché à un cours LearnEas."""
+    """Projet pratique rattaché à un cours KalanPro."""
 
     course = models.ForeignKey("catalog.Course", on_delete=models.CASCADE, related_name="project_assignments")
     title = models.CharField(max_length=220)
@@ -165,7 +165,7 @@ class PortfolioItem(models.Model):
     featured = models.BooleanField(default=False)
     order = models.PositiveIntegerField(default=0)
 
-    # Snapshot de la validation LearnEas. Un élément vérifié reste vérifiable même si
+    # Snapshot de la validation KalanPro. Un élément vérifié reste vérifiable même si
     # l'instructeur archive ensuite le projet ou le cours.
     is_verified = models.BooleanField(default=False, editable=False)
     verified_course_title = models.CharField(max_length=220, blank=True, editable=False)

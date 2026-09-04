@@ -40,7 +40,7 @@ export default function NewFormationPage() {
   if (!ready) return <GuardScreen />;
   return <div className="min-w-0"><div className="card max-w-2xl p-6">
     <h1 className="mb-1 text-xl font-bold">Créer une cohorte live</h1>
-    <p className="mb-6 text-sm text-gray-500">Définissez la cohorte, les places et la période d’inscription, puis planifiez les séances live LearnEas.</p>
+    <p className="mb-6 text-sm text-gray-500">Définissez la cohorte, les places et la période d’inscription, puis planifiez les séances live KalanPro.</p>
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <div><label className="mb-1 block text-sm font-medium">Titre</label><input required value={form.title} onChange={(e) => set("title", e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" placeholder="Ex: Coaching React en petit groupe" /></div>
       <div><label className="mb-1 block text-sm font-medium">Description</label><textarea required rows={4} value={form.description} onChange={(e) => set("description", e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" /></div>

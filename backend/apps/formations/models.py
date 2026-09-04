@@ -19,7 +19,7 @@ class FormationKind(models.TextChoices):
 
 
 class InteractiveFormation(models.Model):
-    """Formation interactive en direct, hébergée dans une salle LearnEas."""
+    """Formation interactive en direct, hébergée dans une salle KalanPro."""
 
     instructor = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="interactive_formations"
@@ -132,7 +132,7 @@ class InteractiveFormation(models.Model):
 
 
 class FormationSession(models.Model):
-    """Séance planifiée dans une salle vidéo interne LearnEas."""
+    """Séance planifiée dans une salle vidéo interne KalanPro."""
 
     formation = models.ForeignKey(InteractiveFormation, on_delete=models.CASCADE, related_name="sessions")
     session_number = models.PositiveIntegerField()
@@ -140,7 +140,7 @@ class FormationSession(models.Model):
     duration_minutes = models.PositiveIntegerField(default=60)
     # Conservé uniquement pour compatibilité avec les anciennes données/migrations. L'API ne
     # demande plus et n'expose plus de lien de réunion externe.
-    meeting_link = models.URLField(blank=True, help_text="Champ historique · non utilisé par LearnEas")
+    meeting_link = models.URLField(blank=True, help_text="Champ historique · non utilisé par KalanPro")
     room_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     started_at = models.DateTimeField(null=True, blank=True)
     ended_at = models.DateTimeField(null=True, blank=True)

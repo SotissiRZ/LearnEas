@@ -1,5 +1,5 @@
 """
-LearnEas — Configuration Django
+KalanPro — Configuration Django
 Plateforme de vente de cours (playlists complètes) et de PDF (seuls ou inclus dans un cours).
 """
 from pathlib import Path
@@ -201,7 +201,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # DRF / JWT / CORS / API docs
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {
-    # L’API LearnEas est authentifiée exclusivement par JWT.
+    # L’API KalanPro est authentifiée exclusivement par JWT.
     # Ne pas activer SessionAuthentication ici : une session Django (par exemple après
     # connexion à /admin/) ferait appliquer un contrôle CSRF aux endpoints publics
     # /api/auth/login/ et /api/auth/register/, alors que le frontend Next.js utilise JWT.
@@ -284,8 +284,8 @@ CORS_ALLOWED_ORIGINS = config(
 CORS_ALLOW_CREDENTIALS = True
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "LearnEas API",
-    "DESCRIPTION": "API de la plateforme de formation en ligne LearnEas",
+    "TITLE": "KalanPro API",
+    "DESCRIPTION": "API de la plateforme de formation en ligne KalanPro",
     "VERSION": "1.0.0",
 }
 
@@ -356,7 +356,7 @@ EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
 EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
-DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="LearnEas <no-reply@learneas.com>")
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="KalanPro <no-reply@kalanpro.com>")
 
 # ---------------------------------------------------------------------------
 # Redis / Celery (emails asynchrones, tâches planifiées) — service "redis" du docker-compose

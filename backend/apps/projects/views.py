@@ -222,12 +222,12 @@ class PortfolioItemViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
         if instance.is_verified:
-            # La preuve de validation LearnEas est immuable ; l'apprenant ne peut modifier
+            # La preuve de validation KalanPro est immuable ; l'apprenant ne peut modifier
             # que la présentation et la visibilité de l'élément.
             allowed = {"title", "description", "cover_image", "is_public", "featured", "order"}
             forbidden = set(request.data.keys()) - allowed
             if forbidden:
-                return Response({"detail": "Les informations vérifiées d'un projet LearnEas ne peuvent pas être altérées."}, status=409)
+                return Response({"detail": "Les informations vérifiées d'un projet KalanPro ne peuvent pas être altérées."}, status=409)
         return super().update(request, *args, **kwargs)
 
 

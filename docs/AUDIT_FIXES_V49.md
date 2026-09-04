@@ -1,4 +1,4 @@
-# LearnEas v49 — Correctifs audit P0
+# KalanPro v49 — Correctifs audit P0
 
 Cette version traite en priorité les blocages de production liés aux vidéos volumineuses et au stockage Railway.
 
@@ -35,7 +35,7 @@ En développement local (`USE_S3=False`), le frontend conserve automatiquement l
 
 ### CORS du bucket
 
-Le bucket doit autoriser `PUT` depuis le domaine LearnEas/Vercel et exposer `ETag` dans `ExposeHeaders` pour permettre la finalisation multipart.
+Le bucket doit autoriser `PUT` depuis le domaine KalanPro/Vercel et exposer `ETag` dans `ExposeHeaders` pour permettre la finalisation multipart.
 
 ## 3. Stockage distant en production
 

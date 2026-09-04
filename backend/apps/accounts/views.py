@@ -443,12 +443,12 @@ class PasswordResetRequestView(APIView):
         reset_url = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}"
 
         send_mail(
-            subject="Réinitialisation de votre mot de passe LearnEas",
+            subject="Réinitialisation de votre mot de passe KalanPro",
             message=(
                 f"Bonjour {user.first_name or user.username},\n\n"
                 f"Cliquez sur ce lien pour choisir un nouveau mot de passe :\n{reset_url}\n\n"
                 f"Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.\n\n"
-                f"L'équipe LearnEas"
+                f"L'équipe KalanPro"
             ),
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user.email],
@@ -550,7 +550,7 @@ class AdminInstructorApplicationViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class AdminUserViewSet(viewsets.ModelViewSet):
-    """Gestion des comptes depuis le back-office LearnEas.
+    """Gestion des comptes depuis le back-office KalanPro.
 
     La suppression physique n'est pas exposée : un administrateur désactive un compte afin de
     conserver les historiques de commandes, présences et paiements.

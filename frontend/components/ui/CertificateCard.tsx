@@ -36,7 +36,7 @@ export default function CertificateCard({ certificate, publicMode = false }: { c
   async function shareCertificate() {
     if (!verificationUrl) return;
     try {
-      if (navigator.share) await navigator.share({ title: certificate.title || "Certificat LearnEas", text: `${certificate.student_name} · ${certificate.content_title}`, url: verificationUrl });
+      if (navigator.share) await navigator.share({ title: certificate.title || "Certificat KalanPro", text: `${certificate.student_name} · ${certificate.content_title}`, url: verificationUrl });
       else await copyVerificationLink();
     } catch { /* partage annulé */ }
   }
@@ -66,7 +66,7 @@ export default function CertificateCard({ certificate, publicMode = false }: { c
 
         <div className="mx-auto mt-7 grid max-w-3xl gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
           {certificate.display_options?.show_instructor !== false && <Info label="Instructeur" value={certificate.instructor_name || "-"} />}
-          <Info label="Émetteur" value={certificate.issuer_name || "LearnEas"} />
+          <Info label="Émetteur" value={certificate.issuer_name || "KalanPro"} />
           {certificate.display_options?.show_duration !== false && <Info label="Durée" value={`${Math.round((certificate.duration_minutes || 0) / 60 * 10) / 10} h`} />}
           <Info label="Résultat" value={`${Number(certificate.achievement_percent || 0).toFixed(0)} %`} />
         </div>
@@ -90,7 +90,7 @@ export default function CertificateCard({ certificate, publicMode = false }: { c
             <p>{certificate.display_options?.show_completion_date !== false && certificate.completed_at ? `Validé le ${new Date(certificate.completed_at).toLocaleDateString("fr-FR")}` : `Délivré le ${new Date(certificate.issued_at).toLocaleDateString("fr-FR")}`}</p>
             <p className="font-semibold text-gray-700">N° {certificate.certificate_number}</p>
             <p className="flex items-start gap-1"><CheckCircle2 size={11} className="mt-0.5 shrink-0"/> Code : <span className="break-all">{certificate.verification_code}</span></p>
-            {certificate.issuer_country && <p>Émetteur : {certificate.issuer_name || "LearnEas"} · {certificate.issuer_country}</p>}
+            {certificate.issuer_country && <p>Émetteur : {certificate.issuer_name || "KalanPro"} · {certificate.issuer_country}</p>}
             {certificate.supersedes_certificate_number && <p>Remplace : {certificate.supersedes_certificate_number}</p>}
             {certificate.expires_at && <p>Expiration : {new Date(certificate.expires_at).toLocaleDateString("fr-FR")}</p>}
           </div>

@@ -133,23 +133,23 @@ class InteractiveFormationViewSet(viewsets.ModelViewSet):
         formation = self.get_object()
         def esc(value):
             return str(value or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
-        lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//LearnEas//Cohorte//FR", "CALSCALE:GREGORIAN"]
+        lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//KalanPro//Cohorte//FR", "CALSCALE:GREGORIAN"]
         for session in formation.sessions.all():
             start = session.scheduled_at.astimezone(dt_timezone.utc)
             end = start + timedelta(minutes=session.duration_minutes)
             lines.extend([
                 "BEGIN:VEVENT",
-                f"UID:learneas-formation-{formation.id}-session-{session.id}@learneas",
+                f"UID:kalanpro-formation-{formation.id}-session-{session.id}@kalanpro",
                 f"DTSTAMP:{timezone.now().astimezone(dt_timezone.utc).strftime('%Y%m%dT%H%M%SZ')}",
                 f"DTSTART:{start.strftime('%Y%m%dT%H%M%SZ')}",
                 f"DTEND:{end.strftime('%Y%m%dT%H%M%SZ')}",
                 f"SUMMARY:{esc(formation.title)} · Séance {session.session_number}",
-                f"DESCRIPTION:{esc('Séance live LearnEas')}",
+                f"DESCRIPTION:{esc('Séance live KalanPro')}",
                 "END:VEVENT",
             ])
         lines.append("END:VCALENDAR")
         response = HttpResponse("\r\n".join(lines) + "\r\n", content_type="text/calendar; charset=utf-8")
-        response["Content-Disposition"] = f'attachment; filename="learneas-{formation.slug}.ics"'
+        response["Content-Disposition"] = f'attachment; filename="kalanpro-{formation.slug}.ics"'
         return response
 
 
@@ -414,13 +414,13 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
             join_url = f"{settings.FRONTEND_URL.rstrip('/')}/live/session/{session.id}"
             register_url = f"{settings.FRONTEND_URL.rstrip('/')}/register?next=/live/session/{session.id}&email={quote(email)}"
             send_mail(
-                subject=f"Invitation LearnEas : {session.formation.title}",
+                subject=f"Invitation KalanPro : {session.formation.title}",
                 message=(
                     f"Bonjour,\n\n"
                     f"{request.user.get_full_name() or request.user.username} vous invite à participer à la séance "
-                    f"{session.session_number} de « {session.formation.title} » sur LearnEas.\n\n"
+                    f"{session.session_number} de « {session.formation.title} » sur KalanPro.\n\n"
                     f"Rejoindre la séance : {join_url}\n\n"
-                    f"Si vous n'avez pas encore de compte LearnEas, créez-en un avec cette adresse email :\n{register_url}\n\n"
+                    f"Si vous n'avez pas encore de compte KalanPro, créez-en un avec cette adresse email :\n{register_url}\n\n"
                     f"Cette invitation donne accès uniquement à cette séance et ne vous inscrit pas à la formation."
                 ),
                 from_email=settings.DEFAULT_FROM_EMAIL,

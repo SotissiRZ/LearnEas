@@ -14,7 +14,7 @@ class ProviderError(Exception):
 
 
 def _request_json(url, method="GET", headers=None, data=None, timeout=12):
-    headers = {"Accept": "application/json", "User-Agent": "LearnEas/1.0", **(headers or {})}
+    headers = {"Accept": "application/json", "User-Agent": "KalanPro/1.0", **(headers or {})}
     body = None
     if data is not None:
         if headers.get("Content-Type") == "application/json":
@@ -153,7 +153,7 @@ def create_checkout(order, user):
             line_items=[{
                 "price_data": {
                     "currency": order.currency.lower(),
-                    "product_data": {"name": f"Commande LearnEas {order.invoice_number}"},
+                    "product_data": {"name": f"Commande KalanPro {order.invoice_number}"},
                     "unit_amount": amount_minor,
                 },
                 "quantity": 1,
@@ -175,10 +175,10 @@ def create_checkout(order, user):
             headers={"Authorization": f"Bearer {token}"},
             data={
                 "reference": order.invoice_number,
-                "name": f"Commande LearnEas {order.invoice_number}",
+                "name": f"Commande KalanPro {order.invoice_number}",
                 "amount": amount_minor,
                 "currency": order.currency.upper(),
-                "description": f"Achat LearnEas #{order.id}",
+                "description": f"Achat KalanPro #{order.id}",
                 "active": "1",
             },
         )
@@ -199,7 +199,7 @@ def create_checkout(order, user):
             data={
                 "amount": float(order.total_amount),
                 "currency": order.currency.upper(),
-                "description": f"Commande LearnEas {order.invoice_number}",
+                "description": f"Commande KalanPro {order.invoice_number}",
                 "customer": {"name": user.get_full_name() or user.username, "email": user.email},
                 "success_url": success_url,
                 "error_url": cancel_url,
@@ -225,7 +225,7 @@ def create_checkout(order, user):
         backend_public = str(getattr(settings, "BACKEND_PUBLIC_URL", settings.FRONTEND_URL)).rstrip("/")
         transaction_id = order.invoice_number.replace("-", "")
         first_name = (getattr(user, "first_name", "") or "Client").strip()
-        last_name = (getattr(user, "last_name", "") or getattr(user, "username", "") or "LearnEas").strip()
+        last_name = (getattr(user, "last_name", "") or getattr(user, "username", "") or "KalanPro").strip()
         payload = _request_json(
             f"{base}/payment",
             method="POST",
@@ -236,7 +236,7 @@ def create_checkout(order, user):
                 "transaction_id": transaction_id,
                 "amount": int(amount),
                 "currency": order.currency.upper(),
-                "description": f"Commande LearnEas {order.invoice_number}",
+                "description": f"Commande KalanPro {order.invoice_number}",
                 "return_url": f"{backend_public}/api/payments/cinetpay/return/?order={order.id}",
                 "notify_url": f"{backend_public}/api/payments/cinetpay/webhook/",
                 "metadata": str(order.id),
@@ -290,7 +290,7 @@ def test_provider(code: str, *, sandbox: bool = False):
             f"{base}/payment/check",
             method="POST",
             headers={"Content-Type": "application/json"},
-            data={"apikey": api_key, "site_id": site_id, "transaction_id": "LEARNEAS_DIAGNOSTIC_000"},
+            data={"apikey": api_key, "site_id": site_id, "transaction_id": "KALANPRO_DIAGNOSTIC_000"},
         )
         api_code = str(payload.get("code") or "")
         if api_code in {"609", "613", "624"}:

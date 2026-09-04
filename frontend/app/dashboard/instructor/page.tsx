@@ -95,7 +95,7 @@ export default function InstructorDashboard() {
       </div>
 
       <div className="mb-6 grid gap-5 xl:grid-cols-2">
-        <CompactCard title="Prochaines séances" subtitle="Vos rendez-vous live LearnEas" footer={<Link href="/dashboard/instructor/sessions" className="text-xs font-semibold text-brand-700">Toutes les séances <ArrowRight className="inline" size={13} /></Link>}>
+        <CompactCard title="Prochaines séances" subtitle="Vos rendez-vous live KalanPro" footer={<Link href="/dashboard/instructor/sessions" className="text-xs font-semibold text-brand-700">Toutes les séances <ArrowRight className="inline" size={13} /></Link>}>
           {(overview?.upcoming_sessions || []).map((s) => (
             <div key={s.id} className="flex items-center gap-3 border-b border-gray-100 py-2.5 last:border-0">
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700"><CalendarDays size={16} /></span>

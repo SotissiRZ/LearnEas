@@ -9,7 +9,7 @@ class CustomUserAdmin(UserAdmin):
     list_display = ("username", "email", "role", "is_active", "date_joined")
     list_filter = ("role", "is_active")
     fieldsets = UserAdmin.fieldsets + (
-        ("LearnEas", {"fields": ("role", "avatar", "bio", "country", "headline", "domain", "years_experience")}),
+        ("KalanPro", {"fields": ("role", "avatar", "bio", "country", "headline", "domain", "years_experience")}),
     )
 
 

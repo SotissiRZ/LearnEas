@@ -136,7 +136,7 @@ export default function CheckoutPage() {
                     <span className="grid h-9 w-9 place-items-center rounded-lg bg-violet-100 text-violet-700"><FlaskConical size={19} /></span>
                     <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700">Sandbox local</span>
                   </div>
-                  <p className="font-semibold text-violet-950">Paiement test LearnEas</p>
+                  <p className="font-semibold text-violet-950">Paiement test KalanPro</p>
                   <p className="mt-1 text-xs leading-5 text-violet-700">Simule immédiatement un paiement réussi, sans carte et sans contacter de prestataire.</p>
                 </button>
               )}
@@ -158,7 +158,7 @@ export default function CheckoutPage() {
             provider === "__test__" ? (
               <p className="mt-5 rounded-lg border border-violet-100 bg-violet-50 p-3 text-sm text-violet-800"><strong>Mode test :</strong> aucune transaction bancaire ne sera créée. L'accès au contenu sera accordé comme après un paiement réussi.</p>
             ) : (
-              <p className="mt-5 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">{provider === "cinetpay" ? "Vous serez redirigé vers CinetPay pour choisir le wallet Mobile Money disponible dans votre pays (Orange Money, MTN MoMo, Moov, Wave selon disponibilité). Le montant CFA est arrondi au multiple de 5 requis par CinetPay." : "LearnEas ne stocke jamais les numéros de carte. Les paiements externes sont finalisés sur la page sécurisée du prestataire activé."}</p>
+              <p className="mt-5 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">{provider === "cinetpay" ? "Vous serez redirigé vers CinetPay pour choisir le wallet Mobile Money disponible dans votre pays (Orange Money, MTN MoMo, Moov, Wave selon disponibilité). Le montant CFA est arrondi au multiple de 5 requis par CinetPay." : "KalanPro ne stocke jamais les numéros de carte. Les paiements externes sont finalisés sur la page sécurisée du prestataire activé."}</p>
             )
           )}
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
