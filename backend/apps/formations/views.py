@@ -213,7 +213,9 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
         if not _is_organizer(self.request.user, instance.formation):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("Seul l'organisateur peut supprimer cette séance.")
+        formation = instance.formation
         instance.delete()
+        formation.sync_schedule_dates()
 
     def _require_access(self, request, session):
         if not _can_access_session(request.user, session):

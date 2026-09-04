@@ -1,5 +1,7 @@
 # KalanPro
 
+> **v57 — Salle live & planning :** disposition vidéo automatique/galerie/intervenant, vignette locale compacte lorsque l'hôte est seul, partage d'écran prioritaire et modification date/heure/durée des séances depuis le dashboard instructeur.
+
 > **v56 — Modèle économique & Tarifs :** nouvelle page `/pricing` pour apprenants, instructeurs, mentors et recruteurs, paramètres tarifaires administrables, commission mentor appliquée au checkout et liens Tarifs dans la navbar/footer.
 
 > **v53 — Navigation & performance :** menus déroulants au survol, filtres par domaines, optimisation SQL des catalogues, cache public court et hero WebP optimisé.

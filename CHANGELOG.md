@@ -1,3 +1,16 @@
+# v57 — Salle live adaptative & planning modifiable
+
+- Mode vidéo **Auto** : lorsque l'utilisateur est seul, la scène d'attente reste principale et sa caméra devient une petite vignette en bas à droite.
+- Passage automatique en galerie lorsque des participants distants arrivent.
+- Partage d'écran prioritaire en mode focus avec caméra du présentateur en PiP.
+- Sélecteur manuel `Auto / Galerie / Intervenant` dans la salle live.
+- Les vignettes compactes n'étirent plus la colonne vidéo sur toute la hauteur de la scène.
+- Le planning instructeur permet désormais de modifier inline la date, l'heure et la durée de chaque séance future.
+- Durée de séance configurable entre 15 et 480 minutes ; les séances déjà démarrées/terminées sont verrouillées.
+- Les dates publiques de la cohorte (`start_date` / `end_date`) se synchronisent avec le planning réel après création, modification ou suppression d'une séance.
+- Tests backend ajoutés pour modification autorisée, refus apprenant et verrouillage après démarrage.
+- Documentation : `docs/LIVE_PLANNING_V57.md`.
+
 # v56 — Modèle économique & page Tarifs
 
 - Nouvelle page publique `/pricing` avec une grille distincte pour apprenants, instructeurs, mentors et entreprises/recruteurs.

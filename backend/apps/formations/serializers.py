@@ -55,7 +55,7 @@ class FormationSessionSerializer(serializers.ModelSerializer):
 
 
 class FormationSessionWriteSerializer(serializers.ModelSerializer):
-    duration_minutes = serializers.IntegerField(read_only=True)
+    duration_minutes = serializers.IntegerField(required=False, min_value=15, max_value=480)
 
     class Meta:
         model = FormationSession
@@ -63,7 +63,7 @@ class FormationSessionWriteSerializer(serializers.ModelSerializer):
             "id", "formation", "session_number", "scheduled_at",
             "duration_minutes", "completed", "notes",
         ]
-        read_only_fields = ["id", "duration_minutes", "completed"]
+        read_only_fields = ["id", "completed"]
 
     def validate_formation(self, formation):
         if not _is_manager(self.context["request"].user, formation):
@@ -77,13 +77,29 @@ class FormationSessionWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "session_number": f"Cette formation prévoit {formation.num_sessions} séance(s) au maximum."
             })
+
+        # Une séance déjà démarrée constitue un historique pédagogique : on peut encore
+        # modifier ses notes, mais plus son horaire, sa durée ou son numéro.
+        if self.instance and (self.instance.started_at or self.instance.ended_at or self.instance.completed):
+            protected = {"scheduled_at", "duration_minutes", "session_number", "formation"}
+            if protected.intersection(attrs.keys()):
+                raise serializers.ValidationError(
+                    "Le planning d'une séance déjà démarrée ou terminée ne peut plus être modifié."
+                )
         return attrs
 
     def create(self, validated_data):
         formation = validated_data["formation"]
-        validated_data["duration_minutes"] = formation.session_duration_minutes
+        validated_data.setdefault("duration_minutes", formation.session_duration_minutes)
         validated_data["meeting_link"] = ""
-        return super().create(validated_data)
+        instance = super().create(validated_data)
+        formation.sync_schedule_dates()
+        return instance
+
+    def update(self, instance, validated_data):
+        instance = super().update(instance, validated_data)
+        instance.formation.sync_schedule_dates()
+        return instance
 
 
 class InteractiveFormationListSerializer(serializers.ModelSerializer):

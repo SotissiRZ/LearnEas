@@ -58,6 +58,52 @@ class InteractiveFormationRegressionTests(APITestCase):
         self.assertTrue(session.room_key)
         self.assertEqual(session.meeting_link, "")
 
+    def test_organizer_can_update_session_schedule_and_duration(self):
+        session = FormationSession.objects.create(
+            formation=self.formation,
+            session_number=1,
+            scheduled_at=timezone.now() + timedelta(days=1),
+            duration_minutes=75,
+        )
+        new_date = timezone.now() + timedelta(days=3)
+        self.client.force_authenticate(self.organizer)
+        response = self.client.patch(
+            f"/api/sessions/{session.id}/",
+            {"scheduled_at": new_date.isoformat(), "duration_minutes": 105},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        session.refresh_from_db()
+        self.assertEqual(session.duration_minutes, 105)
+        self.assertLess(abs((session.scheduled_at - new_date).total_seconds()), 1)
+
+    def test_student_cannot_update_session_schedule(self):
+        session = FormationSession.objects.create(
+            formation=self.formation, session_number=1,
+            scheduled_at=timezone.now() + timedelta(days=1), duration_minutes=75,
+        )
+        FormationEnrollment.objects.create(user=self.student, formation=self.formation)
+        self.client.force_authenticate(self.student)
+        response = self.client.patch(
+            f"/api/sessions/{session.id}/",
+            {"scheduled_at": (timezone.now() + timedelta(days=2)).isoformat()},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN, response.data)
+
+    def test_started_session_schedule_is_locked(self):
+        session = FormationSession.objects.create(
+            formation=self.formation, session_number=1,
+            scheduled_at=timezone.now(), duration_minutes=75, started_at=timezone.now(),
+        )
+        self.client.force_authenticate(self.organizer)
+        response = self.client.patch(
+            f"/api/sessions/{session.id}/",
+            {"duration_minutes": 120},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+
     def test_attendance_report_tracks_participant_and_duration(self):
         session = FormationSession.objects.create(
             formation=self.formation,

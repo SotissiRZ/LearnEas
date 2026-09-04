@@ -123,6 +123,7 @@ interface SessionInvite {
 
 type SidebarTab = "participants" | "chat" | "files";
 type WorkspaceMode = "video" | "code" | "whiteboard";
+type VideoLayout = "auto" | "gallery" | "focus";
 type ModerationAction = "mute" | "camera_off" | "remove";
 type CodeLanguage = "javascript" | "html" | "css" | "python" | "java" | "c" | "cpp" | "text";
 type CodeTheme = "midnight" | "dracula" | "light";
@@ -228,6 +229,7 @@ export default function LiveSessionPage() {
   const [selectedVideoInput, setSelectedVideoInput] = useState("");
   const [fullscreen, setFullscreen] = useState(false);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("video");
+  const [videoLayout, setVideoLayout] = useState<VideoLayout>("auto");
   const [codeLanguage, setCodeLanguage] = useState<CodeLanguage>("javascript");
   const [codeFileName, setCodeFileName] = useState("main.js");
   const [codeText, setCodeText] = useState(`// Atelier KalanPro\nfunction bienvenue(nom) {\n  return \`Bonjour \${nom} !\`;\n}\n\nconsole.log(bienvenue("KalanPro"));`);
@@ -1845,6 +1847,62 @@ export default function LiveSessionPage() {
   }
   if (!room) return null;
 
+  const effectiveVideoLayout: "solo" | "gallery" | "focus" = screenSharing
+    ? "focus"
+    : videoLayout === "auto"
+      ? (remoteFeeds.length === 0 ? "solo" : "gallery")
+      : videoLayout;
+  const organizerIsLocal = room.organizer.id === room.user.id;
+  const focusedRemoteFeed = organizerIsLocal
+    ? null
+    : (remoteFeeds.find((feed) => feed.userId === room.organizer.id) || remoteFeeds[0] || null);
+  const focusLocal = !focusedRemoteFeed || screenSharing;
+
+  const localTile = (compact = false, className = "") => (
+    <VideoTile
+      title="Vous"
+      subtitle={screenSharing ? (cameraOn ? "Écran + caméra" : "Partage d'écran") : room.is_organizer ? "Organisateur" : "Participant"}
+      videoRef={localVideoRef}
+      muted
+      footer={screenSharing ? "Écran partagé" : cameraOn ? "Caméra active" : "Caméra coupée"}
+      handRaised={myHandRaised}
+      avatar={room.user.avatar}
+      videoEnabled={screenSharing || cameraOn}
+      objectFit={screenSharing ? "contain" : "cover"}
+      compact={compact}
+      className={className}
+    >
+      {screenSharing && (
+        <PresenterPip
+          videoRef={presenterCameraRef}
+          cameraOn={cameraOn}
+          avatar={room.user.avatar}
+          name={room.user.name}
+          position={presenterPipPosition}
+          onPositionChange={(position) => {
+            presenterPipPositionRef.current = position;
+            setPresenterPipPosition(position);
+          }}
+        />
+      )}
+    </VideoTile>
+  );
+
+  const remoteTile = (feed: RemoteFeed, compact = false, className = "") => (
+    <RemoteVideo
+      key={feed.userId}
+      feed={feed}
+      compact={compact}
+      className={className}
+      handRaised={Boolean(people.find((person) => person.user_id === feed.userId)?.hand_raised)}
+      avatar={people.find((person) => person.user_id === feed.userId)?.avatar || null}
+      onElement={(element) => {
+        if (element) remoteVideoElementsRef.current.set(feed.userId, element);
+        else remoteVideoElementsRef.current.delete(feed.userId);
+      }}
+    />
+  );
+
   return (
     <div className="fixed inset-0 z-[100] h-[100dvh] overflow-hidden bg-gray-950 text-white">
       <div className="mx-auto flex h-full max-w-[1820px] flex-col px-2.5 py-2.5 sm:px-4">
@@ -1992,59 +2050,50 @@ export default function LiveSessionPage() {
                           {screenSharing ? "Votre écran est visible par les participants." : "Vue vidéo de la séance en temps réel."}
                         </p>
                       </div>
-                      <button onClick={toggleFullscreen} className="toolbar-secondary !px-2 !py-1.5 !text-[10px]">
-                        <Maximize2 size={15} /> {fullscreen ? "Quitter le plein écran" : "Plein écran"}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <label className="sr-only" htmlFor="video-layout">Disposition vidéo</label>
+                        <select id="video-layout" value={videoLayout} onChange={(event) => setVideoLayout(event.target.value as VideoLayout)} className="rounded-xl border border-white/10 bg-gray-950 px-2 py-1.5 text-[10px] font-medium text-gray-200 outline-none">
+                          <option value="auto">Disposition : Auto</option>
+                          <option value="gallery">Galerie</option>
+                          <option value="focus">Intervenant</option>
+                        </select>
+                        <button onClick={toggleFullscreen} className="toolbar-secondary !px-2 !py-1.5 !text-[10px]">
+                          <Maximize2 size={15} /> {fullscreen ? "Quitter le plein écran" : "Plein écran"}
+                        </button>
+                      </div>
                     </div>
 
-                    <div className={remoteFeeds.length === 0 ? "grid min-h-0 flex-1 grid-cols-1 gap-2.5 overflow-y-auto lg:grid-cols-[minmax(230px,340px)_minmax(0,1fr)]" : "grid min-h-0 flex-1 grid-cols-1 gap-2.5 overflow-y-auto lg:grid-cols-2 2xl:grid-cols-3"}>
-                      <VideoTile
-                        title="Vous"
-                        subtitle={screenSharing ? (cameraOn ? "Écran + caméra" : "Partage d'écran") : room.is_organizer ? "Organisateur" : "Participant"}
-                        videoRef={localVideoRef}
-                        muted
-                        footer={screenSharing ? "Écran partagé" : cameraOn ? "Caméra active" : "Caméra coupée"}
-                        handRaised={myHandRaised}
-                        avatar={room.user.avatar}
-                        videoEnabled={screenSharing || cameraOn}
-                        objectFit={screenSharing ? "contain" : "cover"}
-                      >
-                        {screenSharing && (
-                          <PresenterPip
-                            videoRef={presenterCameraRef}
-                            cameraOn={cameraOn}
-                            avatar={room.user.avatar}
-                            name={room.user.name}
-                            position={presenterPipPosition}
-                            onPositionChange={(position) => {
-                              presenterPipPositionRef.current = position;
-                              setPresenterPipPosition(position);
-                            }}
-                          />
-                        )}
-                      </VideoTile>
-                      {remoteFeeds.map((feed) => (
-                        <RemoteVideo
-                          key={feed.userId}
-                          feed={feed}
-                          handRaised={Boolean(people.find((person) => person.user_id === feed.userId)?.hand_raised)}
-                          avatar={people.find((person) => person.user_id === feed.userId)?.avatar || null}
-                          onElement={(element) => {
-                            if (element) remoteVideoElementsRef.current.set(feed.userId, element);
-                            else remoteVideoElementsRef.current.delete(feed.userId);
-                          }}
-                        />
-                      ))}
-                      {remoteFeeds.length === 0 && (
-                        <div className="grid min-h-[160px] place-items-center rounded-3xl border border-dashed border-white/10 bg-gray-900/80 p-4 text-center text-[11px] text-gray-500 sm:text-xs">
+                    {effectiveVideoLayout === "solo" ? (
+                      <div className="relative min-h-0 flex-1 overflow-hidden rounded-3xl border border-dashed border-white/10 bg-gray-900/80">
+                        <div className="absolute inset-0 grid place-items-center p-5 text-center text-[11px] text-gray-500 sm:text-xs">
                           <div>
-                            <Users size={28} className="mx-auto mb-2" />
+                            <Users size={32} className="mx-auto mb-2" />
                             <p className="font-medium text-gray-300">En attente des autres participants...</p>
-                            <p className="mt-1 text-xs text-gray-500">Les flux distants apparaîtront ici automatiquement.</p>
+                            <p className="mt-1 text-xs text-gray-500">Votre caméra reste en vignette. Les nouveaux flux apparaîtront automatiquement.</p>
                           </div>
                         </div>
-                      )}
-                    </div>
+                        <div className="absolute bottom-3 right-3 z-20 aspect-video w-[min(310px,44%)] min-w-[190px] max-w-[310px] sm:bottom-4 sm:right-4">
+                          {localTile(true, "h-full shadow-2xl ring-1 ring-white/10")}
+                        </div>
+                      </div>
+                    ) : effectiveVideoLayout === "gallery" ? (
+                      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2.5 overflow-y-auto sm:grid-cols-2 2xl:grid-cols-3">
+                        {localTile(false, "h-full")}
+                        {remoteFeeds.map((feed) => remoteTile(feed, false, "h-full"))}
+                      </div>
+                    ) : (
+                      <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+                        <div className="min-h-0 flex-1">
+                          {focusLocal ? localTile(false, "h-full") : focusedRemoteFeed ? remoteTile(focusedRemoteFeed, false, "h-full") : localTile(false, "h-full")}
+                        </div>
+                        {(remoteFeeds.length > 0 || !focusLocal) && (
+                          <div className="grid max-h-[150px] shrink-0 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3 lg:grid-cols-4">
+                            {!focusLocal && localTile(true, "h-full")}
+                            {remoteFeeds.filter((feed) => focusLocal || feed.userId !== focusedRemoteFeed?.userId).map((feed) => remoteTile(feed, true, "h-full"))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -2489,11 +2538,11 @@ function ControlButton({ active, label, onClick, disabled, children, compact = f
   );
 }
 
-function VideoTile({ title, subtitle, footer, videoRef, muted, handRaised, avatar, videoEnabled = true, objectFit = "cover", children }: { title: string; subtitle: string; footer: string; videoRef: React.RefObject<HTMLVideoElement>; muted?: boolean; handRaised?: boolean; avatar?: string | null; videoEnabled?: boolean; objectFit?: "cover" | "contain"; children?: React.ReactNode }) {
+function VideoTile({ title, subtitle, footer, videoRef, muted, handRaised, avatar, videoEnabled = true, objectFit = "cover", compact = false, className = "", children }: { title: string; subtitle: string; footer: string; videoRef: React.RefObject<HTMLVideoElement>; muted?: boolean; handRaised?: boolean; avatar?: string | null; videoEnabled?: boolean; objectFit?: "cover" | "contain"; compact?: boolean; className?: string; children?: React.ReactNode }) {
   const initial = title.trim().charAt(0).toUpperCase() || "U";
   return (
-    <div className={`relative min-h-[170px] overflow-hidden rounded-2xl border bg-black ${handRaised ? "border-amber-400/60" : "border-white/10"}`}>
-      <video ref={videoRef} autoPlay playsInline muted={muted} className={`h-full min-h-[170px] w-full ${objectFit === "contain" ? "object-contain" : "object-cover"} transition-opacity ${videoEnabled ? "opacity-100" : "opacity-0"}`} />
+    <div className={`relative overflow-hidden rounded-2xl border bg-black ${compact ? "min-h-[105px]" : "min-h-[170px]"} ${handRaised ? "border-amber-400/60" : "border-white/10"} ${className}`}>
+      <video ref={videoRef} autoPlay playsInline muted={muted} className={`h-full w-full ${compact ? "min-h-[105px]" : "min-h-[170px]"} ${objectFit === "contain" ? "object-contain" : "object-cover"} transition-opacity ${videoEnabled ? "opacity-100" : "opacity-0"}`} />
       {!videoEnabled && (
         <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-gray-900 to-gray-950">
           <div className="text-center">
@@ -2576,7 +2625,7 @@ function PresenterPip({ videoRef, cameraOn, avatar, name, position, onPositionCh
   );
 }
 
-function RemoteVideo({ feed, handRaised, avatar, onElement }: { feed: RemoteFeed; handRaised: boolean; avatar?: string | null; onElement: (element: HTMLVideoElement | null) => void }) {
+function RemoteVideo({ feed, handRaised, avatar, onElement, compact = false, className = "" }: { feed: RemoteFeed; handRaised: boolean; avatar?: string | null; onElement: (element: HTMLVideoElement | null) => void; compact?: boolean; className?: string }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
     const element = ref.current;
@@ -2587,7 +2636,7 @@ function RemoteVideo({ feed, handRaised, avatar, onElement }: { feed: RemoteFeed
     return () => onElement(null);
   }, [feed.stream, onElement]);
 
-  return <VideoTile title={feed.name} subtitle="Participant" footer="En direct" videoRef={ref} handRaised={handRaised} avatar={avatar} />;
+  return <VideoTile title={feed.name} subtitle="Participant" footer="En direct" videoRef={ref} handRaised={handRaised} avatar={avatar} compact={compact} className={className} />;
 }
 
 function inviteStatusLabel(status: SessionInvite["status"]) {

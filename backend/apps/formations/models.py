@@ -131,6 +131,27 @@ class InteractiveFormation(models.Model):
                 return False
         return True
 
+    def sync_schedule_dates(self):
+        """Aligne les dates publiques de la cohorte sur son planning réel."""
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        scheduled = list(self.sessions.order_by("scheduled_at").values_list("scheduled_at", flat=True))
+        if scheduled:
+            try:
+                cohort_tz = ZoneInfo(self.cohort_timezone or "UTC")
+            except (ZoneInfoNotFoundError, ValueError):
+                cohort_tz = ZoneInfo("UTC")
+            start_date = timezone.localtime(scheduled[0], cohort_tz).date()
+            end_date = timezone.localtime(scheduled[-1], cohort_tz).date()
+        else:
+            start_date = None
+            end_date = None
+
+        if self.start_date != start_date or self.end_date != end_date:
+            InteractiveFormation.objects.filter(pk=self.pk).update(start_date=start_date, end_date=end_date)
+            self.start_date = start_date
+            self.end_date = end_date
+
 
 class FormationSession(models.Model):
     """Séance planifiée dans une salle vidéo interne KalanPro."""
