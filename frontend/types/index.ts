@@ -328,6 +328,30 @@ export interface Certificate {
   metadata: Record<string, unknown>;
   course_enrollment: number | null;
   formation_enrollment: number | null;
+  qr_url?: string;
+  issuer_name?: string;
+  issuer_country?: string;
+  skills_snapshot?: string[];
+  projects_snapshot?: Array<{
+    title: string;
+    required_for_certificate?: boolean;
+    score?: number | null;
+    max_score?: number | null;
+    validated_at?: string | null;
+    validated_by?: string;
+    skills?: string[];
+  }>;
+  credential_digest?: string;
+  schema_version?: number;
+  supersedes_certificate_number?: string | null;
+  replacement_verification_url?: string | null;
+  events?: Array<{
+    id: number;
+    event_type: "issued" | "revoked" | "reissued" | "expired";
+    actor_name: string;
+    details: Record<string, unknown>;
+    created_at: string;
+  }>;
 }
 
 export type ProjectSubmissionStatus = "draft" | "submitted" | "changes_requested" | "approved" | "rejected";

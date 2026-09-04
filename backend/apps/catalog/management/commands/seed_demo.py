@@ -310,13 +310,11 @@ class Command(BaseCommand):
                 course.rating_count = count
                 course.save(update_fields=["rating_avg", "rating_count"])
 
-        self.stdout.write("Création d'un certificat de démonstration...")
         fatou_enrollment, _ = CourseEnrollment.objects.get_or_create(user=students[0], course=c1)
         fatou_enrollment.progress_percent = 100
         fatou_enrollment.completed = True
         fatou_enrollment.completed_at = fatou_enrollment.completed_at or timezone.now()
         fatou_enrollment.save(update_fields=["progress_percent", "completed", "completed_at"])
-        issue_course_certificate(fatou_enrollment, issued_by=sarah, force=True)
 
         self.stdout.write("Création d'un projet et portfolio de démonstration...")
         demo_project, _ = ProjectAssignment.objects.get_or_create(
@@ -350,6 +348,11 @@ class Command(BaseCommand):
         demo_profile.skills = ["Python", "Django", "Django REST Framework", "API REST"]
         demo_profile.open_to_work = True
         demo_profile.save()
+
+        # Émettre le certificat après la validation du projet afin que le snapshot v47
+        # embarque réellement les compétences et la preuve pratique du compte de démo.
+        self.stdout.write("Création d'un certificat vérifiable de démonstration...")
+        issue_course_certificate(fatou_enrollment, issued_by=sarah, force=True)
 
         self.stdout.write("Création de la FAQ...")
         faq_items = [

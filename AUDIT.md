@@ -1,3 +1,17 @@
+# Audit v47 — certificats vérifiables
+
+- Vérification publique : numéro unique ou UUID, QR code serveur et page `noindex`.
+- Confidentialité : aucun email/téléphone/identifiant de compte dans le serializer public.
+- Traçabilité : snapshots compétences/projets, empreinte SHA-256, journal `CertificateEvent`, révocation motivée et réémission non destructive.
+- Intégrité : contraintes SQL empêchant deux certificats `status=active` pour une même inscription, plus verrou transactionnel lors de l'émission.
+- Expiration : matérialisation horaire par Celery Beat, en complément du calcul dynamique `effective_status`.
+- Anti-énumération : lookup exact uniquement et throttle public dédié `certificate_verify` (300/h par défaut).
+- QR : génération PNG locale vérifiée avec `qrcode==8.2`.
+- Validation statique exécutée : compilation Python, 115 TS/TSX sans erreur syntaxique, audit mobile sans alerte bloquante, YAML/JSON valides, dépendances et préfixes de migrations cohérents.
+- Non exécuté dans l'environnement assistant : `manage.py migrate/check/test` et build Next.js complet, faute de Django/node_modules du projet et de Docker. À exécuter dans les conteneurs du projet avant mise en production.
+
+---
+
 # Audit technique LearnEas — v45
 
 Date : 2026-09-04

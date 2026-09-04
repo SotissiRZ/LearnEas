@@ -1,13 +1,16 @@
 from django.shortcuts import get_object_or_404
+from django.http import HttpResponse
 from django.utils import timezone
 from django.db import models
 from rest_framework import viewsets, permissions, status, filters, generics
+from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.catalog.models import Lesson, Course, PDFProduct
-from .models import CourseEnrollment, LessonProgress, LessonNote, PDFPurchase, Wishlist, Certificate
+from .models import CourseEnrollment, LessonProgress, LessonNote, PDFPurchase, Wishlist, Certificate, CertificateEvent
 from .serializers import (
     CourseEnrollmentSerializer, LessonProgressSerializer, LessonNoteSerializer, PDFPurchaseSerializer, WishlistSerializer,
     CertificateSerializer, PublicCertificateSerializer,
@@ -174,9 +177,9 @@ class CertificateViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         user = self.request.user
         qs = Certificate.objects.select_related(
-            "user", "issued_by", "course_enrollment__course__instructor",
+            "user", "issued_by", "supersedes", "course_enrollment__course__instructor",
             "formation_enrollment__formation__instructor",
-        )
+        ).prefetch_related("events__actor", "replacement_certificates")
         if user.role == "admin":
             return qs
         if user.role == "instructor":
@@ -202,20 +205,24 @@ class CertificateViewSet(viewsets.ReadOnlyModelViewSet):
                 qs = qs.filter(course__instructor=request.user)
             for e in qs:
                 info = course_eligibility(e)
+                latest_certificate = e.certificate_records.order_by("-issued_at", "-id").first()
                 rows.append({"enrollment_id": e.id, "kind": "course", "user_id": e.user_id,
                              "student_name": e.user.get_full_name() or e.user.username,
                              "student_email": e.user.email, **info,
-                             "certificate_id": getattr(getattr(e, "certificate_record", None), "id", None)})
+                             "certificate_id": latest_certificate.id if latest_certificate else None,
+                             "certificate_status": latest_certificate.effective_status if latest_certificate else None})
         elif formation_id:
             qs = FormationEnrollment.objects.filter(formation_id=formation_id).select_related("user", "formation__instructor", "formation__co_instructor")
             if request.user.role != "admin":
                 qs = qs.filter(models.Q(formation__instructor=request.user) | models.Q(formation__co_instructor=request.user))
             for e in qs:
                 info = formation_eligibility(e)
+                latest_certificate = e.certificate_records.order_by("-issued_at", "-id").first()
                 rows.append({"enrollment_id": e.id, "kind": "formation", "user_id": e.user_id,
                              "student_name": e.user.get_full_name() or e.user.username,
                              "student_email": e.user.email, **info,
-                             "certificate_id": getattr(getattr(e, "certificate_record", None), "id", None)})
+                             "certificate_id": latest_certificate.id if latest_certificate else None,
+                             "certificate_status": latest_certificate.effective_status if latest_certificate else None})
         else:
             return Response({"detail": "Indiquez course ou formation."}, status=400)
         return Response(rows)
@@ -305,10 +312,19 @@ class CertificateViewSet(viewsets.ReadOnlyModelViewSet):
         certificate = self.get_object()
         if request.user.role not in ("instructor", "admin"):
             return Response({"detail": "Accès refusé."}, status=403)
+        if certificate.effective_status != Certificate.Status.ACTIVE:
+            return Response({"detail": "Seul un certificat actuellement valide peut être révoqué."}, status=400)
+        reason = str(request.data.get("reason", "")).strip()
+        if len(reason) < 3:
+            return Response({"reason": ["Indiquez un motif de révocation (3 caractères minimum)."]}, status=400)
         certificate.status = Certificate.Status.REVOKED
         certificate.revoked_at = timezone.now()
-        certificate.revocation_reason = str(request.data.get("reason", "")).strip()
+        certificate.revocation_reason = reason[:2000]
         certificate.save(update_fields=["status", "revoked_at", "revocation_reason"])
+        CertificateEvent.objects.create(
+            certificate=certificate, event_type=CertificateEvent.EventType.REVOKED, actor=request.user,
+            details={"reason": certificate.revocation_reason},
+        )
         return Response(self.get_serializer(certificate).data)
 
     @action(detail=True, methods=["post"], url_path="reissue")
@@ -316,16 +332,33 @@ class CertificateViewSet(viewsets.ReadOnlyModelViewSet):
         certificate = self.get_object()
         if request.user.role not in ("instructor", "admin"):
             return Response({"detail": "Accès refusé."}, status=403)
+        if certificate.effective_status == Certificate.Status.ACTIVE:
+            return Response({"detail": "Révoquez d'abord le certificat actif avant de le réémettre."}, status=400)
+        latest_replacement = certificate.replacement_certificates.order_by("-issued_at", "-id").first()
+        if latest_replacement:
+            return Response(
+                {
+                    "detail": "Ce certificat a déjà été remplacé. Réémettez la version la plus récente si nécessaire.",
+                    "certificate_id": latest_replacement.id,
+                },
+                status=409,
+            )
         from .certificates import issue_course_certificate, issue_formation_certificate
         if certificate.course_enrollment_id:
-            certificate, _ = issue_course_certificate(certificate.course_enrollment, issued_by=request.user, force=True)
+            replacement, _ = issue_course_certificate(
+                certificate.course_enrollment, issued_by=request.user, force=True, force_new=True, supersedes=certificate
+            )
         else:
-            certificate, _ = issue_formation_certificate(certificate.formation_enrollment, issued_by=request.user, force=True)
-        return Response(self.get_serializer(certificate).data)
+            replacement, _ = issue_formation_certificate(
+                certificate.formation_enrollment, issued_by=request.user, force=True, force_new=True, supersedes=certificate
+            )
+        return Response(self.get_serializer(replacement).data, status=201)
 
 
 class CertificateVerifyView(generics.RetrieveAPIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "certificate_verify"
     serializer_class = PublicCertificateSerializer
     lookup_field = "verification_code"
     lookup_url_kwarg = "code"
@@ -334,4 +367,60 @@ class CertificateVerifyView(generics.RetrieveAPIView):
         from apps.accounts.models import PlatformSettings
         if not PlatformSettings.load().certificate_verification_enabled:
             return Certificate.objects.none()
-        return Certificate.objects.all()
+        return Certificate.objects.select_related("supersedes").prefetch_related("replacement_certificates")
+
+
+class CertificateLookupView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "certificate_verify"
+
+    def get(self, request):
+        from apps.accounts.models import PlatformSettings
+        if not PlatformSettings.load().certificate_verification_enabled:
+            return Response({"detail": "La vérification publique est désactivée."}, status=404)
+        query = str(request.query_params.get("q", "")).strip()
+        if not query:
+            return Response({"q": ["Indiquez un numéro ou un code de vérification."]}, status=400)
+        certificate = Certificate.objects.filter(certificate_number__iexact=query).first()
+        if certificate is None:
+            try:
+                import uuid
+                code = uuid.UUID(query)
+            except (ValueError, TypeError, AttributeError):
+                code = None
+            if code:
+                certificate = Certificate.objects.filter(verification_code=code).first()
+        if certificate is None:
+            return Response({"detail": "Certificat introuvable."}, status=404)
+        return Response(PublicCertificateSerializer(certificate, context={"request": request}).data)
+
+
+class CertificateQRView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "certificate_verify"
+
+    def get(self, request, code):
+        from apps.accounts.models import PlatformSettings
+        from django.conf import settings
+        if not PlatformSettings.load().certificate_verification_enabled:
+            return Response({"detail": "La vérification publique est désactivée."}, status=404)
+        certificate = get_object_or_404(Certificate, verification_code=code)
+        verification_url = f"{settings.FRONTEND_URL.rstrip('/')}/certificates/verify/{certificate.verification_code}"
+        try:
+            import io
+            import qrcode
+            from qrcode.constants import ERROR_CORRECT_M
+            qr = qrcode.QRCode(version=None, error_correction=ERROR_CORRECT_M, box_size=8, border=4)
+            qr.add_data(verification_url)
+            qr.make(fit=True)
+            image = qr.make_image(fill_color="black", back_color="white")
+            buf = io.BytesIO()
+            image.save(buf, format="PNG")
+        except Exception:
+            return Response({"detail": "QR code indisponible."}, status=503)
+        response = HttpResponse(buf.getvalue(), content_type="image/png")
+        response["Cache-Control"] = "public, max-age=86400"
+        response["Content-Disposition"] = f'inline; filename="{certificate.certificate_number}-qr.png"'
+        return response

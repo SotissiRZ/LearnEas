@@ -7,5 +7,6 @@ admin.site.register(PDFPurchase)
 admin.site.register(Wishlist)
 
 
-from .models import Certificate
+from .models import Certificate, CertificateEvent
 admin.site.register(Certificate)
+admin.site.register(CertificateEvent)

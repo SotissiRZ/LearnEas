@@ -1,3 +1,19 @@
+# v47 — Certificats vérifiables, QR et registre immuable
+
+- Chaque certificat dispose désormais d’un **QR code public** pointant vers le registre LearnEas.
+- La page de vérification accepte le **numéro de certificat ou le code UUID**, et affiche explicitement Valide / Révoqué / Expiré.
+- Snapshot serveur des preuves au moment de l’émission : émetteur, compétences et projets pratiques approuvés avec note, barème, validateur et date.
+- Ajout d’une **empreinte SHA-256** du snapshot public pour détecter les altérations de données.
+- Réémission rendue historique : un nouveau certificat est créé au lieu d’écraser l’ancien numéro/QR ; l’ancien registre reste consultable et référence son remplacement.
+- Nouveau journal `CertificateEvent` pour tracer émission, révocation, expiration et réémission ; Celery Beat matérialise les expirations chaque heure.
+- La révocation exige maintenant un motif et n’efface jamais le certificat.
+- Les certificats v46 existants sont conservés et enrichis par la migration ; ils restent vérifiables.
+- Ajout de `qrcode==8.2` au backend.
+- Documentation : `docs/CERTIFICATES_VERIFIABLES.md`.
+- **Migration requise :** `enrollments.0005_verifiable_credentials`.
+
+---
+
 # v46 — Projets pratiques + portfolio professionnel
 
 - Nouvelle application `apps.projects` pour transformer les cours en preuves de compétence : briefs, objectifs, livrables, compétences, échéances, barèmes et ordre d’affichage.

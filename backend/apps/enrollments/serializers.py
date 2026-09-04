@@ -71,45 +71,105 @@ class WishlistSerializer(serializers.ModelSerializer):
         fields = ["id", "course", "pdf_product", "added_at"]
 
 
-from .models import Certificate
+from .models import Certificate, CertificateEvent
+
+
+class CertificateEventSerializer(serializers.ModelSerializer):
+    actor_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CertificateEvent
+        fields = ["id", "event_type", "actor_name", "details", "created_at"]
+        read_only_fields = fields
+
+    def get_actor_name(self, obj):
+        if not obj.actor:
+            return "Système LearnEas"
+        return obj.actor.get_full_name() or obj.actor.username
 
 
 class CertificateSerializer(serializers.ModelSerializer):
     effective_status = serializers.ReadOnlyField()
     verification_url = serializers.SerializerMethodField()
+    qr_url = serializers.SerializerMethodField()
+    replacement_verification_url = serializers.SerializerMethodField()
+    supersedes_certificate_number = serializers.CharField(source="supersedes.certificate_number", read_only=True, allow_null=True)
+    events = CertificateEventSerializer(many=True, read_only=True)
 
     class Meta:
         model = Certificate
         fields = [
-            "id", "certificate_number", "verification_code", "verification_url",
+            "id", "certificate_number", "verification_code", "verification_url", "qr_url",
             "status", "effective_status", "issued_at", "expires_at", "revoked_at",
             "revocation_reason", "achievement_percent", "student_name", "content_type",
             "content_title", "instructor_name", "title", "subtitle", "description",
             "signatory_name", "signatory_title", "accent_color", "duration_minutes",
             "completed_at", "display_options", "metadata", "user", "issued_by",
-            "course_enrollment", "formation_enrollment",
+            "course_enrollment", "formation_enrollment", "issuer_name", "issuer_country",
+            "skills_snapshot", "projects_snapshot", "credential_digest", "schema_version",
+            "supersedes_certificate_number", "replacement_verification_url", "events",
         ]
         read_only_fields = fields
 
-    def get_verification_url(self, obj):
+    def _public_url(self, obj):
         from django.conf import settings
         return f"{settings.FRONTEND_URL.rstrip('/')}/certificates/verify/{obj.verification_code}"
+
+    def get_verification_url(self, obj):
+        return self._public_url(obj)
+
+    def get_qr_url(self, obj):
+        from django.urls import reverse
+        request = self.context.get("request")
+        path = reverse("certificate-qr", kwargs={"code": obj.verification_code})
+        if request:
+            return request.build_absolute_uri(path)
+        from django.conf import settings
+        base = str(getattr(settings, "BACKEND_PUBLIC_URL", "")).rstrip("/")
+        return f"{base}{path}" if base else path
+
+    def get_replacement_verification_url(self, obj):
+        replacement = obj.replacement_certificates.order_by("-issued_at", "-id").first()
+        return self._public_url(replacement) if replacement else None
 
 
 class PublicCertificateSerializer(serializers.ModelSerializer):
     effective_status = serializers.ReadOnlyField()
     verification_url = serializers.SerializerMethodField()
+    qr_url = serializers.SerializerMethodField()
+    replacement_verification_url = serializers.SerializerMethodField()
+    supersedes_certificate_number = serializers.CharField(source="supersedes.certificate_number", read_only=True, allow_null=True)
 
     class Meta:
         model = Certificate
         fields = [
-            "certificate_number", "verification_code", "verification_url", "effective_status", "issued_at",
-            "expires_at", "achievement_percent", "student_name", "content_type",
+            "certificate_number", "verification_code", "verification_url", "qr_url", "effective_status",
+            "issued_at", "expires_at", "revoked_at", "achievement_percent", "student_name", "content_type",
             "content_title", "instructor_name", "title", "subtitle", "description",
             "signatory_name", "signatory_title", "accent_color", "duration_minutes",
-            "completed_at", "display_options",
+            "completed_at", "display_options", "issuer_name", "issuer_country", "skills_snapshot",
+            "projects_snapshot", "credential_digest", "schema_version", "supersedes_certificate_number",
+            "replacement_verification_url",
         ]
 
-    def get_verification_url(self, obj):
+    def _public_url(self, obj):
         from django.conf import settings
         return f"{settings.FRONTEND_URL.rstrip('/')}/certificates/verify/{obj.verification_code}"
+
+    def get_verification_url(self, obj):
+        return self._public_url(obj)
+
+    def get_qr_url(self, obj):
+        from django.urls import reverse
+        request = self.context.get("request")
+        path = reverse("certificate-qr", kwargs={"code": obj.verification_code})
+        if request:
+            return request.build_absolute_uri(path)
+        from django.conf import settings
+        base = str(getattr(settings, "BACKEND_PUBLIC_URL", "")).rstrip("/")
+        return f"{base}{path}" if base else path
+
+    def get_replacement_verification_url(self, obj):
+        replacement = obj.replacement_certificates.order_by("-issued_at", "-id").first()
+        return self._public_url(replacement) if replacement else None
+

@@ -8,6 +8,7 @@ from rest_framework.test import APITestCase
 from apps.accounts.models import User, PlatformSettings
 from apps.catalog.models import Category, Course
 from apps.formations.models import InteractiveFormation, FormationEnrollment, FormationSession, FormationAttendance
+from apps.projects.models import ProjectAssignment, ProjectSubmission
 from .models import CourseEnrollment, Certificate
 from .certificates import course_eligibility, formation_eligibility, issue_course_certificate, issue_formation_certificate
 
@@ -73,6 +74,61 @@ class CertificateRegressionTests(APITestCase):
         self.client.force_authenticate(self.other_student)
         response = self.client.get(f"/api/enrollments/certificates/{certificate.id}/")
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+    def test_certificate_snapshots_verified_projects_skills_and_issuer(self):
+        assignment = ProjectAssignment.objects.create(
+            course=self.course, title="Tableau de bord PME", brief="Construire un dashboard",
+            skills=["Excel", "Analyse de données"], published=True, required_for_certificate=False,
+        )
+        ProjectSubmission.objects.create(
+            assignment=assignment, enrollment=self.enrollment, student=self.student,
+            title="Dashboard final", status=ProjectSubmission.Status.APPROVED, score=Decimal("92"),
+            skills=["Data visualisation"], reviewed_at=timezone.now(), reviewed_by=self.instructor,
+        )
+        self.course.what_you_will_learn = ["Reporting", "Excel"]
+        self.course.save(update_fields=["what_you_will_learn"])
+        self.enrollment.progress_percent = 100
+        self.enrollment.save(update_fields=["progress_percent"])
+        certificate, _ = issue_course_certificate(self.enrollment, issued_by=self.instructor)
+        self.assertIn("Excel", certificate.skills_snapshot)
+        self.assertIn("Reporting", certificate.skills_snapshot)
+        self.assertIn("Data visualisation", certificate.skills_snapshot)
+        self.assertEqual(certificate.projects_snapshot[0]["title"], "Tableau de bord PME")
+        self.assertEqual(certificate.projects_snapshot[0]["score"], 92.0)
+        self.assertTrue(certificate.issuer_name)
+        self.assertEqual(len(certificate.credential_digest), 64)
+
+    def test_qr_endpoint_is_public_png_and_lookup_accepts_certificate_number(self):
+        self.enrollment.progress_percent = 100
+        self.enrollment.save(update_fields=["progress_percent"])
+        certificate, _ = issue_course_certificate(self.enrollment, issued_by=self.instructor)
+        lookup = self.client.get("/api/enrollments/certificates/lookup/", {"q": certificate.certificate_number})
+        self.assertEqual(lookup.status_code, status.HTTP_200_OK, lookup.data)
+        self.assertEqual(str(lookup.data["verification_code"]), str(certificate.verification_code))
+        qr = self.client.get(f"/api/enrollments/certificates/verify/{certificate.verification_code}/qr/")
+        self.assertEqual(qr.status_code, status.HTTP_200_OK)
+        self.assertEqual(qr["Content-Type"], "image/png")
+        self.assertTrue(bytes(qr.content).startswith(b"\x89PNG"))
+
+    def test_reissue_keeps_old_verification_record_and_links_replacement(self):
+        self.enrollment.progress_percent = 100
+        self.enrollment.save(update_fields=["progress_percent"])
+        original, _ = issue_course_certificate(self.enrollment, issued_by=self.instructor)
+        old_code = original.verification_code
+        self.client.force_authenticate(self.instructor)
+        revoked = self.client.post(
+            f"/api/enrollments/certificates/{original.id}/revoke/", {"reason": "Erreur administrative"}, format="json"
+        )
+        self.assertEqual(revoked.status_code, status.HTTP_200_OK, revoked.data)
+        reissued = self.client.post(f"/api/enrollments/certificates/{original.id}/reissue/", {}, format="json")
+        self.assertEqual(reissued.status_code, status.HTTP_201_CREATED, reissued.data)
+        self.assertNotEqual(str(reissued.data["verification_code"]), str(old_code))
+        old_verify = self.client.get(f"/api/enrollments/certificates/verify/{old_code}/")
+        self.assertEqual(old_verify.status_code, status.HTTP_200_OK, old_verify.data)
+        self.assertEqual(old_verify.data["effective_status"], Certificate.Status.REVOKED)
+        self.assertTrue(old_verify.data["replacement_verification_url"])
+        self.assertEqual(Certificate.objects.filter(course_enrollment=self.enrollment).count(), 2)
 
     def test_live_certificate_uses_recorded_attendance(self):
         formation = InteractiveFormation.objects.create(

@@ -1,5 +1,7 @@
 # LearnEas
 
+> **v47 — Certificats vérifiables :** QR code public, recherche par numéro/UUID, preuves pédagogiques figées, historique de révocation/réémission et empreinte SHA-256.
+
 > **v41 — Visioconférence :** pendant un partage d’écran, la caméra du présentateur est affichée en vignette déplaçable et intégrée au flux présenté.
 
 
@@ -89,8 +91,8 @@ Admin Django : **http://localhost/admin**
 - Lecteur PDF unifié : barre native du navigateur (pages, recherche, zoom, miniatures selon navigateur), plein écran/modal, impression, nouvel onglet et téléchargement.
 - Upload vidéo instructeur : MP4/WebM/MOV/M4V, progression réelle, métadonnées extraites automatiquement et limite Docker locale de 2 Go par défaut (`MAX_VIDEO_UPLOAD_MB`).
 - Les leçons acceptent désormais un fichier de sous-titres `.vtt` et une transcription.
-- **Apprenant → Mes certificats** : registre personnel, filtres, affichage, impression/PDF, partage et vérification publique.
-- **Instructeur → Certificats** : règles par cours/formation, seuil de progression ou de présence réelle, délivrance automatique/manuelle ou groupée, validité, apparence, signataire, préfixe, registre, révocation et réémission.
+- **Apprenant → Mes certificats** : registre personnel, filtres, impression/PDF, partage, QR code, preuves de compétences/projets et vérification publique par numéro ou UUID.
+- **Instructeur → Certificats** : règles par cours/formation, seuil de progression ou de présence réelle, délivrance automatique/manuelle ou groupée, validité, apparence, signataire, préfixe, registre, révocation motivée et réémission historique sans écraser l’ancien certificat.
 - **Admin → Certificats** : registre global, vérification/révocation/réémission, délivrance groupée ou forcée et paramètres globaux + surcharge par contenu.
 - La présence aux formations live est calculée à partir du temps réellement enregistré dans les séances, et non d'une simple case « présent ».
 - `seed_demo` délivre un certificat d'exemple à **Fatou Ndiaye** sur le cours Django pour tester immédiatement l'onglet « Mes certificats ».
@@ -233,6 +235,8 @@ Une demande instructeur reste au statut **En attente** tant qu’un administrate
 ---
 
 ## 🧩 Projets pratiques & portfolio professionnel
+
+Les certificats v47 possèdent un QR code de vérification, un numéro unique recherchable, un état public (valide/révoqué/expiré), un snapshot des compétences et projets validés, une empreinte SHA-256 et un historique de réémission qui conserve les anciennes versions. Voir `docs/CERTIFICATES_VERIFIABLES.md`.
 
 LearnEas permet désormais à un instructeur d’ajouter des projets évalués aux cours. Un projet peut être requis pour l’obtention du certificat, conserver l’historique des remises et être corrigé avec note et feedback. Une réalisation approuvée peut ensuite être publiée dans un portfolio public avec un badge de vérification LearnEas ; les preuves de validation sont figées côté serveur et ne peuvent pas être altérées par l’apprenant. Les réalisations externes peuvent aussi être ajoutées, sans badge vérifié.
 

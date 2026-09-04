@@ -1,13 +1,16 @@
+import hashlib
+import json
 import uuid
 from datetime import timedelta
 from decimal import Decimal
-from django.db.models import Sum
+
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
 from apps.accounts.models import PlatformSettings
 from apps.formations.models import FormationAttendance
-from .models import Certificate
+from .models import Certificate, CertificateEvent
 
 
 def _name(user):
@@ -18,12 +21,30 @@ def _expires(months):
     return timezone.now() + timedelta(days=int(months) * 30) if months else None
 
 
+def _clean_strings(values, limit=40):
+    result = []
+    seen = set()
+    for raw in values or []:
+        value = str(raw or "").strip()
+        if not value:
+            continue
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(value[:160])
+        if len(result) >= limit:
+            break
+    return result
+
+
 def course_eligibility(enrollment):
     course = enrollment.course
     threshold = max(0, min(int(course.certificate_threshold_percent or 100), 100))
     percent = int(enrollment.progress_percent or 0)
     progress_ok = percent >= threshold
     from apps.projects.services import required_projects_status
+
     project_status = required_projects_status(enrollment)
     project_ok = project_status["complete"]
     project_reason = ""
@@ -84,15 +105,161 @@ def _certificate_number(prefix):
     return f"{clean}-{timezone.now():%Y}-{uuid.uuid4().hex[:10].upper()}"
 
 
-def issue_course_certificate(enrollment, issued_by=None, force=False):
+def _course_evidence(enrollment):
+    """Fige les compétences et projets réellement validés au moment de la certification."""
+    from apps.projects.models import ProjectSubmission
+
+    course = enrollment.course
+    submissions = (
+        ProjectSubmission.objects.filter(
+            enrollment=enrollment,
+            student=enrollment.user,
+            assignment__course=course,
+            status=ProjectSubmission.Status.APPROVED,
+        )
+        .select_related("assignment", "reviewed_by")
+        .order_by("assignment__order", "assignment_id")
+    )
+
+    skills = list(course.what_you_will_learn or [])
+    projects = []
+    for submission in submissions:
+        assignment = submission.assignment
+        skills.extend(assignment.skills or [])
+        skills.extend(submission.skills or [])
+        projects.append(
+            {
+                "title": assignment.title,
+                "required_for_certificate": bool(assignment.required_for_certificate),
+                "score": float(submission.score) if submission.score is not None else None,
+                "max_score": int(assignment.max_score or 100),
+                "validated_at": submission.reviewed_at.isoformat() if submission.reviewed_at else None,
+                "validated_by": _name(submission.reviewed_by) if submission.reviewed_by else _name(course.instructor),
+                "skills": _clean_strings(list(assignment.skills or []) + list(submission.skills or []), limit=20),
+            }
+        )
+    return _clean_strings(skills), projects
+
+
+def _issuer_snapshot():
+    config = PlatformSettings.load()
+    return {
+        "name": (config.legal_company_name or config.site_name or "LearnEas").strip(),
+        "country": (config.legal_country or "").strip(),
+    }
+
+
+def _credential_digest(certificate):
+    """Empreinte SHA-256 du snapshot public. Ce n'est pas une signature numérique qualifiée."""
+    payload = {
+        "schema_version": int(certificate.schema_version or 2),
+        "certificate_number": certificate.certificate_number,
+        "verification_code": str(certificate.verification_code),
+        "student_name": certificate.student_name,
+        "content_type": certificate.content_type,
+        "content_title": certificate.content_title,
+        "instructor_name": certificate.instructor_name,
+        "issuer_name": certificate.issuer_name,
+        "issuer_country": certificate.issuer_country,
+        "achievement_percent": str(certificate.achievement_percent),
+        "completed_at": certificate.completed_at.isoformat() if certificate.completed_at else None,
+        "expires_at": certificate.expires_at.isoformat() if certificate.expires_at else None,
+        "skills": certificate.skills_snapshot or [],
+        "projects": certificate.projects_snapshot or [],
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _active_certificate(qs):
+    for certificate in qs.order_by("-issued_at", "-id"):
+        if certificate.effective_status == Certificate.Status.ACTIVE:
+            return certificate
+    return None
+
+
+def _latest_certificate(qs):
+    return qs.order_by("-issued_at", "-id").first()
+
+
+def _record_event(certificate, event_type, actor=None, details=None):
+    return CertificateEvent.objects.create(
+        certificate=certificate,
+        event_type=event_type,
+        actor=actor,
+        details=details or {},
+    )
+
+
+def _prepare_replaced_certificate(previous, actor=None):
+    if not previous:
+        return
+    if previous.effective_status == Certificate.Status.EXPIRED and previous.status != Certificate.Status.EXPIRED:
+        previous.status = Certificate.Status.EXPIRED
+        previous.save(update_fields=["status"])
+        _record_event(previous, CertificateEvent.EventType.EXPIRED, actor=actor)
+    elif previous.effective_status == Certificate.Status.ACTIVE:
+        previous.status = Certificate.Status.REVOKED
+        previous.revoked_at = timezone.now()
+        previous.revocation_reason = previous.revocation_reason or "Remplacé par une réémission."
+        previous.save(update_fields=["status", "revoked_at", "revocation_reason"])
+        _record_event(
+            previous,
+            CertificateEvent.EventType.REVOKED,
+            actor=actor,
+            details={"reason": previous.revocation_reason, "automatic": True},
+        )
+
+
+def _finalize_new_certificate(cert, actor=None, previous=None):
+    cert.credential_digest = _credential_digest(cert)
+    cert.save(update_fields=["credential_digest"])
+    _record_event(
+        cert,
+        CertificateEvent.EventType.ISSUED,
+        actor=actor,
+        details={"supersedes": previous.certificate_number if previous else None},
+    )
+    if previous:
+        _record_event(
+            previous,
+            CertificateEvent.EventType.REISSUED,
+            actor=actor,
+            details={
+                "replacement_certificate_number": cert.certificate_number,
+                "replacement_verification_code": str(cert.verification_code),
+            },
+        )
+    try:
+        from apps.notifications.services import queue_certificate_ready
+
+        transaction.on_commit(lambda certificate_id=cert.id: queue_certificate_ready(certificate_id))
+    except Exception:
+        pass
+
+
+@transaction.atomic
+def issue_course_certificate(enrollment, issued_by=None, force=False, force_new=False, supersedes=None):
+    enrollment = enrollment.__class__.objects.select_for_update().get(pk=enrollment.pk)
     course = enrollment.course
     eligibility = course_eligibility(enrollment)
     if not force and not eligibility["eligible"]:
         raise ValueError(eligibility["reason"] or "L'apprenant n'est pas encore éligible.")
-    existing = Certificate.objects.filter(course_enrollment=enrollment).first()
-    if existing and existing.effective_status == Certificate.Status.ACTIVE:
-        return existing, False
-    cert = existing or Certificate(course_enrollment=enrollment, user=enrollment.user)
+
+    qs = Certificate.objects.filter(course_enrollment=enrollment)
+    active = _active_certificate(qs)
+    if active and not force_new:
+        return active, False
+    previous = supersedes or _latest_certificate(qs)
+    if previous and not force_new:
+        raise ValueError("Un certificat existe déjà pour cette inscription. Utilisez la réémission explicite.")
+
+    if force_new:
+        _prepare_replaced_certificate(previous, actor=issued_by)
+
+    skills, projects = _course_evidence(enrollment)
+    issuer = _issuer_snapshot()
+    cert = Certificate(course_enrollment=enrollment, user=enrollment.user, supersedes=previous if force_new else None)
     cert.user = enrollment.user
     cert.issued_by = issued_by
     cert.certificate_number = _certificate_number(course.certificate_number_prefix)
@@ -119,28 +286,47 @@ def issue_course_certificate(enrollment, issued_by=None, force=False):
         "show_instructor": course.certificate_show_instructor,
         "show_completion_date": course.certificate_show_completion_date,
     }
-    cert.metadata = {"course_id": course.id, "enrollment_id": enrollment.id, "threshold": eligibility["threshold"]}
+    cert.metadata = {
+        "course_id": course.id,
+        "enrollment_id": enrollment.id,
+        "threshold": eligibility["threshold"],
+        "evidence_version": 1,
+    }
+    cert.issuer_name = issuer["name"]
+    cert.issuer_country = issuer["country"]
+    cert.skills_snapshot = skills
+    cert.projects_snapshot = projects
+    cert.schema_version = 2
     cert.save()
+    _finalize_new_certificate(cert, actor=issued_by, previous=previous if force_new else None)
+
     if not enrollment.certificate_issued:
         enrollment.certificate_issued = True
         enrollment.save(update_fields=["certificate_issued"])
-    try:
-        from apps.notifications.services import queue_certificate_ready
-        transaction.on_commit(lambda certificate_id=cert.id: queue_certificate_ready(certificate_id))
-    except Exception:
-        pass
-    return cert, existing is None
+    return cert, True
 
 
-def issue_formation_certificate(enrollment, issued_by=None, force=False):
+@transaction.atomic
+def issue_formation_certificate(enrollment, issued_by=None, force=False, force_new=False, supersedes=None):
+    enrollment = enrollment.__class__.objects.select_for_update().get(pk=enrollment.pk)
     formation = enrollment.formation
     eligibility = formation_eligibility(enrollment)
     if not force and not eligibility["eligible"]:
         raise ValueError(eligibility["reason"] or "L'apprenant n'est pas encore éligible.")
-    existing = Certificate.objects.filter(formation_enrollment=enrollment).first()
-    if existing and existing.effective_status == Certificate.Status.ACTIVE:
-        return existing, False
-    cert = existing or Certificate(formation_enrollment=enrollment, user=enrollment.user)
+
+    qs = Certificate.objects.filter(formation_enrollment=enrollment)
+    active = _active_certificate(qs)
+    if active and not force_new:
+        return active, False
+    previous = supersedes or _latest_certificate(qs)
+    if previous and not force_new:
+        raise ValueError("Un certificat existe déjà pour cette inscription. Utilisez la réémission explicite.")
+
+    if force_new:
+        _prepare_replaced_certificate(previous, actor=issued_by)
+
+    issuer = _issuer_snapshot()
+    cert = Certificate(formation_enrollment=enrollment, user=enrollment.user, supersedes=previous if force_new else None)
     cert.user = enrollment.user
     cert.issued_by = issued_by
     cert.certificate_number = _certificate_number(formation.certificate_number_prefix)
@@ -167,17 +353,24 @@ def issue_formation_certificate(enrollment, issued_by=None, force=False):
         "show_instructor": formation.certificate_show_instructor,
         "show_completion_date": formation.certificate_show_completion_date,
     }
-    cert.metadata = {"formation_id": formation.id, "enrollment_id": enrollment.id, "threshold": eligibility["threshold"]}
+    cert.metadata = {
+        "formation_id": formation.id,
+        "enrollment_id": enrollment.id,
+        "threshold": eligibility["threshold"],
+        "evidence_version": 1,
+    }
+    cert.issuer_name = issuer["name"]
+    cert.issuer_country = issuer["country"]
+    cert.skills_snapshot = []
+    cert.projects_snapshot = []
+    cert.schema_version = 2
     cert.save()
+    _finalize_new_certificate(cert, actor=issued_by, previous=previous if force_new else None)
+
     if not enrollment.certificate_issued:
         enrollment.certificate_issued = True
         enrollment.save(update_fields=["certificate_issued"])
-    try:
-        from apps.notifications.services import queue_certificate_ready
-        transaction.on_commit(lambda certificate_id=cert.id: queue_certificate_ready(certificate_id))
-    except Exception:
-        pass
-    return cert, existing is None
+    return cert, True
 
 
 def apply_platform_certificate_defaults(instance, kind="course"):

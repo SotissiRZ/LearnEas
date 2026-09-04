@@ -221,6 +221,7 @@ REST_FRAMEWORK = {
         "live": "12000/hour",
         "admin_test": "30/hour",
         "webhook": "3000/hour",
+        "certificate_verify": config("CERTIFICATE_VERIFY_THROTTLE_RATE", default="300/hour"),
     },
 }
 
@@ -337,6 +338,10 @@ CELERY_BEAT_SCHEDULE = {
     "whatsapp-inactivity-reminders-daily": {
         "task": "apps.notifications.tasks.dispatch_whatsapp_inactivity_reminders",
         "schedule": 86400.0,
+    },
+    "certificate-expiration-hourly": {
+        "task": "apps.enrollments.tasks.expire_certificates",
+        "schedule": 3600.0,
     },
 }
 

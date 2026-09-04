@@ -75,12 +75,17 @@ class Certificate(models.Model):
         EXPIRED = "expired", "Expiré"
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="certificates")
-    course_enrollment = models.OneToOneField(
-        CourseEnrollment, on_delete=models.CASCADE, null=True, blank=True, related_name="certificate_record"
+    # Plusieurs versions peuvent exister pour une même inscription (révocation / expiration / réémission).
+    # Les anciens certificats restent vérifiables au lieu d'être écrasés.
+    course_enrollment = models.ForeignKey(
+        CourseEnrollment, on_delete=models.CASCADE, null=True, blank=True, related_name="certificate_records"
     )
-    formation_enrollment = models.OneToOneField(
+    formation_enrollment = models.ForeignKey(
         "formations.FormationEnrollment", on_delete=models.CASCADE, null=True, blank=True,
-        related_name="certificate_record",
+        related_name="certificate_records",
+    )
+    supersedes = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="replacement_certificates"
     )
     issued_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
@@ -111,6 +116,15 @@ class Certificate(models.Model):
     display_options = models.JSONField(default=dict, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
 
+    # Preuves publiques figées au moment de l'émission. Elles ne dépendent plus des
+    # modifications ultérieures du cours, du portfolio ou des paramètres de la plateforme.
+    issuer_name = models.CharField(max_length=180, blank=True)
+    issuer_country = models.CharField(max_length=100, blank=True)
+    skills_snapshot = models.JSONField(default=list, blank=True)
+    projects_snapshot = models.JSONField(default=list, blank=True)
+    credential_digest = models.CharField(max_length=64, blank=True, db_index=True)
+    schema_version = models.PositiveSmallIntegerField(default=2)
+
     class Meta:
         ordering = ["-issued_at"]
         constraints = [
@@ -120,7 +134,17 @@ class Certificate(models.Model):
                     | models.Q(course_enrollment__isnull=True, formation_enrollment__isnull=False)
                 ),
                 name="certificate_exactly_one_enrollment",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["course_enrollment"],
+                condition=models.Q(course_enrollment__isnull=False, status="active"),
+                name="uniq_active_course_certificate",
+            ),
+            models.UniqueConstraint(
+                fields=["formation_enrollment"],
+                condition=models.Q(formation_enrollment__isnull=False, status="active"),
+                name="uniq_active_formation_certificate",
+            ),
         ]
 
     def __str__(self):
@@ -131,9 +155,34 @@ class Certificate(models.Model):
         from django.utils import timezone
         if self.status == self.Status.REVOKED:
             return self.Status.REVOKED
+        if self.status == self.Status.EXPIRED:
+            return self.Status.EXPIRED
         if self.expires_at and self.expires_at <= timezone.now():
             return self.Status.EXPIRED
         return self.Status.ACTIVE
+
+
+class CertificateEvent(models.Model):
+    class EventType(models.TextChoices):
+        ISSUED = "issued", "Émis"
+        REVOKED = "revoked", "Révoqué"
+        REISSUED = "reissued", "Réémis"
+        EXPIRED = "expired", "Expiré"
+
+    certificate = models.ForeignKey(Certificate, on_delete=models.CASCADE, related_name="events")
+    event_type = models.CharField(max_length=20, choices=EventType.choices, db_index=True)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="certificate_events"
+    )
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["certificate", "-created_at"], name="cert_event_cert_created_idx")]
+
+    def __str__(self):
+        return f"{self.certificate.certificate_number} · {self.event_type}"
 
 
 class LessonNote(models.Model):
