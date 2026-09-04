@@ -1,3 +1,21 @@
+# Audit v48 — Opportunités & recrutement
+
+- Nouveau module `apps.opportunities` compilé sans erreur Python.
+- 123 fichiers TypeScript/TSX analysés : 0 erreur de syntaxe et 0 import local manquant.
+- `package.json`, `package-lock.json`, `tsconfig.json` et les deux Docker Compose sont syntaxiquement valides.
+- Référentiel pays vérifié : 233 entrées disponibles dans les sélecteurs.
+- Accès recruteur conditionné à une entreprise approuvée ; suspension = clôture des annonces publiées.
+- Vivier de talents strictement opt-in et sans email/téléphone.
+- CV et pièces de candidature bloqués en accès direct Nginx et servis par endpoints authentifiés.
+- Candidature unique protégée par contrainte SQL + transaction ; une entreprise ne peut pas candidater à sa propre annonce.
+- Snapshot des compétences, certificats actifs et projets vérifiés au moment de la candidature.
+- Rémunération masquée supprimée de la représentation API publique.
+- Pays validés par le référentiel LearnEas ; sélection multi-pays tactile côté candidat.
+- Les candidatures retirées ne peuvent pas être réactivées par le recruteur.
+- Limite actuelle : les tests Django runtime doivent être exécutés dans Docker, Django n'étant pas installé dans l'environnement de génération.
+
+---
+
 # Audit v47 — certificats vérifiables
 
 - Vérification publique : numéro unique ou UUID, QR code serveur et page `noindex`.

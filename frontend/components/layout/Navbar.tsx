@@ -76,6 +76,7 @@ export default function Navbar() {
           <Link href="/courses" className="btn-ghost !px-3">Cours</Link>
           <Link href="/formations" className="btn-ghost !px-3">Cohortes live</Link>
           <Link href="/mentorship" className="btn-ghost !px-3">Mentorat</Link>
+          <Link href="/opportunities" className="btn-ghost !px-3">Opportunités</Link>
           <Link href="/pdfs" className="btn-ghost !px-3">PDF & Guides</Link>
           <Link href="/instructors" className="btn-ghost !px-3">Instructeurs</Link>
         </nav>
@@ -141,6 +142,12 @@ export default function Navbar() {
                       <BriefcaseBusiness size={16} /> Mon portfolio
                     </Link>
                   </>}
+                  <Link href="/dashboard/student/opportunities" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
+                    <BriefcaseBusiness size={16} /> Emploi & missions
+                  </Link>
+                  <Link href="/dashboard/employer" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
+                    <UserIcon size={16} /> Espace recruteur
+                  </Link>
                   <Link href="/dashboard/messages" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-gray-50">
                     <MessageCircle size={16} /> Messages
                   </Link>
@@ -192,6 +199,7 @@ export default function Navbar() {
             <Link href="/courses" className="rounded-lg px-3 py-2 hover:bg-gray-50">Cours</Link>
             <Link href="/formations" className="rounded-lg px-3 py-2 hover:bg-gray-50">Cohortes live</Link>
             <Link href="/mentorship" className="rounded-lg px-3 py-2 hover:bg-gray-50">Mentorat</Link>
+            <Link href="/opportunities" className="rounded-lg px-3 py-2 hover:bg-gray-50">Opportunités</Link>
             <Link href="/pdfs" className="rounded-lg px-3 py-2 hover:bg-gray-50">PDF & Guides</Link>
             <Link href="/instructors" className="rounded-lg px-3 py-2 hover:bg-gray-50">Instructeurs</Link>
             {!user ? (
@@ -208,6 +216,8 @@ export default function Navbar() {
                 >
                   Tableau de bord
                 </Link>
+                <Link href="/dashboard/student/opportunities" onClick={() => setMobileOpen(false)} className="rounded-lg px-3 py-2 hover:bg-gray-50">Emploi & missions</Link>
+                <Link href="/dashboard/employer" onClick={() => setMobileOpen(false)} className="rounded-lg px-3 py-2 hover:bg-gray-50">Espace recruteur</Link>
                 {user.role === "admin" && user.technical_admin && (
                   <a
                     href={djangoAdminHref}

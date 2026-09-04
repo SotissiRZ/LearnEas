@@ -12,6 +12,8 @@ from apps.enrollments.certificates import issue_course_certificate
 from apps.faq.models import FAQ
 from apps.projects.models import ProjectAssignment, ProjectSubmission
 from apps.projects.services import ensure_portfolio_profile, publish_verified_submission
+from apps.opportunities.models import EmployerProfile, CandidateProfile, Opportunity, OpportunityApplication
+from apps.opportunities.services import build_application_snapshot
 
 User = get_user_model()
 
@@ -51,6 +53,27 @@ class Command(BaseCommand):
             self._user("student_aicha", "aicha@learneas.com", "student1234", role="student",
                        first_name="Aïcha", last_name="Traoré", country="Mali"),
         ]
+
+        recruiter = self._user(
+            "recruiter_demo", "recruteur@learneas.com", "recruiter1234", role="student",
+            first_name="Moussa", last_name="Koné", country="Côte d'Ivoire",
+            headline="Responsable recrutement · Demo Digital Africa",
+        )
+        demo_employer, _ = EmployerProfile.objects.get_or_create(
+            user=recruiter,
+            defaults={
+                "company_name": "Demo Digital Africa", "country": "Côte d'Ivoire", "city": "Abidjan",
+                "industry": "Services numériques", "company_size": "11-50",
+                "description": "PME numérique de démonstration recrutant des profils francophones à distance et en Afrique de l'Ouest.",
+                "website_url": "https://example.com", "status": EmployerProfile.Status.APPROVED,
+                "reviewed_by": admin, "reviewed_at": timezone.now(),
+            },
+        )
+        if demo_employer.status != EmployerProfile.Status.APPROVED:
+            demo_employer.status = EmployerProfile.Status.APPROVED
+            demo_employer.reviewed_by = admin
+            demo_employer.reviewed_at = timezone.now()
+            demo_employer.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
 
         self.stdout.write("Création des catégories...")
         cat_web = self._category("Développement Web", "Code2")
@@ -354,6 +377,58 @@ class Command(BaseCommand):
         self.stdout.write("Création d'un certificat vérifiable de démonstration...")
         issue_course_certificate(fatou_enrollment, issued_by=sarah, force=True)
 
+        self.stdout.write("Création des opportunités professionnelles de démonstration...")
+        CandidateProfile.objects.update_or_create(
+            user=students[0],
+            defaults={
+                "headline": "Développeuse backend junior · Django & API REST",
+                "summary": "Je recherche un premier poste ou une mission backend en environnement francophone.",
+                "skills": ["Python", "Django", "Django REST Framework", "API REST", "JWT"],
+                "desired_roles": ["Développeuse backend junior", "Développeuse Python"],
+                "preferred_kinds": ["job", "internship", "mission"],
+                "preferred_work_modes": ["remote", "hybrid"],
+                "preferred_countries": ["Sénégal", "Côte d'Ivoire"],
+                "availability": CandidateProfile.Availability.IMMEDIATE,
+                "years_experience": 1, "is_searchable": True,
+            },
+        )
+        demo_job, _ = Opportunity.objects.get_or_create(
+            employer=demo_employer, title="Développeur·se Python / Django junior",
+            defaults={
+                "kind": Opportunity.Kind.JOB, "contract_type": Opportunity.ContractType.FULL_TIME,
+                "work_mode": Opportunity.WorkMode.REMOTE, "experience_level": Opportunity.ExperienceLevel.JUNIOR,
+                "description": "Rejoignez une équipe produit pour développer des API et services web adaptés aux marchés africains francophones.",
+                "responsibilities": ["Développer des API REST", "Corriger et tester les fonctionnalités", "Participer aux revues de code"],
+                "requirements": ["Bonnes bases Python", "Compréhension de Django", "Capacité à travailler en équipe"],
+                "skills_required": ["Python", "Django", "API REST"],
+                "skills_optional": ["PostgreSQL", "Docker", "Git"],
+                "remote_worldwide": True, "salary_min": 450000, "salary_max": 700000,
+                "salary_currency": "XOF", "salary_period": Opportunity.SalaryPeriod.MONTH,
+                "show_salary": True, "status": Opportunity.Status.PUBLISHED,
+                "application_deadline": timezone.now() + timedelta(days=30),
+            },
+        )
+        Opportunity.objects.get_or_create(
+            employer=demo_employer, title="Mission freelance · Tableau de bord Power BI",
+            defaults={
+                "kind": Opportunity.Kind.MISSION, "contract_type": Opportunity.ContractType.PROJECT,
+                "work_mode": Opportunity.WorkMode.REMOTE, "experience_level": Opportunity.ExperienceLevel.JUNIOR,
+                "description": "Mission courte pour construire un tableau de bord commercial à partir de fichiers Excel.",
+                "responsibilities": ["Nettoyer les données", "Créer les indicateurs", "Présenter le tableau de bord"],
+                "requirements": ["Portfolio ou projet démontrable"],
+                "skills_required": ["Excel", "Power BI"], "skills_optional": ["DAX"],
+                "remote_worldwide": True, "salary_min": 150000, "salary_max": 250000,
+                "salary_currency": "XOF", "salary_period": Opportunity.SalaryPeriod.PROJECT,
+                "status": Opportunity.Status.PUBLISHED, "application_deadline": timezone.now() + timedelta(days=21),
+            },
+        )
+        if not OpportunityApplication.objects.filter(opportunity=demo_job, candidate=students[0]).exists():
+            snapshot = build_application_snapshot(students[0], demo_job, share_portfolio=True)
+            OpportunityApplication.objects.create(
+                opportunity=demo_job, candidate=students[0], cover_letter="Je souhaite mettre en pratique mes compétences Django sur un produit à impact régional.",
+                share_portfolio=True, **snapshot,
+            )
+
         self.stdout.write("Création de la FAQ...")
         faq_items = [
             ("Comment payer avec Mobile Money ?",
@@ -383,6 +458,7 @@ class Command(BaseCommand):
         self.stdout.write("  Étudiant........ fatou@learneas.com (student1234)")
         self.stdout.write("  Étudiant........ jean@learneas.com (student1234)")
         self.stdout.write("  Étudiant........ aicha@learneas.com (student1234)")
+        self.stdout.write("  Recruteur....... recruteur@learneas.com (recruiter1234) · Demo Digital Africa")
 
     # ------------------------------------------------------------------ helpers
     def _user(self, username, email, password, role, **extra):

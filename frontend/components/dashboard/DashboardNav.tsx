@@ -11,6 +11,7 @@ const LINKS: Record<string, { href: string; label: string; icon: React.ReactNode
     { href: "/dashboard/student/mentorship", label: "Mon mentorat", icon: <CalendarCheck2 size={16} /> },
     { href: "/dashboard/student/projects", label: "Mes projets", icon: <ClipboardCheck size={16} /> },
     { href: "/dashboard/student/portfolio", label: "Mon portfolio", icon: <BriefcaseBusiness size={16} /> },
+    { href: "/dashboard/student/opportunities", label: "Emploi & missions", icon: <BriefcaseBusiness size={16} /> },
     { href: "/dashboard/student/pdfs", label: "Mes PDF", icon: <FileText size={16} /> },
     { href: "/dashboard/student/certificates", label: "Mes certificats", icon: <Award size={16} /> },
     { href: "/dashboard/student/profile", label: "Profil", icon: <User size={16} /> },

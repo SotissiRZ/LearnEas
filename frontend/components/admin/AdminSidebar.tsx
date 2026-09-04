@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   MessageSquareText,
   Award,
+  BriefcaseBusiness,
 } from "lucide-react";
 
 const ITEMS = [
@@ -25,6 +26,7 @@ const ITEMS = [
   { tab: "payouts", label: "Versements", icon: WalletCards },
   { tab: "sessions", label: "Séances live", icon: Video },
   { tab: "certificates", label: "Certificats", icon: Award },
+  { tab: "recruitment", label: "Recrutement", icon: BriefcaseBusiness },
   { tab: "categories", label: "Catégories", icon: Tags },
   { tab: "moderation", label: "FAQ & avis", icon: MessageSquareText },
   { tab: "settings", label: "Paramètres", icon: Settings },

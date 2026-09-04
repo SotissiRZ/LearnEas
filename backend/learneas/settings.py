@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "apps.formations",
     "apps.notifications",
     "apps.projects",
+    "apps.opportunities",
     "rest_framework_simplejwt.token_blacklist",
 ]
 

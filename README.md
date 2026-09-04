@@ -479,4 +479,7 @@ HLS_AUDIO_ONLY_BITRATE=48k
 ## WhatsApp transactionnel (v44)
 
 LearnEas peut envoyer des confirmations de paiement, rappels de live, relances de cours inactifs et notifications de certificat via Meta WhatsApp Cloud API. Le canal est **opt-in**, les secrets restent côté backend, et un mode simulation permet les tests locaux sans envoi réel. Voir `docs/WHATSAPP.md` pour les templates, variables d'environnement, webhook et configuration Railway/Celery Beat.
+## Emplois, stages & missions (v48)
+
+LearnEas ferme désormais la boucle **apprendre → pratiquer → certifier → portfolio → travailler**. Le module Opportunités comprend une marketplace publique, des profils candidats, un matching par compétences, les candidatures internes, un espace recruteur approuvé par l'administration et un vivier de talents opt-in. Les pays utilisent le référentiel LearnEas (pas de saisie libre) et les CV restent privés. Voir `docs/EMPLOI_MISSIONS.md`.
 

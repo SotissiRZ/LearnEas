@@ -1,3 +1,16 @@
+# v48 — Emplois, missions & matching professionnel
+
+- Nouveau module `apps.opportunities` : entreprises, profils candidats, opportunités et candidatures.
+- Marketplace publique `/opportunities` : emplois, stages, freelance et missions avec filtres pays/type/mode/niveau.
+- Matching candidat explicable 0–100 basé sur compétences du profil, portfolio, certificats actifs, métier recherché, expérience et préférences de pays/mode/type.
+- Profil candidat avec CV privé, pays choisis dans le référentiel LearnEas et visibilité recruteur opt-in ; sélection multi-pays adaptée mobile (liste + recherche, sans saisie libre).
+- Candidatures LearnEas avec snapshot immuable des compétences, certificats actifs, projets vérifiés et copie du CV effectivement transmis au moment de la candidature.
+- Espace recruteur : validation entreprise, publication, pipeline de candidatures et vivier de talents.
+- Back-office : nouvel onglet Recrutement pour approuver/refuser/suspendre les entreprises et contrôler les annonces.
+- Confidentialité : les CV ne sont plus accessibles directement sous `/media/`; la rémunération masquée n'est pas exposée publiquement ; les candidatures retirées ne peuvent pas être réactivées par un recruteur.
+- Seed démo : Demo Digital Africa, deux opportunités, un recruteur et une candidature Fatou.
+- Nouvelle migration : `opportunities/0001_initial.py`.
+
 # v47 — Certificats vérifiables, QR et registre immuable
 
 - Chaque certificat dispose désormais d’un **QR code public** pointant vers le registre LearnEas.

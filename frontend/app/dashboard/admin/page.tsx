@@ -31,6 +31,7 @@ import {
   Plus,
   Mail,
   MessageCircle,
+  BriefcaseBusiness,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import CurrencyPrice, { CurrencyValue } from "@/components/ui/CurrencyPrice";
@@ -260,7 +261,7 @@ type CertificateRecord = {
   student_name: string; content_type: string; content_title: string; instructor_name: string;
 };
 
-const ADMIN_TABS: AdminTab[] = ["overview", "users", "applications", "content", "orders", "payouts", "sessions", "certificates", "categories", "moderation", "settings"];
+const ADMIN_TABS: AdminTab[] = ["overview", "users", "applications", "content", "orders", "payouts", "sessions", "certificates", "recruitment", "categories", "moderation", "settings"];
 
 function unwrap<T>(data: Paginated<T> | T[]): T[] {
   return Array.isArray(data) ? data : data.results;
@@ -300,6 +301,7 @@ function AdminDashboardContent() {
             {tab === "payouts" && <PayoutsTab key={searchParams.toString()} />}
             {tab === "sessions" && <SessionsTab key={searchParams.toString()} />}
             {tab === "certificates" && <CertificatesTab key={searchParams.toString()} />}
+            {tab === "recruitment" && <RecruitmentTab key={searchParams.toString()} />}
             {tab === "categories" && <CategoriesTab key={searchParams.toString()} />}
             {tab === "moderation" && <ModerationTab key={searchParams.toString()} />}
             {tab === "settings" && <SettingsTab key={searchParams.toString()} />}
@@ -1175,8 +1177,8 @@ function Kpi({ href, icon, label, value }: { href: string; icon: React.ReactNode
   );
 }
 
-function CompactCard({ title, subtitle, children, footer }: { title: string; subtitle: React.ReactNode; children: React.ReactNode; footer: React.ReactNode }) {
-  return <section className="card flex h-[310px] min-h-0 flex-col overflow-hidden"><div className="shrink-0 border-b border-gray-100 px-5 py-3.5"><h2 className="font-bold">{title}</h2><p className="text-[11px] text-gray-400">{subtitle}</p></div><div className="min-h-0 flex-1 overflow-y-auto px-5">{children}</div><div className="shrink-0 border-t border-gray-100 px-5 py-3">{footer}</div></section>;
+function CompactCard({ title, subtitle, children, footer }: { title: string; subtitle: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode }) {
+  return <section className="card flex h-[310px] min-h-0 flex-col overflow-hidden"><div className="shrink-0 border-b border-gray-100 px-5 py-3.5"><h2 className="font-bold">{title}</h2><p className="text-[11px] text-gray-400">{subtitle}</p></div><div className="min-h-0 flex-1 overflow-y-auto px-5">{children}</div>{footer && <div className="shrink-0 border-t border-gray-100 px-5 py-3">{footer}</div>}</section>;
 }
 
 function InfoCard({ label, value, note, href }: { label: string; value: React.ReactNode; note: React.ReactNode; href: string }) {
@@ -1232,4 +1234,22 @@ function formatPresence(seconds: number) {
   const m = Math.floor((total % 3600) / 60);
   const s = total % 60;
   return h > 0 ? `${h} h ${m} min` : m > 0 ? `${m} min ${s} s` : `${s} s`;
+}
+
+
+function RecruitmentTab() {
+  type EmployerRow = { id:number; company_name:string; industry:string; country:string; city:string; status:string; review_note:string; created_at:string; website_url:string };
+  type OpportunityRow = { id:number; title:string; slug:string; kind:string; status:string; applications_count:number; employer:{ company_name:string }; created_at:string };
+  const [employers,setEmployers]=useState<EmployerRow[]>([]);
+  const [jobs,setJobs]=useState<OpportunityRow[]>([]);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+  const [message,setMessage]=useState("");
+  const load=useCallback(async()=>{setLoading(true);setError("");try{const[e,j]=await Promise.all([api.get<Paginated<EmployerRow>|EmployerRow[]>("/opportunities/employer-profile/?page_size=100"),api.get<Paginated<OpportunityRow>|OpportunityRow[]>("/opportunities/listings/?admin=1&page_size=100&ordering=-created_at")]);setEmployers(unwrap(e));setJobs(unwrap(j));}catch(err){setError(toError(err));}finally{setLoading(false)}},[]);
+  useEffect(()=>{void load()},[load]);
+  async function review(id:number,action:"approve"|"reject"|"suspend"){const note=window.prompt(action==="approve"?"Note de validation (optionnelle)":"Motif / note","")||"";try{await api.post(`/opportunities/employer-profile/${id}/${action}/`,{review_note:note});setMessage("Statut recruteur mis à jour.");await load();}catch(err){setError(toError(err));}}
+  return <><PageHeader title="Recrutement & entreprises" description="Validez les recruteurs et surveillez les opportunités publiées sur LearnEas." />{error&&<Alert text={error} tone="error"/>}{message&&<Alert text={message}/>}
+    <div className="mb-6 grid gap-4 sm:grid-cols-3"><Kpi href="/dashboard/admin?tab=recruitment" icon={<BriefcaseBusiness size={19}/>} label="Entreprises" value={employers.length}/><Kpi href="/dashboard/admin?tab=recruitment" icon={<UserCheck size={19}/>} label="À valider" value={employers.filter(e=>e.status==="pending").length}/><Kpi href="/dashboard/admin?tab=recruitment" icon={<Library size={19}/>} label="Opportunités" value={jobs.length}/></div>
+    <CompactCard title="Demandes recruteur" subtitle="Une entreprise doit être approuvée avant publication et accès au vivier de talents.">{loading?<LoadingBlock/>:employers.length===0?<Empty text="Aucune demande recruteur."/>:<div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead className="table-head"><tr><th>Entreprise</th><th>Pays</th><th>Secteur</th><th>Statut</th><th>Actions</th></tr></thead><tbody className="divide-y divide-gray-100">{employers.map(e=><tr key={e.id}><td className="px-4 py-3"><strong>{e.company_name}</strong><p className="text-[11px] text-gray-400">{e.city}</p></td><td className="px-4 py-3">{e.country}</td><td className="px-4 py-3">{e.industry||"—"}</td><td className="px-4 py-3"><span className="badge bg-gray-100 text-gray-700">{e.status}</span></td><td className="px-4 py-3"><div className="flex gap-1">{e.status!=="approved"&&<button onClick={()=>review(e.id,"approve")} className="rounded-lg border border-emerald-200 px-2 py-1 text-xs font-semibold text-emerald-700">Approuver</button>}{e.status!=="rejected"&&<button onClick={()=>review(e.id,"reject")} className="rounded-lg border border-red-200 px-2 py-1 text-xs font-semibold text-red-700">Refuser</button>}{e.status==="approved"&&<button onClick={()=>review(e.id,"suspend")} className="rounded-lg border border-amber-200 px-2 py-1 text-xs font-semibold text-amber-700">Suspendre</button>}</div></td></tr>)}</tbody></table></div>}</CompactCard>
+    <div className="mt-6"><CompactCard title="Opportunités récentes" subtitle="Contrôle rapide de l'activité recrutement.">{jobs.length===0?<Empty text="Aucune opportunité."/>:<div className="overflow-x-auto"><table className="w-full min-w-[700px] text-sm"><thead className="table-head"><tr><th>Titre</th><th>Entreprise</th><th>Type</th><th>Statut</th><th>Candidatures</th></tr></thead><tbody className="divide-y divide-gray-100">{jobs.slice(0,50).map(j=><tr key={j.id}><td className="px-4 py-3"><Link href={`/opportunities/${j.slug}`} className="font-semibold hover:text-brand-700">{j.title}</Link></td><td className="px-4 py-3">{j.employer.company_name}</td><td className="px-4 py-3">{j.kind}</td><td className="px-4 py-3">{j.status}</td><td className="px-4 py-3">{j.applications_count||0}</td></tr>)}</tbody></table></div>}</CompactCard></div></>;
 }
