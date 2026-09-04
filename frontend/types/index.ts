@@ -519,3 +519,68 @@ export interface PublicPortfolio {
     score: { value: number; max: number | null } | null;
   }>;
 }
+
+export interface AIQuota {
+  used: number;
+  limit: number;
+  remaining: number;
+  unlimited: boolean;
+}
+
+export interface AIStatus {
+  enabled: boolean;
+  rag_enabled: boolean;
+  history_enabled: boolean;
+  dry_run: boolean;
+  provider_ready: boolean;
+  model: string;
+  quota: AIQuota;
+}
+
+export interface AISource {
+  id: number;
+  title: string;
+  type: "course" | "lesson" | "pdf_resource" | "pdf_product" | string;
+  path: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface AIMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  sources: AISource[];
+  provider?: string;
+  model?: string;
+  created_at: string;
+}
+
+export interface AIConversation {
+  id: number;
+  title: string;
+  context_preview: Record<string, unknown>;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+  messages_count?: number;
+  messages?: AIMessage[];
+}
+
+export interface AIAdminSettings {
+  enabled: boolean;
+  rag_enabled: boolean;
+  history_enabled: boolean;
+  student_enabled: boolean;
+  instructor_enabled: boolean;
+  admin_enabled: boolean;
+  default_model: string;
+  student_monthly_limit: number;
+  instructor_monthly_limit: number;
+  admin_monthly_limit: number;
+  max_history_messages: number;
+  max_context_chunks: number;
+  max_output_tokens: number;
+  temperature: string | number;
+  custom_system_prompt: string;
+  updated_at: string;
+}

@@ -1,0 +1,138 @@
+import uuid
+from django.conf import settings
+from django.db import models
+
+
+class AISettings(models.Model):
+    enabled = models.BooleanField(default=True)
+    rag_enabled = models.BooleanField(default=True)
+    history_enabled = models.BooleanField(default=True)
+    student_enabled = models.BooleanField(default=True)
+    instructor_enabled = models.BooleanField(default=True)
+    admin_enabled = models.BooleanField(default=True)
+    default_model = models.CharField(max_length=120, blank=True, help_text="Vide = modèle défini par AI_CHAT_MODEL dans l'environnement.")
+    student_monthly_limit = models.PositiveIntegerField(default=20)
+    instructor_monthly_limit = models.PositiveIntegerField(default=100)
+    admin_monthly_limit = models.PositiveIntegerField(default=500)
+    max_history_messages = models.PositiveSmallIntegerField(default=12)
+    max_context_chunks = models.PositiveSmallIntegerField(default=6)
+    max_output_tokens = models.PositiveIntegerField(default=1200)
+    temperature = models.DecimalField(max_digits=3, decimal_places=2, default=0.30)
+    custom_system_prompt = models.TextField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configuration Assistant IA"
+        verbose_name_plural = "Configuration Assistant IA"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        self.student_monthly_limit = max(int(self.student_monthly_limit), 0)
+        self.instructor_monthly_limit = max(int(self.instructor_monthly_limit), 0)
+        self.admin_monthly_limit = max(int(self.admin_monthly_limit), 0)
+        self.max_history_messages = min(max(int(self.max_history_messages), 2), 40)
+        self.max_context_chunks = min(max(int(self.max_context_chunks), 1), 12)
+        self.max_output_tokens = min(max(int(self.max_output_tokens), 128), 8000)
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return "Assistant IA KalanPro"
+
+
+class AIConversation(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ai_conversations")
+    title = models.CharField(max_length=120, default="Nouvelle conversation")
+    context_preview = models.JSONField(default=dict, blank=True)
+    archived = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        indexes = [models.Index(fields=["user", "archived", "updated_at"], name="ai_conv_user_arch_idx")]
+
+    def __str__(self):
+        return f"{self.user.email} · {self.title}"
+
+
+class AIMessage(models.Model):
+    class Role(models.TextChoices):
+        USER = "user", "Utilisateur"
+        ASSISTANT = "assistant", "Assistant"
+
+    conversation = models.ForeignKey(AIConversation, on_delete=models.CASCADE, related_name="messages")
+    role = models.CharField(max_length=20, choices=Role.choices)
+    content = models.TextField()
+    sources = models.JSONField(default=list, blank=True)
+    provider = models.CharField(max_length=80, blank=True)
+    model = models.CharField(max_length=120, blank=True)
+    prompt_tokens = models.PositiveIntegerField(default=0)
+    completion_tokens = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        indexes = [models.Index(fields=["conversation", "created_at"], name="ai_msg_conv_created_idx")]
+
+    def __str__(self):
+        return f"{self.role} · {self.conversation_id}"
+
+
+class AIKnowledgeChunk(models.Model):
+    class SourceType(models.TextChoices):
+        COURSE = "course", "Cours"
+        LESSON = "lesson", "Leçon / transcript"
+        PDF_RESOURCE = "pdf_resource", "PDF de cours"
+        PDF_PRODUCT = "pdf_product", "PDF autonome"
+
+    source_type = models.CharField(max_length=30, choices=SourceType.choices)
+    source_id = models.PositiveIntegerField()
+    chunk_index = models.PositiveSmallIntegerField(default=0)
+    title = models.CharField(max_length=240)
+    content = models.TextField()
+    source_path = models.CharField(max_length=500, blank=True)
+    course = models.ForeignKey("catalog.Course", on_delete=models.CASCADE, null=True, blank=True, related_name="ai_chunks")
+    pdf_product = models.ForeignKey("catalog.PDFProduct", on_delete=models.CASCADE, null=True, blank=True, related_name="ai_chunks")
+    instructor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="ai_knowledge_chunks")
+    is_public = models.BooleanField(default=False)
+    metadata = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["source_type", "source_id", "chunk_index"]
+        constraints = [
+            models.UniqueConstraint(fields=["source_type", "source_id", "chunk_index"], name="uniq_ai_source_chunk")
+        ]
+        indexes = [
+            models.Index(fields=["source_type", "source_id"], name="ai_chunk_source_idx"),
+            models.Index(fields=["course", "is_public"], name="ai_chunk_course_pub_idx"),
+            models.Index(fields=["pdf_product", "is_public"], name="ai_chunk_pdf_pub_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_source_type_display()} · {self.title} · {self.chunk_index}"
+
+
+class AIUsage(models.Model):
+    request_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ai_usage")
+    conversation = models.ForeignKey(AIConversation, on_delete=models.SET_NULL, null=True, blank=True, related_name="usage_entries")
+    provider = models.CharField(max_length=80, blank=True)
+    model = models.CharField(max_length=120, blank=True)
+    prompt_tokens = models.PositiveIntegerField(default=0)
+    completion_tokens = models.PositiveIntegerField(default=0)
+    latency_ms = models.PositiveIntegerField(default=0)
+    rag_chunks = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["user", "created_at"], name="ai_usage_user_date_idx")]
+
+    def __str__(self):
+        return f"{self.user.email} · {self.created_at:%Y-%m-%d}"

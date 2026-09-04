@@ -1,0 +1,174 @@
+from django.conf import settings
+from django.db.models import Count
+from rest_framework import status, viewsets
+from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
+from .models import AIConversation, AIMessage, AISettings, AIUsage, AIKnowledgeChunk
+from .serializers import AIConversationListSerializer, AIConversationDetailSerializer, AISettingsSerializer
+from .services import answer, quota_state, role_enabled
+
+
+class AIThrottle(UserRateThrottle):
+    scope = "ai"
+
+
+class AIConversationViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_queryset(self):
+        qs = AIConversation.objects.filter(user=self.request.user)
+        cfg = AISettings.load()
+        # Quand l'historique est désactivé, les anciennes conversations ne
+        # sont plus exposées dans la liste. Une conversation active peut
+        # cependant continuer via son identifiant pendant la session courante.
+        if self.action == "list" and not cfg.history_enabled:
+            return qs.none()
+        archived = self.request.query_params.get("archived")
+        if archived in {"true", "false"}:
+            qs = qs.filter(archived=(archived == "true"))
+        qs = qs.annotate(messages_count=Count("messages"))
+        if self.action == "retrieve":
+            qs = qs.prefetch_related("messages")
+        return qs
+
+    def get_serializer_class(self):
+        return AIConversationDetailSerializer if self.action == "retrieve" else AIConversationListSerializer
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+    @action(detail=True, methods=["post"])
+    def archive(self, request, pk=None):
+        conversation = self.get_object()
+        conversation.archived = True
+        conversation.save(update_fields=["archived", "updated_at"])
+        return Response(AIConversationListSerializer(conversation).data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def status_view(request):
+    cfg = AISettings.load()
+    return Response({
+        "enabled": bool(cfg.enabled and role_enabled(request.user, cfg)),
+        "rag_enabled": cfg.rag_enabled,
+        "history_enabled": cfg.history_enabled,
+        "dry_run": bool(getattr(settings, "AI_DRY_RUN", False)),
+        "provider_ready": bool(getattr(settings, "AI_API_KEY", "") and (cfg.default_model or getattr(settings, "AI_CHAT_MODEL", ""))),
+        "model": cfg.default_model or getattr(settings, "AI_CHAT_MODEL", ""),
+        "quota": quota_state(request.user, cfg),
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([AIThrottle])
+def chat_view(request):
+    cfg = AISettings.load()
+    if not cfg.enabled or not role_enabled(request.user, cfg):
+        return Response({"detail": "L'assistant IA n'est pas activé pour ce profil."}, status=status.HTTP_403_FORBIDDEN)
+    quota = quota_state(request.user, cfg)
+    if not quota["unlimited"] and quota["remaining"] <= 0:
+        return Response({"detail": "Votre quota IA mensuel est atteint.", "quota": quota}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+    question = str(request.data.get("message") or "").strip()
+    if not question:
+        return Response({"message": ["Ce champ est obligatoire."]}, status=status.HTTP_400_BAD_REQUEST)
+    if len(question) > 4000:
+        return Response({"message": ["Le message ne peut pas dépasser 4000 caractères."]}, status=status.HTTP_400_BAD_REQUEST)
+    page_context = request.data.get("page_context") or {}
+    if not isinstance(page_context, dict):
+        return Response({"page_context": ["Format invalide."]}, status=status.HTTP_400_BAD_REQUEST)
+    response_style = str(request.data.get("response_style") or "normal")
+    if response_style not in {"short", "normal", "detailed"}:
+        response_style = "normal"
+
+    conversation_id = request.data.get("conversation_id")
+    created_new = not bool(conversation_id)
+    if conversation_id:
+        conversation = AIConversation.objects.filter(pk=conversation_id, user=request.user).first()
+        if not conversation:
+            return Response({"detail": "Conversation introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    else:
+        conversation = AIConversation.objects.create(user=request.user, title=question[:80])
+
+    user_message = AIMessage.objects.create(conversation=conversation, role=AIMessage.Role.USER, content=question)
+    if cfg.history_enabled:
+        history_rows = list(conversation.messages.exclude(pk=user_message.pk).order_by("-created_at")[:cfg.max_history_messages])
+        history_rows.reverse()
+        history = [{"role": row.role, "content": row.content} for row in history_rows]
+    else:
+        history = []
+
+    try:
+        result = answer(request.user, question, history, page_context, response_style, cfg)
+    except Exception as exc:
+        user_message.delete()
+        if created_new and not conversation.messages.exists():
+            conversation.delete()
+        return Response({"detail": f"Assistant IA indisponible : {str(exc)[:240]}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    sources = [
+        {"id": chunk.id, "title": chunk.title, "type": chunk.source_type, "path": chunk.source_path, "metadata": chunk.metadata}
+        for chunk in result["chunks"]
+    ]
+    message = AIMessage.objects.create(
+        conversation=conversation,
+        role=AIMessage.Role.ASSISTANT,
+        content=result["content"],
+        sources=sources,
+        provider=result["provider"],
+        model=result["model"],
+        prompt_tokens=result["prompt_tokens"],
+        completion_tokens=result["completion_tokens"],
+    )
+    conversation.context_preview = result["context_preview"]
+    if conversation.title == "Nouvelle conversation":
+        conversation.title = question[:80]
+    conversation.save(update_fields=["context_preview", "title", "updated_at"])
+    AIUsage.objects.create(
+        user=request.user,
+        conversation=conversation,
+        provider=result["provider"],
+        model=result["model"],
+        prompt_tokens=result["prompt_tokens"],
+        completion_tokens=result["completion_tokens"],
+        latency_ms=result["latency_ms"],
+        rag_chunks=len(sources),
+    )
+    return Response({
+        "conversation_id": conversation.id,
+        "message": {"id": message.id, "role": message.role, "content": message.content, "sources": sources, "provider": message.provider, "model": message.model, "created_at": message.created_at},
+        "quota": quota_state(request.user, cfg),
+        "context": result["context_preview"],
+    })
+
+
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated])
+def admin_settings_view(request):
+    if request.user.role != "admin":
+        return Response({"detail": "Accès administrateur requis."}, status=status.HTTP_403_FORBIDDEN)
+    cfg = AISettings.load()
+    if request.method == "PATCH":
+        serializer = AISettingsSerializer(cfg, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+    return Response(AISettingsSerializer(cfg).data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_metrics_view(request):
+    if request.user.role != "admin":
+        return Response({"detail": "Accès administrateur requis."}, status=status.HTTP_403_FORBIDDEN)
+    return Response({
+        "conversations": AIConversation.objects.count(),
+        "messages": AIMessage.objects.count(),
+        "usage_requests": AIUsage.objects.count(),
+        "knowledge_chunks": AIKnowledgeChunk.objects.count(),
+        "users_with_ai": AIUsage.objects.values("user_id").distinct().count(),
+    })

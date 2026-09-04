@@ -32,6 +32,7 @@ import {
   Mail,
   MessageCircle,
   BriefcaseBusiness,
+  Bot, Database, Gauge, Sparkles,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import CurrencyPrice, { CurrencyValue } from "@/components/ui/CurrencyPrice";
@@ -277,7 +278,7 @@ type CertificateRecord = {
   student_name: string; content_type: string; content_title: string; instructor_name: string;
 };
 
-const ADMIN_TABS: AdminTab[] = ["overview", "users", "applications", "content", "orders", "payouts", "sessions", "certificates", "recruitment", "categories", "moderation", "settings"];
+const ADMIN_TABS: AdminTab[] = ["overview", "users", "applications", "content", "orders", "payouts", "sessions", "certificates", "recruitment", "categories", "moderation", "ai", "settings"];
 
 function unwrap<T>(data: Paginated<T> | T[]): T[] {
   return Array.isArray(data) ? data : data.results;
@@ -320,6 +321,7 @@ function AdminDashboardContent() {
             {tab === "recruitment" && <RecruitmentTab key={searchParams.toString()} />}
             {tab === "categories" && <CategoriesTab key={searchParams.toString()} />}
             {tab === "moderation" && <ModerationTab key={searchParams.toString()} />}
+            {tab === "ai" && <AITab key={searchParams.toString()} />}
             {tab === "settings" && <SettingsTab key={searchParams.toString()} />}
           </main>
         </div>
@@ -1061,6 +1063,41 @@ function ModerationTab() {
       )}
     </>
   );
+}
+
+
+function AITab() {
+  type AIAdminSettings = {
+    enabled:boolean; rag_enabled:boolean; history_enabled:boolean; student_enabled:boolean; instructor_enabled:boolean; admin_enabled:boolean;
+    default_model:string; student_monthly_limit:number; instructor_monthly_limit:number; admin_monthly_limit:number;
+    max_history_messages:number; max_context_chunks:number; max_output_tokens:number; temperature:string|number; custom_system_prompt:string; updated_at:string;
+  };
+  type AIMetrics = { conversations:number; messages:number; usage_requests:number; knowledge_chunks:number; users_with_ai:number };
+  const [form,setForm]=useState<AIAdminSettings|null>(null);
+  const [metrics,setMetrics]=useState<AIMetrics|null>(null);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [message,setMessage]=useState("");
+  const [error,setError]=useState("");
+  const load=useCallback(async()=>{setLoading(true);setError("");try{const [cfg,m]=await Promise.all([api.get<AIAdminSettings>("/ai/admin/settings/"),api.get<AIMetrics>("/ai/admin/metrics/")]);setForm(cfg);setMetrics(m);}catch(e){setError(toError(e));}finally{setLoading(false)}},[]);
+  useEffect(()=>{void load()},[load]);
+  async function save(e:React.FormEvent){e.preventDefault();if(!form)return;setSaving(true);setMessage("");setError("");try{const updated=await api.patch<AIAdminSettings>("/ai/admin/settings/",form);setForm(updated);setMessage("Configuration IA enregistrée.");}catch(err){setError(toError(err));}finally{setSaving(false)}}
+  if(loading)return <><PageHeader title="Assistant IA" description="Configurez KalanPro AI, ses quotas et son RAG."/><LoadingBlock/></>;
+  if(!form)return <><PageHeader title="Assistant IA" description="Configurez KalanPro AI."/>{error&&<Alert text={error} tone="error"/>}</>;
+  return <>
+    <PageHeader title="Assistant IA" description="Pilotage de la Phase 1 : chat, historique, contexte, RAG et quotas par profil."/>
+    {error&&<Alert text={error} tone="error"/>}{message&&<Alert text={message}/>} 
+    <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <MiniMetric label="Conversations" value={metrics?.conversations??0}/><MiniMetric label="Messages" value={metrics?.messages??0}/><MiniMetric label="Requêtes IA" value={metrics?.usage_requests??0}/><MiniMetric label="Chunks RAG" value={metrics?.knowledge_chunks??0}/><MiniMetric label="Utilisateurs IA" value={metrics?.users_with_ai??0}/>
+    </div>
+    <form onSubmit={save} className="space-y-5">
+      <section className="card p-5"><h2 className="flex items-center gap-2 font-bold"><Bot size={17}/> Activation et capacités</h2><div className="mt-4 grid gap-4 md:grid-cols-3"><SettingToggle title="Assistant IA" description="Interrupteur global de KalanPro AI." checked={form.enabled} onChange={(v)=>setForm({...form,enabled:v})}/><SettingToggle title="RAG KalanPro" description="Utilise cours, transcripts et PDF accessibles." checked={form.rag_enabled} onChange={(v)=>setForm({...form,rag_enabled:v})}/><SettingToggle title="Historique" description="Affiche et réutilise l’historique des conversations." checked={form.history_enabled} onChange={(v)=>setForm({...form,history_enabled:v})}/></div></section>
+      <section className="card p-5"><h2 className="flex items-center gap-2 font-bold"><Sparkles size={17}/> Profils et quotas mensuels</h2><div className="mt-4 grid gap-4 md:grid-cols-3"><div><SettingToggle title="Apprenants" description="Active le tuteur IA." checked={form.student_enabled} onChange={(v)=>setForm({...form,student_enabled:v})}/><label className="label-admin mt-3">Requêtes / mois<input type="number" min="0" className="input-admin w-full" value={form.student_monthly_limit} onChange={(e)=>setForm({...form,student_monthly_limit:Number(e.target.value)})}/></label></div><div><SettingToggle title="Instructeurs" description="Active le copilote pédagogique." checked={form.instructor_enabled} onChange={(v)=>setForm({...form,instructor_enabled:v})}/><label className="label-admin mt-3">Requêtes / mois<input type="number" min="0" className="input-admin w-full" value={form.instructor_monthly_limit} onChange={(e)=>setForm({...form,instructor_monthly_limit:Number(e.target.value)})}/></label></div><div><SettingToggle title="Administrateurs" description="Active l'assistant de pilotage." checked={form.admin_enabled} onChange={(v)=>setForm({...form,admin_enabled:v})}/><label className="label-admin mt-3">Requêtes / mois<input type="number" min="0" className="input-admin w-full" value={form.admin_monthly_limit} onChange={(e)=>setForm({...form,admin_monthly_limit:Number(e.target.value)})}/></label></div></div><p className="mt-3 text-xs text-gray-400">Valeur 0 = illimité. Les clés API ne sont jamais stockées ici.</p></section>
+      <section className="card p-5"><h2 className="flex items-center gap-2 font-bold"><Gauge size={17}/> Modèle et limites</h2><div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3"><label className="label-admin">Modèle (optionnel)<input className="input-admin w-full" value={form.default_model} onChange={(e)=>setForm({...form,default_model:e.target.value})} placeholder="Vide = AI_CHAT_MODEL"/></label><label className="label-admin">Température<input type="number" min="0" max="1" step="0.05" className="input-admin w-full" value={form.temperature} onChange={(e)=>setForm({...form,temperature:e.target.value})}/></label><label className="label-admin">Tokens max réponse<input type="number" min="128" max="8000" className="input-admin w-full" value={form.max_output_tokens} onChange={(e)=>setForm({...form,max_output_tokens:Number(e.target.value)})}/></label><label className="label-admin">Messages d'historique<input type="number" min="2" max="40" className="input-admin w-full" value={form.max_history_messages} onChange={(e)=>setForm({...form,max_history_messages:Number(e.target.value)})}/></label><label className="label-admin">Chunks RAG<input type="number" min="1" max="12" className="input-admin w-full" value={form.max_context_chunks} onChange={(e)=>setForm({...form,max_context_chunks:Number(e.target.value)})}/></label></div></section>
+      <section className="card p-5"><h2 className="flex items-center gap-2 font-bold"><Database size={17}/> Instructions globales</h2><p className="mt-1 text-xs text-gray-500">Complète le comportement de base. N'y placez jamais de secret.</p><textarea rows={6} className="input-admin mt-4 w-full" value={form.custom_system_prompt} onChange={(e)=>setForm({...form,custom_system_prompt:e.target.value})} placeholder="Ex : privilégier des exemples adaptés à l'Afrique francophone…"/></section>
+      <div className="flex items-center justify-between gap-3"><p className="text-xs text-gray-400">Clé fournisseur : variable d'environnement AI_API_KEY uniquement.</p><button disabled={saving} className="btn-primary">{saving?<Loader2 size={15} className="animate-spin"/>:<Bot size={15}/>} Enregistrer l'IA</button></div>
+    </form>
+  </>;
 }
 
 function SettingsTab() {

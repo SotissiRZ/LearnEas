@@ -17,6 +17,7 @@ import {
   Award,
   CalendarCheck2,
   ClipboardCheck,
+  Bot,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -40,6 +41,7 @@ const ITEMS: readonly InstructorNavItem[] = [
   { href: "/dashboard/instructor/reviews", label: "Avis & questions", icon: Star },
   { href: "/dashboard/instructor/certificates", label: "Certificats", icon: Award },
   { href: "/dashboard/instructor/finance", label: "Revenus & versements", icon: WalletCards },
+  { href: "/assistant", label: "KalanPro AI", icon: Bot, exact: true },
   { href: "/dashboard/instructor/messages", label: "Messages", icon: MessagesSquare },
   { href: "/dashboard/instructor/profile", label: "Profil & paramètres", icon: UserRoundCog },
 ];

@@ -15,6 +15,7 @@ import {
   MessageSquareText,
   Award,
   BriefcaseBusiness,
+  Bot,
 } from "lucide-react";
 
 const ITEMS = [
@@ -29,6 +30,7 @@ const ITEMS = [
   { tab: "recruitment", label: "Recrutement", icon: BriefcaseBusiness },
   { tab: "categories", label: "Catégories", icon: Tags },
   { tab: "moderation", label: "FAQ & avis", icon: MessageSquareText },
+  { tab: "ai", label: "Assistant IA", icon: Bot },
   { tab: "settings", label: "Paramètres", icon: Settings },
 ] as const;
 

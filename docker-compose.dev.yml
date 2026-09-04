@@ -64,6 +64,14 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_API_BASE: ${RESEND_API_BASE:-https://api.resend.com}
       RESEND_HTTP_TIMEOUT: ${RESEND_HTTP_TIMEOUT:-15}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_API_BASE: ${AI_API_BASE:-https://api.openai.com/v1}
+      AI_CHAT_MODEL: ${AI_CHAT_MODEL:-}
+      AI_PROVIDER_NAME: ${AI_PROVIDER_NAME:-Compatible API}
+      AI_HTTP_TIMEOUT: ${AI_HTTP_TIMEOUT:-60}
+      AI_DRY_RUN: ${AI_DRY_RUN:-True}
+      AI_INDEX_ASYNC: ${AI_INDEX_ASYNC:-False}
+      AI_REBUILD_INDEX_ON_BOOT: ${AI_REBUILD_INDEX_ON_BOOT:-True}
     volumes:
       - ./backend:/app
       - static_data_dev:/app/staticfiles

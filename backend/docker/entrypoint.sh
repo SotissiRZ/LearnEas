@@ -47,6 +47,11 @@ if [ "${SEED_DEMO:-false}" = "true" ]; then
   python manage.py seed_demo || echo "seed_demo déjà exécuté ou en erreur non bloquante."
 fi
 
+if [ "${AI_REBUILD_INDEX_ON_BOOT:-false}" = "true" ]; then
+  echo "Reconstruction de l’index KalanPro AI..."
+  python manage.py rebuild_ai_index --quiet --if-empty || echo "Index IA indisponible, démarrage non bloqué."
+fi
+
 fi
 
 # Les volumes existants peuvent avoir été créés par une ancienne image root.

@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.projects",
     "apps.opportunities",
+    "apps.assistant_ai.apps.AssistantAIConfig",
     "rest_framework_simplejwt.token_blacklist",
 ]
 
@@ -246,6 +247,7 @@ REST_FRAMEWORK = {
         "admin_test": "30/hour",
         "webhook": "3000/hour",
         "certificate_verify": config("CERTIFICATE_VERIFY_THROTTLE_RATE", default="300/hour"),
+        "ai": config("AI_THROTTLE_RATE", default="60/min" if DEBUG else "30/min"),
     },
 }
 
@@ -413,7 +415,18 @@ CELERY_TASK_ROUTES = {
     # WhatsApp/rappels : ne doivent jamais attendre derrière un transcodage de plusieurs heures.
     "apps.notifications.tasks.*": {"queue": "notifications"},
     "apps.enrollments.tasks.*": {"queue": "default"},
+    "apps.assistant_ai.tasks.*": {"queue": "default"},
 }
+# Assistant IA — la clé reste uniquement dans l'environnement. Le backend utilise une
+# API chat compatible ; AI_DRY_RUN permet de tester toute la Phase 1 sans consommer de crédits.
+AI_API_KEY = config("AI_API_KEY", default="")
+AI_API_BASE = config("AI_API_BASE", default="https://api.openai.com/v1")
+AI_CHAT_MODEL = config("AI_CHAT_MODEL", default="")
+AI_PROVIDER_NAME = config("AI_PROVIDER_NAME", default="Compatible API")
+AI_HTTP_TIMEOUT = config("AI_HTTP_TIMEOUT", default=60, cast=int)
+AI_DRY_RUN = config("AI_DRY_RUN", default=DEBUG, cast=bool)
+AI_INDEX_ASYNC = config("AI_INDEX_ASYNC", default=not DEBUG, cast=bool)
+
 CELERY_BEAT_SCHEDULE = {
     "whatsapp-live-reminders-every-5-minutes": {
         "task": "apps.notifications.tasks.dispatch_whatsapp_live_reminders",

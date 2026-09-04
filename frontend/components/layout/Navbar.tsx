@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Search, ShoppingCart, ChevronDown, LayoutDashboard, BookOpen, FileText, LogOut,
   User as UserIcon, Menu, X, MessageCircle, Wrench, ExternalLink, ClipboardCheck,
-  BriefcaseBusiness, Video, Layers3, UsersRound, Building2, GraduationCap,
+  BriefcaseBusiness, Video, Layers3, UsersRound, Building2, GraduationCap, Bot,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useCart } from "@/hooks/useCart";
@@ -158,6 +158,7 @@ export default function Navbar() {
                   </>}
                   <MenuItem href="/dashboard/student/opportunities" icon={<BriefcaseBusiness size={16} />} label="Emploi & missions" close={() => setMenuOpen(false)} />
                   <MenuItem href="/dashboard/employer" icon={<UserIcon size={16} />} label="Espace recruteur" close={() => setMenuOpen(false)} />
+                  <MenuItem href="/assistant" icon={<Bot size={16} />} label="KalanPro AI" close={() => setMenuOpen(false)} />
                   <MenuItem href="/dashboard/messages" icon={<MessageCircle size={16} />} label="Messages" close={() => setMenuOpen(false)} />
                   <MenuItem href="/dashboard/student/profile" icon={<UserIcon size={16} />} label="Profil" close={() => setMenuOpen(false)} />
                   {user.role === "admin" && user.technical_admin && (
@@ -212,6 +213,7 @@ export default function Navbar() {
             ) : (
               <>
                 <Link href={dashboardHref} className="mt-2 rounded-xl bg-brand-500 px-3 py-3 text-sm font-bold text-white">Tableau de bord</Link>
+                <MobileLink href="/assistant" label="KalanPro AI" />
                 <MobileLink href="/dashboard/employer" label="Espace recruteur" />
               </>
             )}

@@ -931,3 +931,15 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Préférences Email/WhatsApp séparées dans les profils utilisateur.
 - Configuration Resend administrable (activation, expéditeur, reply-to), clé API conservée uniquement en environnement.
 - `RESEND_DRY_RUN` pour tester localement sans envoi réel.
+
+## v60 — KalanPro AI · Phase 1
+
+- Ajout d'un nouveau module backend `assistant_ai` avec conversations, messages, journal d'usage, configuration et base de connaissances RAG.
+- Assistant global **KalanPro AI** pour apprenants, instructeurs et administrateurs, plus espace complet `/assistant` avec historique.
+- Contexte de page automatique et contexte précis de la leçon active dans le lecteur de cours.
+- RAG avec contrôle d'accès sur cours, transcripts, PDF de cours et PDF autonomes ; les sources privées ne sont utilisables qu'après vérification des droits.
+- Indexation automatique des nouveaux contenus et commande `rebuild_ai_index` pour reconstruire l'index existant.
+- Quotas mensuels administrables par rôle, rate limit API et journal de latence/tokens/chunks utilisés.
+- Nouvel onglet **Assistant IA** dans le dashboard admin avec activation, quotas, modèle, limites et instructions globales.
+- Clé fournisseur conservée uniquement côté serveur (`AI_API_KEY`) et mode `AI_DRY_RUN` pour les tests locaux.
+- Durcissement prompt-injection : les contenus RAG sont traités comme données non fiables et ne peuvent pas modifier les instructions système.

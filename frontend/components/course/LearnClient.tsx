@@ -31,6 +31,7 @@ import ProgressBar from "@/components/ui/ProgressBar";
 import PdfViewer from "@/components/ui/PdfViewer";
 import VideoPlayer, { VideoPlayerHandle } from "@/components/ui/VideoPlayer";
 import { useAuth } from "@/hooks/useAuth";
+import { publishAIContext } from "@/lib/aiContext";
 
 type LearningTab = "overview" | "transcript" | "notes" | "qna" | "resources" | "project";
 type TranscriptScope = "video" | "course";
@@ -162,6 +163,16 @@ export default function LearnClient({ course }: { course: Course }) {
       setActiveLesson(allLessons.find((lesson) => !lesson.locked) || allLessons[0]);
     }
   }, [allLessons, activeLesson]);
+
+  useEffect(() => {
+    publishAIContext({
+      kind: activeLesson ? "lesson" : "course-learning",
+      path: typeof window !== "undefined" ? window.location.pathname : `/learn/${course.slug}`,
+      course_slug: course.slug,
+      lesson_id: activeLesson?.id,
+      lesson_title: activeLesson?.title,
+    });
+  }, [course.slug, activeLesson?.id, activeLesson?.title]);
 
   const selectLesson = useCallback((lesson: Lesson, seconds?: number, autoStart = false) => {
     if (lesson.locked) return;

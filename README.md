@@ -1,5 +1,7 @@
 # KalanPro
 
+> **v60 — KalanPro AI Phase 1 :** assistant contextuel avec historique, contexte de page/leçon, RAG sur cours/PDF/transcripts, quotas par rôle et administration IA. Voir [`docs/AI_PHASE1.md`](./docs/AI_PHASE1.md).
+
 > **v57 — Salle live & planning :** disposition vidéo automatique/galerie/intervenant, vignette locale compacte lorsque l'hôte est seul, partage d'écran prioritaire et modification date/heure/durée des séances depuis le dashboard instructeur.
 
 > **v56 — Modèle économique & Tarifs :** nouvelle page `/pricing` pour apprenants, instructeurs, mentors et recruteurs, paramètres tarifaires administrables, commission mentor appliquée au checkout et liens Tarifs dans la navbar/footer.

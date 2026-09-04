@@ -3,6 +3,7 @@ import "./globals.css";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import AppHydrator from "@/components/layout/AppHydrator";
+import KalanProAssistant from "@/components/ai/KalanProAssistant";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="h-20 shrink-0" aria-hidden="true" />
         <main className="flex-1">{children}</main>
         <Footer />
+        <KalanProAssistant />
       </body>
     </html>
   );
