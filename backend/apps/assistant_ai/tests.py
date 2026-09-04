@@ -170,3 +170,137 @@ class AssistantAITests(TestCase):
             create_action_proposal(self.student, conversation, message, "save_course_outline_draft", {
                 "title": "Cours interdit", "sections": [{"title": "A", "lessons": ["B"]}],
             })
+
+    def test_instructor_can_create_real_unpublished_course_draft(self):
+        from .models import AIMessage
+        from .tools import create_action_proposal
+        client = APIClient()
+        client.force_authenticate(self.instructor)
+        conversation = AIConversation.objects.create(user=self.instructor, title="Cours réel")
+        message = AIMessage.objects.create(conversation=conversation, role="assistant", content="Cours prêt à créer.")
+        action = create_action_proposal(self.instructor, conversation, message, "create_course_draft", {
+            "title": "Django de zéro à API",
+            "description": "Un parcours progressif pour construire une API Django.",
+            "level": "beginner",
+            "language": "Français",
+            "category_id": self.category.id,
+            "what_you_will_learn": ["Créer des modèles", "Construire une API"],
+            "sections": [
+                {"title": "Fondations", "lessons": [{"title": "Installer Django", "description": "Préparer le projet."}, {"title": "Premier modèle"}]},
+                {"title": "API", "lessons": [{"title": "Serializers et vues"}]},
+            ],
+        })
+        response = client.post(f"/api/ai/actions/{action.confirmation_token}/confirm/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        created = Course.objects.get(title="Django de zéro à API")
+        self.assertFalse(created.published)
+        self.assertEqual(created.instructor, self.instructor)
+        self.assertEqual(created.sections.count(), 2)
+        self.assertEqual(Lesson.objects.filter(section__course=created).count(), 3)
+
+    def test_student_can_confirm_internal_opportunity_application(self):
+        from apps.opportunities.models import EmployerProfile, Opportunity, OpportunityApplication
+        from .models import AIMessage
+        from .tools import create_action_proposal
+        employer_user = User.objects.create_user(username="employer-ai", email="employer-ai@example.com", password="pass1234")
+        employer = EmployerProfile.objects.create(
+            user=employer_user, company_name="Kalan Tech", country="Sénégal", status=EmployerProfile.Status.APPROVED
+        )
+        opportunity = Opportunity.objects.create(
+            employer=employer, title="Développeur Python Junior", description="Construire des APIs Python.",
+            skills_required=["Python", "Django"], status=Opportunity.Status.PUBLISHED,
+            apply_mode=Opportunity.ApplyMode.INTERNAL,
+        )
+        conversation = AIConversation.objects.create(user=self.student, title="Candidature")
+        message = AIMessage.objects.create(conversation=conversation, role="assistant", content="Candidature prête.")
+        action = create_action_proposal(self.student, conversation, message, "submit_opportunity_application", {
+            "opportunity_id": opportunity.id,
+            "cover_letter": "Je souhaite rejoindre votre équipe pour contribuer sur Django.",
+            "share_portfolio": True,
+        })
+        response = self.client.post(f"/api/ai/actions/{action.confirmation_token}/confirm/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        application = OpportunityApplication.objects.get(opportunity=opportunity, candidate=self.student)
+        self.assertEqual(application.status, OpportunityApplication.Status.SUBMITTED)
+        self.assertIn("Django", application.cover_letter)
+
+    def test_cv_fit_tool_reports_missing_required_skills(self):
+        from apps.opportunities.models import CandidateProfile, EmployerProfile, Opportunity
+        from .tools import execute_read_tool
+        CandidateProfile.objects.create(user=self.student, skills=["Python"], desired_roles=["Développeur"], years_experience=1)
+        employer_user = User.objects.create_user(username="fit-employer", email="fit-employer@example.com", password="pass1234")
+        employer = EmployerProfile.objects.create(user=employer_user, company_name="Data Fit", country="Côte d'Ivoire", status=EmployerProfile.Status.APPROVED)
+        opportunity = Opportunity.objects.create(
+            employer=employer, title="Développeur Data", description="Python et SQL requis.",
+            skills_required=["Python", "SQL"], status=Opportunity.Status.PUBLISHED,
+        )
+        result = execute_read_tool(self.student, "analyze_my_cv_against_opportunity", {"opportunity_id": opportunity.id})
+        self.assertIn("Python", result["analysis"]["matched_required_skills"])
+        self.assertIn("SQL", result["analysis"]["missing_required_skills"])
+
+    def test_mentor_can_save_private_session_plan(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from apps.formations.models import MentorshipOffering, MentorshipSlot, MentorshipBooking
+        from .models import AIMessage, AIDraft
+        from .tools import create_action_proposal
+        offering = MentorshipOffering.objects.create(
+            instructor=self.instructor, title="Mentorat Django", description="Accompagnement 1:1", published=True
+        )
+        slot = MentorshipSlot.objects.create(offering=offering, starts_at=timezone.now() + timedelta(days=1))
+        booking = MentorshipBooking.objects.create(
+            user=self.student, offering=offering, slot=slot, status=MentorshipBooking.Status.CONFIRMED
+        )
+        client = APIClient()
+        client.force_authenticate(self.instructor)
+        conversation = AIConversation.objects.create(user=self.instructor, title="Mentorat")
+        message = AIMessage.objects.create(conversation=conversation, role="assistant", content="Plan prêt.")
+        action = create_action_proposal(self.instructor, conversation, message, "save_mentorship_plan_draft", {
+            "booking_id": booking.id, "title": "Préparation séance Django",
+            "objectives": ["Clarifier le projet"], "agenda": ["Diagnostic", "Plan d'action"],
+            "questions": ["Quel est le principal blocage ?"], "follow_up": ["Créer une petite API"],
+        })
+        response = client.post(f"/api/ai/actions/{action.confirmation_token}/confirm/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(AIDraft.objects.filter(user=self.instructor, kind=AIDraft.Kind.MENTOR_PLAN).exists())
+
+    def test_recruiter_can_shortlist_only_own_application_with_confirmation(self):
+        from apps.opportunities.models import EmployerProfile, Opportunity, OpportunityApplication
+        from apps.opportunities.services import build_application_snapshot
+        from .models import AIMessage
+        from .tools import create_action_proposal
+        recruiter = User.objects.create_user(username="recruiter-ai", email="recruiter-ai@example.com", password="pass1234")
+        employer = EmployerProfile.objects.create(user=recruiter, company_name="Talent K", country="Maroc", status=EmployerProfile.Status.APPROVED)
+        opportunity = Opportunity.objects.create(employer=employer, title="Analyste", description="Analyse de données", status=Opportunity.Status.PUBLISHED)
+        snapshot = build_application_snapshot(self.student, opportunity, share_portfolio=False)
+        application = OpportunityApplication.objects.create(opportunity=opportunity, candidate=self.student, share_portfolio=False, **snapshot)
+        client = APIClient()
+        client.force_authenticate(recruiter)
+        conversation = AIConversation.objects.create(user=recruiter, title="Shortlist")
+        message = AIMessage.objects.create(conversation=conversation, role="assistant", content="Je propose une shortlist.")
+        action = create_action_proposal(recruiter, conversation, message, "update_application_stage", {
+            "application_id": application.id, "status": "shortlisted", "recruiter_note": "Profil à rencontrer."
+        })
+        response = client.post(f"/api/ai/actions/{action.confirmation_token}/confirm/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        application.refresh_from_db()
+        self.assertEqual(application.status, OpportunityApplication.Status.SHORTLISTED)
+        self.assertEqual(application.recruiter_note, "Profil à rencontrer.")
+
+    def test_dry_run_can_prepare_application_confirmation_from_opportunity_context(self):
+        from apps.opportunities.models import EmployerProfile, Opportunity
+        employer_user = User.objects.create_user(username="dry-employer", email="dry-employer@example.com", password="pass1234")
+        employer = EmployerProfile.objects.create(user=employer_user, company_name="Dry Run SARL", country="Sénégal", status=EmployerProfile.Status.APPROVED)
+        opportunity = Opportunity.objects.create(
+            employer=employer, title="Développeur API", description="API Django", status=Opportunity.Status.PUBLISHED,
+            apply_mode=Opportunity.ApplyMode.INTERNAL,
+        )
+        response = self.client.post("/api/ai/chat/", {
+            "message": "Je veux candidater à cette offre",
+            "page_context": {"path": f"/opportunities/{opportunity.slug}", "opportunity_slug": opportunity.slug},
+        }, format="json")
+        self.assertEqual(response.status_code, 200)
+        actions = response.data["message"].get("actions") or []
+        self.assertTrue(actions)
+        self.assertEqual(actions[0]["tool"], "submit_opportunity_application")
+        self.assertEqual(actions[0]["status"], "proposed")

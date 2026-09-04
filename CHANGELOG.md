@@ -1,3 +1,28 @@
+# v65 — Lanceur KalanPro AI déplaçable
+
+- Le bouton flottant KalanPro AI peut être déplacé par glisser-déposer à la souris, au stylet ou au tactile.
+- La position est mémorisée localement et restaurée au prochain chargement.
+- Le bouton reste automatiquement à l’intérieur du viewport après redimensionnement ou changement de page.
+- Un seuil de drag évite d’ouvrir l’assistant pendant un déplacement.
+- La position par défaut est remontée pour éviter de masquer les CTA/actions fixes en bas à droite.
+- Documentation : `docs/AI_LAUNCHER_V65.md`.
+
+# v64 — KalanPro AI Phase 2 · emploi, mentor, recruteur et vrais brouillons de cours
+
+- Analyse CV/profil ↔ offre avec score KalanPro, compétences présentes/manquantes et extraction PDF/DOCX du CV du compte.
+- Candidature interne assistée avec confirmation obligatoire et revalidation complète au clic.
+- Création réelle d'un cours brouillon (`Course` + sections + leçons), toujours non publié.
+- Outils mentor pour lister les séances confirmées et enregistrer un plan privé de préparation.
+- Outils recruteur pour lister/analyser les candidatures, préparer une grille d'entretien et proposer étude/shortlist/entretien.
+- Les décisions finales recruteur (rejet, offre, embauche) restent volontairement hors des actions IA.
+- Capacités IA cumulées (`learner`, `instructor`, `mentor`, `recruiter`, `admin`) indépendantes du rôle principal lorsque les profils métier existent.
+- Contexte automatique des pages `/opportunities/<slug>` pour analyser/candidater sans recopier l'identifiant.
+- Nouveaux brouillons `mentor_plan` et `interview_rubric`; `/assistant/drafts` devient accessible à tout utilisateur connecté.
+- Les résultats d'outils/CV sont explicitement traités comme données non fiables contre la prompt injection.
+- Mode dry-run enrichi pour tester CV/candidature/recrutement localement.
+- Migration : `assistant_ai.0004_phase2_advanced_tools`.
+- Documentation : `docs/AI_PHASE2_V64.md`.
+
 # v63 — KalanPro AI Phase 2 · outils et actions confirmées
 
 - Outils structurés pour rechercher cours/PDF/cohortes, progression, certificats et opportunités.

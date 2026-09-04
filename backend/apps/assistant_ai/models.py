@@ -179,6 +179,8 @@ class AIDraft(models.Model):
     class Kind(models.TextChoices):
         QUIZ = "quiz", "Quiz"
         COURSE_OUTLINE = "course_outline", "Plan de cours"
+        MENTOR_PLAN = "mentor_plan", "Plan de mentorat"
+        INTERVIEW_RUBRIC = "interview_rubric", "Grille d’entretien"
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ai_drafts")
     kind = models.CharField(max_length=30, choices=Kind.choices)

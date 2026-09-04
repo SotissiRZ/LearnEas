@@ -1,6 +1,8 @@
 # KalanPro
 
-> **v63 — KalanPro AI Phase 2 :** outils structurés, recherche catalogue/emploi/progression, actions confirmées, brouillons pédagogiques et journal admin. Voir [`docs/AI_PHASE2_V63.md`](./docs/AI_PHASE2_V63.md).
+> **v65 — UI KalanPro AI :** lanceur flottant déplaçable, mémorisé et contraint au viewport pour ne plus masquer les boutons d’action. Voir [`docs/AI_LAUNCHER_V65.md`](./docs/AI_LAUNCHER_V65.md).
+> **v64 — KalanPro AI Phase 2 :** candidature assistée, analyse CV/offre, création réelle de cours brouillons, outils mentor/recruteur et capacités cumulées. Voir [`docs/AI_PHASE2_V64.md`](./docs/AI_PHASE2_V64.md).
+> **v63 — KalanPro AI Phase 2 (lot 1) :** outils structurés, recherche catalogue/emploi/progression, actions confirmées, brouillons pédagogiques et journal admin. Voir [`docs/AI_PHASE2_V63.md`](./docs/AI_PHASE2_V63.md).
 
 > **v60 — KalanPro AI Phase 1 :** assistant contextuel avec historique, contexte de page/leçon, RAG sur cours/PDF/transcripts, quotas par rôle et administration IA. Voir [`docs/AI_PHASE1.md`](./docs/AI_PHASE1.md).
 
@@ -524,3 +526,7 @@ docker compose -f docker-compose.dev.yml exec backend python manage.py evaluate_
 ### KalanPro AI — widget global (v62)
 
 Le bouton KalanPro AI est visible sur les pages publiques, y compris l'accueil. Un visiteur non authentifié peut ouvrir le panneau mais doit se connecter avant d'utiliser les conversations, le RAG ou l'historique. Le widget n'est pas affiché dans `/live/session/...` ni dans `/assistant`, où l'espace IA dédié est déjà présent.
+
+### KalanPro AI — Phase 2 avancée (v64)
+
+L'assistant peut désormais analyser le CV du compte face à une offre, préparer une candidature interne avec confirmation, créer un vrai cours en brouillon, préparer les séances de mentorat et assister un recruteur approuvé sur ses propres candidatures. Les actions finales sensibles (rejet, embauche, offre, publication) ne sont jamais automatisées. Voir `docs/AI_PHASE2_V64.md`.

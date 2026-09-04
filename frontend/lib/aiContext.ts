@@ -5,6 +5,7 @@ export type AIPageContext = {
   lesson_id?: number;
   lesson_title?: string;
   pdf_slug?: string;
+  opportunity_slug?: string;
 };
 
 export const AI_CONTEXT_EVENT = "kalanpro:ai-context";
@@ -26,6 +27,8 @@ export function inferAIContext(pathname: string): AIPageContext {
   if (match) return { ...context, kind: pathname.startsWith("/learn/") ? "course-learning" : "course", course_slug: decodeURIComponent(match[1]) };
   match = pathname.match(/^\/pdfs\/([^/?#]+)/);
   if (match) return { ...context, kind: "pdf", pdf_slug: decodeURIComponent(match[1]) };
+  match = pathname.match(/^\/opportunities\/([^/?#]+)/);
+  if (match) return { ...context, kind: "opportunity", opportunity_slug: decodeURIComponent(match[1]) };
   return context;
 }
 

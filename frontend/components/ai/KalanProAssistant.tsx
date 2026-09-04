@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import {
   Bot, ChevronLeft, ExternalLink, History, Loader2, Maximize2, MessageSquarePlus,
   Minimize2, Send, Sparkles, Trash2, X, ThumbsUp, ThumbsDown, Check, Ban, ShieldCheck, Wrench,
@@ -131,7 +132,7 @@ export function AssistantWorkspace({ embedded = false, panelActions }: Props) {
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,#f8fafc_0%,#fff_50%)] p-4 sm:p-5">
-          {loadingConversation ? <div className="grid h-full place-items-center"><Loader2 className="animate-spin text-brand-500" /></div> : !messages.length ? <Welcome userRole={user.role} onPrompt={(value) => setDraft(value)} /> : <div className="mx-auto max-w-3xl space-y-5">{messages.map((message) => <MessageBubble key={message.id} message={message} />)}{busy && <div className="flex items-center gap-2 text-sm text-slate-400"><span className="grid h-8 w-8 place-items-center rounded-xl bg-brand-50 text-brand-600"><Bot size={16}/></span><Loader2 size={15} className="animate-spin"/> KalanPro AI analyse votre contexte…</div>}<div ref={endRef}/></div>}
+          {loadingConversation ? <div className="grid h-full place-items-center"><Loader2 className="animate-spin text-brand-500" /></div> : !messages.length ? <Welcome userRole={user.role} capabilities={status?.capabilities || []} onPrompt={(value) => setDraft(value)} /> : <div className="mx-auto max-w-3xl space-y-5">{messages.map((message) => <MessageBubble key={message.id} message={message} />)}{busy && <div className="flex items-center gap-2 text-sm text-slate-400"><span className="grid h-8 w-8 place-items-center rounded-xl bg-brand-50 text-brand-600"><Bot size={16}/></span><Loader2 size={15} className="animate-spin"/> KalanPro AI analyse votre contexte…</div>}<div ref={endRef}/></div>}
         </div>
 
         <footer className="border-t border-slate-200 bg-white p-3 sm:p-4">
@@ -153,11 +154,77 @@ export default function KalanProAssistant() {
   const { user, hydrated } = useAuth();
   const [open, setOpen] = useState(false);
   const [large, setLarge] = useState(false);
+  const [launcherPosition, setLauncherPosition] = useState<{ x: number; y: number } | null>(null);
+  const [draggingLauncher, setDraggingLauncher] = useState(false);
+  const launcherRef = useRef<HTMLButtonElement | null>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressLauncherClick = useRef(false);
+  const launcherStorageKey = "kalanpro-ai-launcher-position-v1";
+
+  function clampLauncherPosition(x: number, y: number) {
+    if (typeof window === "undefined") return { x, y };
+    const rect = launcherRef.current?.getBoundingClientRect();
+    const width = rect?.width || 170;
+    const height = rect?.height || 48;
+    const margin = 12;
+    return {
+      x: Math.min(Math.max(margin, x), Math.max(margin, window.innerWidth - width - margin)),
+      y: Math.min(Math.max(margin, y), Math.max(margin, window.innerHeight - height - margin)),
+    };
+  }
+
+  function persistLauncherPosition(position: { x: number; y: number }) {
+    try {
+      window.localStorage.setItem(launcherStorageKey, JSON.stringify(position));
+    } catch {
+      // Une préférence d'interface ne doit jamais bloquer l'assistant.
+    }
+  }
 
   useEffect(() => {
     setOpen(false);
     setLarge(false);
+    window.requestAnimationFrame(() => {
+      setLauncherPosition((current) => {
+        if (!current) return current;
+        const next = clampLauncherPosition(current.x, current.y);
+        persistLauncherPosition(next);
+        return next;
+      });
+    });
   }, [pathname]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(launcherStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { x?: unknown; y?: unknown };
+      if (typeof parsed.x !== "number" || typeof parsed.y !== "number") return;
+      window.requestAnimationFrame(() => setLauncherPosition(clampLauncherPosition(parsed.x as number, parsed.y as number)));
+    } catch {
+      // Valeur locale absente ou invalide : conserver la position par défaut.
+    }
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => {
+      setLauncherPosition((current) => {
+        if (!current) return current;
+        const next = clampLauncherPosition(current.x, current.y);
+        persistLauncherPosition(next);
+        return next;
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -168,6 +235,53 @@ export default function KalanProAssistant() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
+  function onLauncherPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0 && event.pointerType === "mouse") return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: rect.left,
+      originY: rect.top,
+      moved: false,
+    };
+    suppressLauncherClick.current = false;
+    setDraggingLauncher(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function onLauncherPointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+    drag.moved = true;
+    suppressLauncherClick.current = true;
+    setLauncherPosition(clampLauncherPosition(drag.originX + dx, drag.originY + dy));
+  }
+
+  function finishLauncherDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    dragRef.current = null;
+    setDraggingLauncher(false);
+    if (drag.moved) {
+      setLauncherPosition((current) => {
+        if (current) persistLauncherPosition(current);
+        return current;
+      });
+      window.setTimeout(() => { suppressLauncherClick.current = false; }, 0);
+    }
+  }
+
+  function onLauncherClick() {
+    if (suppressLauncherClick.current) return;
+    setOpen(true);
+  }
+
   if (!hydrated || pathname.startsWith("/live/session/") || pathname === "/assistant") return null;
 
   const controls = <>
@@ -175,17 +289,38 @@ export default function KalanProAssistant() {
     <button onClick={() => setOpen(false)} className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500" aria-label="Fermer KalanPro AI" title="Fermer"><X size={17}/></button>
   </>;
 
+  const launcherStyle = launcherPosition
+    ? { left: launcherPosition.x, top: launcherPosition.y, right: "auto", bottom: "auto" }
+    : undefined;
+
   return <>
-    {!open && <button onClick={() => setOpen(true)} className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-[70] flex items-center gap-2 rounded-full bg-gradient-to-r from-brand-500 to-orange-400 px-4 py-3 text-sm font-black text-white shadow-[0_15px_45px_rgba(255,100,26,.35)] transition hover:-translate-y-0.5 sm:right-[max(1.5rem,env(safe-area-inset-right))]" aria-label="Ouvrir KalanPro AI"><Sparkles size={17}/> <span className={pathname === "/" ? "inline" : "hidden sm:inline"}>{user ? "KalanPro AI" : "Essayer KalanPro AI"}</span></button>}
+    {!open && <button
+      ref={launcherRef}
+      type="button"
+      onClick={onLauncherClick}
+      onPointerDown={onLauncherPointerDown}
+      onPointerMove={onLauncherPointerMove}
+      onPointerUp={finishLauncherDrag}
+      onPointerCancel={finishLauncherDrag}
+      style={{ ...launcherStyle, touchAction: "none" }}
+      className={`fixed z-[70] flex select-none items-center gap-2 rounded-full bg-gradient-to-r from-brand-500 to-orange-400 px-4 py-3 text-sm font-black text-white shadow-[0_15px_45px_rgba(255,100,26,.35)] transition-shadow ${launcherPosition ? "" : "bottom-[max(5.5rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] sm:right-[max(1.5rem,env(safe-area-inset-right))]"} ${draggingLauncher ? "cursor-grabbing shadow-[0_18px_55px_rgba(255,100,26,.45)]" : "cursor-grab hover:shadow-[0_18px_50px_rgba(255,100,26,.42)]"}`}
+      aria-label="Ouvrir KalanPro AI. Glissez pour déplacer le bouton."
+      title="KalanPro AI · Glissez pour déplacer"
+    ><Sparkles size={17}/> <span className={pathname === "/" ? "inline" : "hidden sm:inline"}>{user ? "KalanPro AI" : "Essayer KalanPro AI"}</span></button>}
     {open && <div role="dialog" aria-modal="true" aria-label="KalanPro AI" className={`fixed z-[100] overflow-hidden border border-slate-200 bg-white shadow-2xl transition-all ${large ? "inset-2 rounded-2xl sm:inset-6 sm:rounded-3xl" : "bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(.75rem,env(safe-area-inset-right))] top-24 w-[calc(100%-1.5rem)] rounded-2xl sm:right-[max(1.5rem,env(safe-area-inset-right))] sm:w-[min(760px,calc(100%-3rem))] sm:rounded-3xl"}`}>
       <AssistantWorkspace panelActions={controls} />
     </div>}
   </>;
 }
 
-function Welcome({ userRole, onPrompt }: { userRole: string; onPrompt: (value: string) => void }) {
-  const prompts = userRole === "instructor" ? ["Crée 5 questions de quiz à partir du cours ouvert et propose de les enregistrer", "Montre-moi mes contenus instructeur", "Prépare un plan de cours sur mon domaine"] : userRole === "admin" ? ["Que peux-tu analyser dans KalanPro ?", "Cherche les formations Data actuellement publiées", "Quels contrôles qualité recommandes-tu ?"] : ["Trouve-moi un cours débutant adapté à mon profil", "Montre-moi ma progression", "Quelles offres d'emploi correspondent le mieux à mon profil ?"];
-  return <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center py-10 text-center"><span className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-brand-500 to-orange-400 text-white shadow-lg"><Sparkles size={25}/></span><h2 className="mt-4 text-xl font-black text-navy-950">Que voulez-vous accomplir ?</h2><p className="mt-2 max-w-lg text-sm leading-6 text-slate-500">Je peux utiliser votre contexte KalanPro, les cours auxquels vous avez accès, les transcriptions et les PDF indexés.</p><div className="mt-6 grid w-full gap-2 sm:grid-cols-3">{prompts.map((prompt) => <button key={prompt} onClick={() => onPrompt(prompt)} className="rounded-2xl border border-slate-200 bg-white p-3 text-left text-xs font-semibold leading-5 text-slate-600 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700">{prompt}</button>)}</div></div>;
+function Welcome({ userRole, capabilities, onPrompt }: { userRole: string; capabilities: string[]; onPrompt: (value: string) => void }) {
+  let prompts: string[];
+  if (userRole === "admin") prompts = ["Que peux-tu analyser dans KalanPro ?", "Analyse les contrôles qualité IA", "Montre-moi les outils disponibles"] ;
+  else if (capabilities.includes("recruiter")) prompts = ["Montre-moi les candidatures reçues", "Analyse la meilleure candidature et prépare une grille d’entretien", "Propose une shortlist sans rien modifier sans ma confirmation"];
+  else if (capabilities.includes("mentor")) prompts = ["Prépare ma prochaine séance de mentorat", "Montre-moi mes séances confirmées", "Crée un plan d’accompagnement et demande ma confirmation"];
+  else if (userRole === "instructor") prompts = ["Crée un vrai cours brouillon sur mon domaine et demande ma confirmation", "Montre-moi mes contenus instructeur", "Crée 5 questions de quiz à partir du cours ouvert"];
+  else prompts = ["Analyse mon CV face à l’offre ouverte", "Quelles offres correspondent le mieux à mon profil ?", "Montre-moi ma progression"];
+  return <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center py-10 text-center"><span className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-brand-500 to-orange-400 text-white shadow-lg"><Sparkles size={25}/></span><h2 className="mt-4 text-xl font-black text-navy-950">Que voulez-vous accomplir ?</h2><p className="mt-2 max-w-lg text-sm leading-6 text-slate-500">Je peux utiliser votre contexte KalanPro, vos contenus autorisés et les outils liés à vos espaces actifs.</p><div className="mt-6 grid w-full gap-2 sm:grid-cols-3">{prompts.map((prompt) => <button key={prompt} onClick={() => onPrompt(prompt)} className="rounded-2xl border border-slate-200 bg-white p-3 text-left text-xs font-semibold leading-5 text-slate-600 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700">{prompt}</button>)}</div></div>;
 }
 
 function MessageBubble({ message }: { message: AIMessage }) {
@@ -241,6 +376,7 @@ function ActionCard({ action, busy, onConfirm, onReject }: { action: AIAction; b
       <div className="min-w-0 flex-1"><p className="text-xs font-black text-navy-950">{action.label}</p><p className="mt-0.5 text-[10px] text-slate-500">{executed ? "Action exécutée" : rejected ? "Action refusée" : failed ? "Action échouée" : "Votre confirmation est requise avant toute modification."}</p>{action.error && <p className="mt-1 text-[10px] text-red-600">{action.error}</p>}</div>
       {proposed && <ShieldCheck size={15} className="shrink-0 text-brand-500"/>}
     </div>
+    {executed && typeof action.result?.path === "string" && <div className="mt-3"><Link href={action.result.path} className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-[11px] font-black text-emerald-700 hover:bg-emerald-50">Ouvrir le résultat <ExternalLink size={11}/></Link></div>}
     {proposed && <div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busy} onClick={onConfirm} className="inline-flex items-center gap-1 rounded-xl bg-brand-500 px-3 py-2 text-[11px] font-black text-white hover:bg-brand-600 disabled:opacity-50">{busy ? <Loader2 size={12} className="animate-spin"/> : <Check size={12}/>} Confirmer</button><button type="button" disabled={busy} onClick={onReject} className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"><X size={12}/> Refuser</button></div>}
   </div>;
 }
@@ -249,5 +385,6 @@ function contextLabel(context: AIPageContext) {
   if (context.lesson_title) return `Leçon : ${context.lesson_title}`;
   if (context.course_slug) return "Cours actuel";
   if (context.pdf_slug) return "PDF actuel";
+  if (context.opportunity_slug) return "Offre actuelle";
   return "Contexte de la page";
 }

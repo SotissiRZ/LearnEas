@@ -9,7 +9,7 @@ from rest_framework.throttling import UserRateThrottle
 from .models import AIConversation, AIMessage, AISettings, AIUsage, AIKnowledgeChunk, AIEvaluationCase, AIActionLog, AIDraft
 from .serializers import AIConversationListSerializer, AIConversationDetailSerializer, AISettingsSerializer
 from .services import answer, quota_state, role_enabled, estimate_cost_eur
-from .tools import create_action_proposal, serialize_action, execute_action, reject_action
+from .tools import capabilities_for, create_action_proposal, serialize_action, execute_action, reject_action
 from .evaluation import seed_evaluation_cases, run_evaluation
 
 
@@ -63,6 +63,7 @@ def status_view(request):
         "dry_run": bool(getattr(settings, "AI_DRY_RUN", False)),
         "provider_ready": bool(getattr(settings, "AI_API_KEY", "") and (cfg.default_model or getattr(settings, "AI_CHAT_MODEL", ""))),
         "model": cfg.default_model or getattr(settings, "AI_CHAT_MODEL", ""),
+        "capabilities": capabilities_for(request.user),
         "quota": quota_state(request.user, cfg),
     })
 
@@ -175,6 +176,11 @@ def action_confirm_view(request, token):
         result = execute_action(action)
     except (ValueError, PermissionError) as exc:
         return Response({"detail": str(exc), "action": serialize_action(action)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception:
+        action.status = AIActionLog.Status.FAILED
+        action.error = "L'action n'a pas pu être exécutée. Réessayez ou effectuez-la depuis l'interface KalanPro."
+        action.save(update_fields=["status", "error"])
+        return Response({"detail": action.error, "action": serialize_action(action)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     serialized = serialize_action(action)
     if action.message_id:
         existing = list(action.message.actions or [])
@@ -212,7 +218,7 @@ def action_reject_view(request, token):
 def drafts_view(request):
     qs = AIDraft.objects.filter(user=request.user).select_related("course")
     kind = str(request.query_params.get("kind") or "").strip()
-    if kind in {AIDraft.Kind.QUIZ, AIDraft.Kind.COURSE_OUTLINE}:
+    if kind in {AIDraft.Kind.QUIZ, AIDraft.Kind.COURSE_OUTLINE, AIDraft.Kind.MENTOR_PLAN, AIDraft.Kind.INTERVIEW_RUBRIC}:
         qs = qs.filter(kind=kind)
     rows = qs[:50]
     return Response([{

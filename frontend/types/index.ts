@@ -535,6 +535,7 @@ export interface AIStatus {
   dry_run: boolean;
   provider_ready: boolean;
   model: string;
+  capabilities?: string[];
   quota: AIQuota;
 }
 
