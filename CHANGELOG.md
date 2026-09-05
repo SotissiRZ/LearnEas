@@ -1,3 +1,14 @@
+# KalanPro v70 — Correctif démarrage local Docker
+
+- PostgreSQL et Redis ne publient plus leurs ports sur Windows dans `docker-compose.dev.yml`; le backend continue à les joindre via le réseau Docker (`db:5432`, `redis:6379`).
+- `DATABASE_URL` développement normalisée en `postgresql://...` et conservée sur le port interne PostgreSQL 5432.
+- Attente PostgreSQL réécrite avec `psycopg2` direct et `SELECT 1`, sans dépendre de `django.setup()` avant la vérification.
+- Les erreurs PostgreSQL ne sont plus masquées : type/cause de connexion visibles dans les logs Docker, mot de passe masqué dans l’URL affichée.
+- Délais de connexion configurables via `DB_WAIT_MAX_ATTEMPTS`, `DB_WAIT_DELAY_SECONDS` et `DB_CONNECT_TIMEOUT_SECONDS`.
+- Ports HTTP de développement configurables via `BACKEND_PORT` et `FRONTEND_PORT`; valeurs par défaut inchangées (8000/3000).
+- Healthcheck PostgreSQL forcé en TCP sur `127.0.0.1`.
+- Validation statique : 221 fichiers Python, 58 migrations sans cycle, une seule définition `apiDownload`, tests sécurité frontend 4/4 et audit mobile 119 fichiers sans alerte bloquante.
+
 # KalanPro v69 — Durcissement paiements, droits, IA et fichiers live
 
 - Correction du build frontend : suppression du doublon `apiDownload` et conservation d'un téléchargement authentifié avec refresh HttpOnly.

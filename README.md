@@ -316,6 +316,24 @@ make dev
 ```
 Backend sur http://localhost:8000, frontend sur http://localhost:3000, sans nginx devant.
 
+Depuis la v70, PostgreSQL et Redis restent **privés au réseau Docker** en mode développement : aucun port 5432/6379 n'est réservé sur Windows. Cela évite les conflits avec un PostgreSQL/Redis déjà installé localement. Le backend utilise toujours `db:5432` et `redis:6379` à l'intérieur de Docker.
+
+Pour inspecter PostgreSQL :
+```bash
+docker compose -f docker-compose.dev.yml exec db psql -U learneas -d learneas
+```
+
+Si 8000 ou 3000 sont déjà occupés, utilisez par exemple :
+```bash
+BACKEND_PORT=8001 FRONTEND_PORT=3001 docker compose -f docker-compose.dev.yml up --build
+```
+Sous PowerShell :
+```powershell
+$env:BACKEND_PORT="8001"
+$env:FRONTEND_PORT="3001"
+docker compose -f docker-compose.dev.yml up --build
+```
+
 ### Option B — Installation manuelle (sans Docker)
 
 #### 1. Backend (Django)
@@ -412,7 +430,7 @@ npx tsc --noEmit
 npm run build
 ```
 
-Pour la v69, la génération locale valide la compilation Python, la syntaxe TS/TSX/JS, les YAML Compose/CI,
+Pour la v70, la génération locale valide la compilation Python, la syntaxe TS/TSX/JS, les YAML Compose/CI,
 `npm run audit:mobile` et les tests statiques de sécurité frontend. L’environnement de génération ne peut pas
 installer les dépendances npm/pip (timeout réseau), donc le build Next.js, Playwright et la suite Django complète
 restent des **release gates obligatoires** de la CI/Docker avant déploiement.

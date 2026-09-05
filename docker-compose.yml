@@ -8,8 +8,11 @@ x-backend-env: &backend-env
   USER_THROTTLE_RATE: ${USER_THROTTLE_RATE:-30000/hour}
   MEDIA_THROTTLE_RATE: ${MEDIA_THROTTLE_RATE:-5000/hour}
   ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
-  DATABASE_URL: postgres://${POSTGRES_USER:-learneas}:${POSTGRES_PASSWORD:-learneas}@db:5432/${POSTGRES_DB:-learneas}
+  DATABASE_URL: postgresql://${POSTGRES_USER:-learneas}:${POSTGRES_PASSWORD:-learneas}@db:5432/${POSTGRES_DB:-learneas}
   REDIS_URL: redis://redis:6379/0
+  DB_WAIT_MAX_ATTEMPTS: ${DB_WAIT_MAX_ATTEMPTS:-30}
+  DB_WAIT_DELAY_SECONDS: ${DB_WAIT_DELAY_SECONDS:-2}
+  DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-3}
   REALTIME_TICKET_MAX_AGE_SECONDS: ${REALTIME_TICKET_MAX_AGE_SECONDS:-60}
   REALTIME_ALLOWED_ORIGINS: ${REALTIME_ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1,http://localhost:3000,http://127.0.0.1:3000}
   REALTIME_CHANNEL_CAPACITY: ${REALTIME_CHANNEL_CAPACITY:-500}
@@ -133,7 +136,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-learneas} -d ${POSTGRES_DB:-learneas}"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-learneas} -d ${POSTGRES_DB:-learneas}"]
       interval: 5s
       timeout: 5s
       retries: 10
