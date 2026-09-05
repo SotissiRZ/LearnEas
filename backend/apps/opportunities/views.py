@@ -186,7 +186,7 @@ class EmployerDirectoryViewSet(viewsets.ReadOnlyModelViewSet):
                 "opportunities",
                 filter=(
                     Q(opportunities__status=Opportunity.Status.PUBLISHED)
-                    & (Q(opportunities__deadline__isnull=True) | Q(opportunities__deadline__gt=timezone.now()))
+                    & (Q(opportunities__application_deadline__isnull=True) | Q(opportunities__application_deadline__gt=timezone.now()))
                 ),
                 distinct=True,
             )

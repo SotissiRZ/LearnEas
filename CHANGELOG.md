@@ -1118,3 +1118,10 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Positionnement du widget durci avec prise en compte des safe areas et z-index explicite.
 - `Échap` ferme le panneau ; un changement de route le replie automatiquement.
 - Le composant reste volontairement masqué dans la salle live et sur la page `/assistant` afin d'éviter deux assistants simultanés.
+
+## v76 — Correctif dashboard recruteur (2026-09-05)
+- Corrige un `FieldError` v75 : les requêtes utilisaient encore `deadline` au lieu de `application_deadline` dans le serializer entreprise et l'annuaire entreprises.
+- Corrige le HTTP 500 lors du chargement des offres du dashboard recruteur.
+- Ajoute un cache du nombre d'offres ouvertes dans le serializer entreprise afin d'éviter un N+1 SQL sur les listes d'offres.
+- Le dashboard recruteur charge désormais ses modules avec `Promise.allSettled` : une panne d'un module secondaire n'efface plus toutes les statistiques et listes déjà disponibles.
+- Ajoute des tests de régression dédiés aux listes recruteur et au compteur d'offres publiques.

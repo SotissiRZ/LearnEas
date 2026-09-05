@@ -236,3 +236,31 @@ class RecruiterWorkspaceV75Tests(APITestCase):
         self.assertEqual(response.status_code, 201, response.data)
         application = OpportunityApplication.objects.get(pk=response.data["id"])
         self.assertEqual(application.screening_answers[0]["question"], "Pourquoi ce poste ?")
+
+class RecruiterWorkspaceV76RegressionTests(APITestCase):
+    def setUp(self):
+        from .models import CandidateProfile
+        self.recruiter = User.objects.create_user(
+            username="v76-recruiter", email="v76-recruiter@example.com",
+            password="StrongPass123!", country="Sénégal", role="employer",
+        )
+        self.employer = EmployerProfile.objects.create(
+            user=self.recruiter, company_name="V76 Company", country="Sénégal",
+            status=EmployerProfile.Status.APPROVED,
+        )
+        self.job = Opportunity.objects.create(
+            employer=self.employer, title="Backend Engineer", description="Test",
+            remote_worldwide=True, status=Opportunity.Status.PUBLISHED,
+        )
+
+    def test_recruiter_listing_serializes_company_without_field_error(self):
+        self.client.force_authenticate(self.recruiter)
+        response = self.client.get("/api/opportunities/listings/?mine=1&page_size=100")
+        self.assertEqual(response.status_code, 200, response.data)
+        rows = response.data.get("results", response.data) if isinstance(response.data, dict) else response.data
+        self.assertEqual(rows[0]["employer"]["company_name"], "V76 Company")
+
+    def test_company_directory_counts_open_opportunities(self):
+        response = self.client.get(f"/api/opportunities/companies/{self.employer.slug}/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["open_opportunities_count"], 1)

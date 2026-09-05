@@ -68,14 +68,20 @@ export default function EmployerDashboardPage() {
       const p = await api.get<EmployerProfile>("/opportunities/employer-profile/");
       setProfile(p);
       if (p.status === "approved") {
-        const [jobs, apps, talentData, saved, stats] = await Promise.all([
+        const [jobs, apps, talentData, saved, stats] = await Promise.allSettled([
           api.get<Paginated<Opportunity> | Opportunity[]>("/opportunities/listings/?mine=1&page_size=100&ordering=-created_at"),
           api.get<Paginated<OpportunityApplication> | OpportunityApplication[]>("/opportunities/applications/?recruiter=1&page_size=100&ordering=-applied_at"),
           api.get<Paginated<Talent> | Talent[]>("/opportunities/talents/?page_size=60"),
           api.get<Paginated<TalentBookmark> | TalentBookmark[]>("/opportunities/talent-bookmarks/?page_size=100"),
           api.get<EmployerAnalytics>("/opportunities/employer-profile/analytics/"),
         ]);
-        setOpportunities(unwrap(jobs)); setApplications(unwrap(apps)); setTalents(unwrap(talentData)); setBookmarks(unwrap(saved)); setAnalytics(stats);
+        if (jobs.status === "fulfilled") setOpportunities(unwrap(jobs.value));
+        if (apps.status === "fulfilled") setApplications(unwrap(apps.value));
+        if (talentData.status === "fulfilled") setTalents(unwrap(talentData.value));
+        if (saved.status === "fulfilled") setBookmarks(unwrap(saved.value));
+        if (stats.status === "fulfilled") setAnalytics(stats.value);
+        const failures = [jobs, apps, talentData, saved, stats].filter((result) => result.status === "rejected");
+        if (failures.length) setError("Certaines données du tableau de bord n'ont pas pu être chargées. Réessayez dans quelques instants.");
       }
     } catch (e) { setError(e instanceof ApiError ? e.message : "Impossible de charger l'espace recruteur."); }
     finally { setLoading(false); }

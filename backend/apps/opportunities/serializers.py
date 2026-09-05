@@ -43,9 +43,14 @@ class EmployerPublicSerializer(serializers.ModelSerializer):
         annotated = getattr(obj, "open_opportunities_count", None)
         if annotated is not None:
             return annotated
-        return obj.opportunities.filter(status=Opportunity.Status.PUBLISHED).filter(
-            Q(deadline__isnull=True) | Q(deadline__gt=timezone.now())
-        ).count()
+        # Ce serializer est imbriqué dans chaque offre. Sans cache, la même entreprise
+        # déclencherait un COUNT SQL supplémentaire pour chaque ligne de la liste.
+        cache = self.context.setdefault("_employer_open_opportunities_count", {})
+        if obj.pk not in cache:
+            cache[obj.pk] = obj.opportunities.filter(status=Opportunity.Status.PUBLISHED).filter(
+                Q(application_deadline__isnull=True) | Q(application_deadline__gt=timezone.now())
+            ).count()
+        return cache[obj.pk]
 
 
 class EmployerProfileSerializer(serializers.ModelSerializer):
