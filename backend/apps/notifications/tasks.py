@@ -7,8 +7,8 @@ from django.db.models import Max, Q
 from django.utils import timezone
 
 from apps.accounts.models import PlatformSettings
-from .models import NotificationPreference, WhatsAppDelivery, EmailDelivery
-from .services import queue_whatsapp_event, send_delivery
+from .models import NotificationPreference, WhatsAppDelivery, EmailDelivery, InAppNotification
+from .services import queue_whatsapp_event, queue_in_app_event, queue_recruitment_update, send_delivery
 from .email_services import queue_email_event, send_email
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,12 @@ def send_email_delivery(self, delivery_id):
 
 def _queue_live_channels(*, user, key, title, start_label, room_url, metadata):
     name = user.first_name or user.get_full_name() or user.username
+    in_app = queue_in_app_event(
+        user=user, event_key=f"inapp:{key}", category=InAppNotification.Category.LIVE,
+        event_type="live_reminder", title="Votre séance commence bientôt",
+        body=f"{title} · {start_label}", action_url=room_url, metadata=metadata,
+        priority=InAppNotification.Priority.HIGH,
+    )
     wa = queue_whatsapp_event(
         user=user,
         event_type=WhatsAppDelivery.EventType.LIVE,
@@ -55,7 +61,7 @@ def _queue_live_channels(*, user, key, title, start_label, room_url, metadata):
         },
         metadata=metadata,
     )
-    return int(wa is not None) + int(email is not None)
+    return int(in_app is not None) + int(wa is not None) + int(email is not None)
 
 
 @shared_task
@@ -153,6 +159,13 @@ def dispatch_whatsapp_inactivity_reminders():
         name = user.first_name or user.get_full_name() or user.username
         course_url = f"{settings.FRONTEND_URL.rstrip('/')}/learn/{enrollment.course.slug}"
         key = f"inactivity:{enrollment.id}:{year}-W{week:02d}"
+        in_app = queue_in_app_event(
+            user=user, event_key=f"inapp:{key}", category=InAppNotification.Category.LEARNING,
+            event_type="learning_inactivity", title="Reprenez votre progression",
+            body=f"{enrollment.course.title} · progression {enrollment.progress_percent}%",
+            action_url=course_url, metadata={"course_enrollment_id": enrollment.id, "inactivity_days": days},
+        )
+        count += int(in_app is not None)
         if pref.whatsapp_opt_in and pref.whatsapp_inactivity_enabled:
             delivery = queue_whatsapp_event(
                 user=user,
@@ -181,4 +194,35 @@ def dispatch_whatsapp_inactivity_reminders():
                 metadata={"course_enrollment_id": enrollment.id, "inactivity_days": days},
             )
             count += int(delivery is not None)
+    return count
+
+
+@shared_task
+def dispatch_recruitment_interview_reminders():
+    """Rappel idempotent des entretiens à ~60 minutes, tous canaux autorisés."""
+    from apps.opportunities.models import RecruitmentInterview
+
+    now = timezone.now()
+    target = now + timedelta(minutes=60)
+    rows = RecruitmentInterview.objects.filter(
+        status=RecruitmentInterview.Status.SCHEDULED,
+        scheduled_at__gte=target - timedelta(minutes=4),
+        scheduled_at__lt=target + timedelta(minutes=5),
+    ).select_related("application__candidate", "application__opportunity", "application__opportunity__employer")
+    count = 0
+    for interview in rows:
+        user = interview.application.candidate
+        opportunity = interview.application.opportunity
+        when = timezone.localtime(interview.scheduled_at).strftime("%d/%m/%Y à %H:%M")
+        action_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/student/opportunities"
+        result = queue_recruitment_update(
+            user=user, event_key=f"interview-reminder:{interview.id}:60m",
+            title="Entretien dans environ 1 heure",
+            body=f"{opportunity.title} · {opportunity.employer.company_name} · {when}",
+            action_url=action_url,
+            variables=[user.first_name or user.username, opportunity.title, when, action_url],
+            metadata={"interview_id": interview.id, "application_id": interview.application_id, "reminder_minutes": 60},
+            priority=InAppNotification.Priority.HIGH,
+        )
+        count += sum(int(v is not None) for v in result.values())
     return count

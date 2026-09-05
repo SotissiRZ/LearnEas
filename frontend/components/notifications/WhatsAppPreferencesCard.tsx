@@ -13,12 +13,15 @@ type NotificationPreferences = {
   whatsapp_live_enabled: boolean;
   whatsapp_inactivity_enabled: boolean;
   whatsapp_certificate_enabled: boolean;
+  whatsapp_recruitment_enabled: boolean;
   whatsapp_consent_at: string | null;
+  in_app_enabled: boolean;
   email_enabled: boolean;
   email_payment_enabled: boolean;
   email_live_enabled: boolean;
   email_inactivity_enabled: boolean;
   email_certificate_enabled: boolean;
+  email_recruitment_enabled: boolean;
   updated_at: string;
 };
 
@@ -61,6 +64,11 @@ export default function WhatsAppPreferencesCard() {
       </div>
 
       <div className="mt-5 rounded-2xl border border-gray-100 p-4">
+        <div className="mb-3 flex items-center gap-2"><CheckCircle2 size={17} className="text-brand-700"/><h3 className="font-bold">Centre KalanPro</h3></div>
+        <Toggle title="Notifications dans KalanPro" description="Affiche les alertes dans la cloche et le centre de notifications." checked={form.in_app_enabled} onChange={v=>toggle("in_app_enabled",v)}/>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-gray-100 p-4">
         <div className="mb-3 flex items-center gap-2"><Mail size={17} className="text-brand-700"/><h3 className="font-bold">Email</h3><span className="rounded-full bg-orange-50 px-2 py-1 text-[10px] font-bold text-orange-700">Resend</span></div>
         <Toggle title="Activer les emails" description={`Envoyés à ${user?.email || "votre adresse de compte"}.`} checked={form.email_enabled} onChange={v=>toggle("email_enabled",v)}/>
         {form.email_enabled && <div className="mt-3 grid gap-2 rounded-xl bg-gray-50 p-3 sm:grid-cols-2">
@@ -68,6 +76,7 @@ export default function WhatsAppPreferencesCard() {
           <Toggle compact title="Rappels de live" checked={form.email_live_enabled} onChange={v=>toggle("email_live_enabled",v)}/>
           <Toggle compact title="Reprendre un cours" checked={form.email_inactivity_enabled} onChange={v=>toggle("email_inactivity_enabled",v)}/>
           <Toggle compact title="Certificats disponibles" checked={form.email_certificate_enabled} onChange={v=>toggle("email_certificate_enabled",v)}/>
+          <Toggle compact title="Candidatures & recrutement" checked={form.email_recruitment_enabled} onChange={v=>toggle("email_recruitment_enabled",v)}/>
         </div>}
       </div>
 
@@ -86,6 +95,7 @@ export default function WhatsAppPreferencesCard() {
           <Toggle compact title="Rappels de live" checked={form.whatsapp_live_enabled} onChange={v=>toggle("whatsapp_live_enabled",v)}/>
           <Toggle compact title="Reprendre un cours" checked={form.whatsapp_inactivity_enabled} onChange={v=>toggle("whatsapp_inactivity_enabled",v)}/>
           <Toggle compact title="Certificats disponibles" checked={form.whatsapp_certificate_enabled} onChange={v=>toggle("whatsapp_certificate_enabled",v)}/>
+          <Toggle compact title="Candidatures & recrutement" checked={form.whatsapp_recruitment_enabled} onChange={v=>toggle("whatsapp_recruitment_enabled",v)}/>
         </div>}
         {form.whatsapp_consent_at && form.whatsapp_opt_in && <p className="mt-2 flex items-center gap-1 text-[11px] text-emerald-700"><CheckCircle2 size={13}/> Consentement WhatsApp enregistré.</p>}
       </div>

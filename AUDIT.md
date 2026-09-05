@@ -271,3 +271,12 @@ Ces points ne sont pas des bugs corrigibles uniquement dans le dépôt :
 ## Audit v80 — Paiements / Mobile Money
 
 Le code financier dispose désormais d’un historique persistant de tentative/événement/anomalie et ne dépend plus d’un cache éphémère pour l’idempotence webhook. Le fulfillment est bloqué si la référence, le montant ou la devise ne concordent pas avec la commande. Les commandes externes anciennes sont signalées pour revue sans être automatiquement invalidées, afin de préserver les confirmations Mobile Money tardives. La validation live des prestataires reste conditionnée à la configuration des comptes marchands réels.
+
+## v82 — Notifications multicanal
+
+- Centre interne privé et idempotent avec badge non lu et historique.
+- Orchestration recrutement après commit DB pour éviter les races avec Celery.
+- WhatsApp recrutement opt-in + email Resend + in-app.
+- Rappel entretien à ~60 minutes via Celery Beat.
+- Docker dev inclut désormais worker et beat afin que les tâches asynchrones soient testables localement.
+- Deux migrations additives uniquement (`accounts.0011`, `notifications.0003`).

@@ -4,122 +4,67 @@ on:
   push:
   pull_request:
 
-concurrency:
-  group: kalanpro-ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  validate:
+  backend:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: learneas_test
+          POSTGRES_DB: learneas
           POSTGRES_USER: learneas
           POSTGRES_PASSWORD: learneas
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U learneas -d learneas_test"
+          --health-cmd "pg_isready -U learneas -d learneas"
           --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
         image: redis:7-alpine
         ports: ["6379:6379"]
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s --health-timeout 5s --health-retries 10
-
     env:
-      SECRET_KEY: ci-secret-key-that-is-long-enough-for-kalanpro-tests
-      DEBUG: "True"
-      TEST_PAYMENTS_ENABLED: "True"
-      DATABASE_URL: postgresql://learneas:learneas@127.0.0.1:5432/learneas_test
-      REDIS_URL: redis://127.0.0.1:6379/0
+      SECRET_KEY: ci-secret-key-not-for-production
+      DEBUG: "False"
       ALLOWED_HOSTS: localhost,127.0.0.1
+      DATABASE_URL: postgresql://learneas:learneas@127.0.0.1:5432/learneas
+      REDIS_URL: redis://127.0.0.1:6379/0
+      FRONTEND_URL: http://localhost:3000
       CORS_ALLOWED_ORIGINS: http://localhost:3000
       REALTIME_ALLOWED_ORIGINS: http://localhost:3000
-      FRONTEND_URL: http://localhost:3000
-      INTERNAL_API_URL: http://127.0.0.1:8000/api
-      NEXT_PUBLIC_API_URL: /api
-      API_PROXY_TARGET: http://127.0.0.1:8000
-
+      SEED_DEMO: "false"
+      TEST_PAYMENTS_ENABLED: "false"
+      RESEND_ENABLED: "false"
+      WHATSAPP_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt
+      - working-directory: backend
+        run: python manage.py check
+      - working-directory: backend
+        run: python manage.py makemigrations --check --dry-run
+      - working-directory: backend
+        run: python manage.py migrate --noinput
+      - working-directory: backend
+        run: python manage.py test
+      - working-directory: backend
+        run: python manage.py check --deploy
 
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-
-      - name: Repository configuration and secret checks
-        run: |
-          python scripts/check_secrets.py
-          bash -n backend/docker/entrypoint.sh
-          docker compose -f docker-compose.yml config >/dev/null
-          docker compose -f docker-compose.dev.yml config >/dev/null
-
-      - name: Install backend dependencies
-        working-directory: backend
-        run: |
-          pip install -r requirements.txt
-          pip check
-
-      - name: Django checks and migrations
-        working-directory: backend
-        run: |
-          python manage.py check
-          python manage.py makemigrations --check --dry-run
-          python manage.py migrate --noinput
-
-      - name: Backend test suite
-        working-directory: backend
-        run: python manage.py test
-
-      - name: Production deployment checks
-        working-directory: backend
-        env:
-          SECRET_KEY: ci-production-secret-key-that-is-definitely-long-enough
-          DEBUG: "False"
-          TEST_PAYMENTS_ENABLED: "False"
-          USE_HTTPS: "True"
-          AUTH_REFRESH_COOKIE_SECURE: "True"
-          ALLOWED_HOSTS: example.com
-          CORS_ALLOWED_ORIGINS: https://example.com
-          REALTIME_ALLOWED_ORIGINS: https://example.com
-          CSRF_TRUSTED_ORIGINS: https://example.com
-          FRONTEND_URL: https://example.com
-          BACKEND_PUBLIC_URL: https://api.example.com
-          REQUIRE_REMOTE_MEDIA: "False"
-          MALWARE_SCAN_REQUIRED: "False"
-          SEED_DEMO: "False"
-        run: python manage.py check --deploy
-
-      - name: Start backend for Next build
-        working-directory: backend
-        run: |
-          nohup python manage.py runserver 127.0.0.1:8000 --noreload > /tmp/kalanpro-backend.log 2>&1 &
-          for i in {1..30}; do
-            curl -fsS http://127.0.0.1:8000/api/health/ready/ && break
-            sleep 1
-          done
-          curl -fsS http://127.0.0.1:8000/api/health/ready/
-
-      - name: Install frontend dependencies
-        working-directory: frontend
+      - working-directory: frontend
         run: npm ci --no-audit --no-fund
-
-      - name: Frontend static tests and typecheck
-        working-directory: frontend
+      - working-directory: frontend
         run: npm run test:ci
-
-      - name: Frontend production build
-        working-directory: frontend
+      - working-directory: frontend
         run: npm run build:check

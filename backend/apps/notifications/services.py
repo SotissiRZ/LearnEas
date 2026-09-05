@@ -9,7 +9,7 @@ from django.db import IntegrityError
 from django.utils import timezone
 
 from apps.accounts.models import PlatformSettings
-from .models import NotificationPreference, WhatsAppDelivery, EmailDelivery
+from .models import NotificationPreference, WhatsAppDelivery, EmailDelivery, InAppNotification
 from .email_services import queue_email_event
 from .serializers import normalize_whatsapp_phone
 
@@ -21,6 +21,7 @@ _EVENT_PREF_FIELD = {
     WhatsAppDelivery.EventType.LIVE: "whatsapp_live_enabled",
     WhatsAppDelivery.EventType.INACTIVITY: "whatsapp_inactivity_enabled",
     WhatsAppDelivery.EventType.CERTIFICATE: "whatsapp_certificate_enabled",
+    WhatsAppDelivery.EventType.RECRUITMENT: "whatsapp_recruitment_enabled",
 }
 
 _EVENT_TEMPLATE_FIELD = {
@@ -28,8 +29,62 @@ _EVENT_TEMPLATE_FIELD = {
     WhatsAppDelivery.EventType.LIVE: "whatsapp_live_template_name",
     WhatsAppDelivery.EventType.INACTIVITY: "whatsapp_inactivity_template_name",
     WhatsAppDelivery.EventType.CERTIFICATE: "whatsapp_certificate_template_name",
+    WhatsAppDelivery.EventType.RECRUITMENT: "whatsapp_recruitment_template_name",
     WhatsAppDelivery.EventType.TEST: "whatsapp_test_template_name",
 }
+
+
+
+
+def queue_in_app_event(*, user, event_key, category, event_type, title, body="", action_url="", metadata=None, priority=InAppNotification.Priority.NORMAL):
+    if not user:
+        return None
+    preference, _ = NotificationPreference.objects.get_or_create(user=user)
+    if not preference.in_app_enabled:
+        return None
+    try:
+        notification, _ = InAppNotification.objects.get_or_create(
+            event_key=event_key,
+            defaults={
+                "user": user,
+                "category": category,
+                "event_type": str(event_type)[:64],
+                "title": str(title)[:180],
+                "body": str(body or "")[:4000],
+                "action_url": str(action_url or "")[:500],
+                "metadata": metadata or {},
+                "priority": priority,
+            },
+        )
+        return notification
+    except IntegrityError:
+        return InAppNotification.objects.filter(event_key=event_key).first()
+
+
+def queue_recruitment_update(*, user, event_key, title, body, action_url, variables, metadata=None, priority=InAppNotification.Priority.NORMAL):
+    """Orchestration idempotente recrutement : centre interne + email + WhatsApp opt-in."""
+    metadata = metadata or {}
+    in_app = queue_in_app_event(
+        user=user, event_key=f"inapp:{event_key}", category=InAppNotification.Category.RECRUITMENT,
+        event_type="recruitment", title=title, body=body, action_url=action_url,
+        metadata=metadata, priority=priority,
+    )
+    wa = queue_whatsapp_event(
+        user=user, event_type=WhatsAppDelivery.EventType.RECRUITMENT, event_key=f"wa:{event_key}",
+        variables=variables, metadata=metadata,
+    )
+    name = user.first_name or user.get_full_name() or user.username
+    email = queue_email_event(
+        user=user, event_type=EmailDelivery.EventType.RECRUITMENT, event_key=f"email:{event_key}",
+        subject=title,
+        context={
+            "eyebrow": "Recrutement", "title": title, "greeting": f"Bonjour {name},",
+            "intro": body, "cta_label": "Ouvrir KalanPro", "cta_url": action_url,
+            "footer_note": "Vous pouvez ajuster les canaux de recrutement dans vos préférences de notifications.",
+        },
+        metadata=metadata,
+    )
+    return {"in_app": in_app, "whatsapp": wa, "email": email}
 
 
 def whatsapp_runtime_status():
@@ -212,6 +267,14 @@ def queue_payment_confirmation(order_id):
         return None
     name = order.user.first_name or order.user.get_full_name() or order.user.username
     amount = f"{Decimal(order.total_amount):f} {order.currency}"
+    dashboard_path = {"admin": "admin", "instructor": "instructor", "employer": "employer"}.get(getattr(order.user, "role", ""), "student")
+    dashboard_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/{dashboard_path}"
+    in_app = queue_in_app_event(
+        user=order.user, event_key=f"inapp:payment:{order.id}",
+        category=InAppNotification.Category.PAYMENT, event_type="payment_confirmed",
+        title="Paiement confirmé", body=f"Commande {order.invoice_number} · {amount}",
+        action_url=dashboard_url, metadata={"order_id": order.id},
+    )
     wa = queue_whatsapp_event(
         user=order.user,
         event_type=WhatsAppDelivery.EventType.PAYMENT,
@@ -235,12 +298,12 @@ def queue_payment_confirmation(order_id):
                 {"label": "Statut", "value": "Payé"},
             ],
             "cta_label": "Accéder à mon espace",
-            "cta_url": f"{settings.FRONTEND_URL.rstrip('/')}/dashboard",
+            "cta_url": dashboard_url,
             "footer_note": "Conservez cet email comme confirmation de votre transaction.",
         },
         metadata={"order_id": order.id},
     )
-    return {"whatsapp": wa, "email": email}
+    return {"in_app": in_app, "whatsapp": wa, "email": email}
 
 
 def queue_certificate_ready(certificate_id):
@@ -251,6 +314,12 @@ def queue_certificate_ready(certificate_id):
         return None
     name = certificate.user.first_name or certificate.student_name or certificate.user.username
     verify_url = f"{settings.FRONTEND_URL.rstrip('/')}/certificates/verify/{certificate.verification_code}"
+    in_app = queue_in_app_event(
+        user=certificate.user, event_key=f"inapp:certificate:{certificate.id}:{certificate.verification_code}",
+        category=InAppNotification.Category.CERTIFICATE, event_type="certificate_ready",
+        title="Certificat disponible", body=f"Votre certificat « {certificate.content_title} » est prêt.",
+        action_url=verify_url, metadata={"certificate_id": certificate.id},
+    )
     wa = queue_whatsapp_event(
         user=certificate.user,
         event_type=WhatsAppDelivery.EventType.CERTIFICATE,
@@ -278,4 +347,4 @@ def queue_certificate_ready(certificate_id):
         },
         metadata={"certificate_id": certificate.id},
     )
-    return {"whatsapp": wa, "email": email}
+    return {"in_app": in_app, "whatsapp": wa, "email": email}

@@ -6,13 +6,14 @@ import { useEffect, useRef, useState } from "react";
 import {
   Search, ShoppingCart, ChevronDown, LayoutDashboard, BookOpen, FileText, LogOut,
   User as UserIcon, Menu, X, MessageCircle, Wrench, ExternalLink, ClipboardCheck,
-  BriefcaseBusiness, Video, Layers3, UsersRound, Building2, GraduationCap, Bot,
+  BriefcaseBusiness, Video, Layers3, UsersRound, Building2, GraduationCap, Bot, Bell,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useCart } from "@/hooks/useCart";
 import { api } from "@/lib/api";
 import CurrencySelector from "@/components/layout/CurrencySelector";
 import BrandLogo from "@/components/layout/BrandLogo";
+import NotificationBell from "@/components/notifications/NotificationBell";
 
 export default function Navbar() {
   const router = useRouter();
@@ -121,6 +122,8 @@ export default function Navbar() {
             <CurrencySelector />
           </div>
 
+          {user && <NotificationBell />}
+
           <Link href="/cart" className="relative rounded-xl p-2.5 text-white/80 transition hover:bg-white/10 hover:text-white" aria-label="Panier">
             <ShoppingCart size={20} />
             {items.length > 0 && (
@@ -161,6 +164,7 @@ export default function Navbar() {
                   </>}
                   {user.role === "employer" && <MenuItem href="/dashboard/employer" icon={<Building2 size={16} />} label="Mon entreprise" close={() => setMenuOpen(false)} />}
                   <MenuItem href="/assistant" icon={<Bot size={16} />} label="KalanPro AI" close={() => setMenuOpen(false)} />
+                  <MenuItem href="/notifications" icon={<Bell size={16} />} label="Notifications" close={() => setMenuOpen(false)} />
                   <MenuItem href="/dashboard/messages" icon={<MessageCircle size={16} />} label="Messages" close={() => setMenuOpen(false)} />
                   {user.role !== "employer" && <MenuItem href="/dashboard/student/profile" icon={<UserIcon size={16} />} label="Profil" close={() => setMenuOpen(false)} />}
                   {user.role === "admin" && user.technical_admin && (
@@ -216,6 +220,7 @@ export default function Navbar() {
               <>
                 <Link href={dashboardHref} className="mt-2 rounded-xl bg-brand-500 px-3 py-3 text-sm font-bold text-white">Tableau de bord</Link>
                 <MobileLink href="/assistant" label="KalanPro AI" />
+                <MobileLink href="/notifications" label="Notifications" />
                 {user.role === "employer" && <MobileLink href="/dashboard/employer" label="Mon entreprise" />}
               </>
             )}

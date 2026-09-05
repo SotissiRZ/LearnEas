@@ -3,9 +3,9 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from apps.accounts.models import PlatformSettings
-from .models import NotificationPreference, WhatsAppDelivery
+from .models import NotificationPreference, WhatsAppDelivery, InAppNotification
 from .serializers import normalize_whatsapp_phone
-from .services import send_delivery
+from .services import send_delivery, queue_in_app_event, queue_recruitment_update
 
 User = get_user_model()
 
@@ -94,3 +94,49 @@ class ResendEmailNotificationTests(TestCase):
             context={"title": "Paiement"},
         )
         self.assertIsNone(delivery)
+
+
+class InAppNotificationTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="notif-user", email="notif@example.com", password="StrongPass123!")
+        NotificationPreference.objects.create(user=self.user, in_app_enabled=True)
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def test_notification_center_is_private_and_mark_read(self):
+        row = queue_in_app_event(
+            user=self.user, event_key="inapp:test:center", category=InAppNotification.Category.SYSTEM,
+            event_type="test", title="Test notification", body="Visible uniquement par le propriétaire.",
+        )
+        response = self.client.get("/api/notifications/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["unread_count"], 1)
+        self.assertEqual(response.data["results"][0]["id"], row.id)
+        marked = self.client.post(f"/api/notifications/{row.id}/read/", {}, format="json")
+        self.assertEqual(marked.status_code, 200)
+        self.assertTrue(marked.data["is_read"])
+        self.assertEqual(self.client.get("/api/notifications/unread-count/").data["unread_count"], 0)
+
+    @override_settings(WHATSAPP_ENABLED=True, WHATSAPP_DRY_RUN=True, RESEND_ENABLED=True, RESEND_DRY_RUN=True)
+    def test_recruitment_orchestration_is_idempotent(self):
+        cfg = PlatformSettings.load()
+        cfg.whatsapp_enabled = True
+        cfg.resend_enabled = True
+        cfg.save(update_fields=["whatsapp_enabled", "resend_enabled"])
+        pref = self.user.notification_preferences
+        pref.whatsapp_phone = "+221771234567"
+        pref.whatsapp_opt_in = True
+        pref.save(update_fields=["whatsapp_phone", "whatsapp_opt_in"])
+        first = queue_recruitment_update(
+            user=self.user, event_key="recruitment:test:1", title="Entretien", body="Entretien planifié",
+            action_url="https://kalanpro.com/dashboard/student/opportunities",
+            variables=["Awa", "Développeur", "Demain 10h", "https://kalanpro.com"],
+        )
+        second = queue_recruitment_update(
+            user=self.user, event_key="recruitment:test:1", title="Entretien", body="Entretien planifié",
+            action_url="https://kalanpro.com/dashboard/student/opportunities",
+            variables=["Awa", "Développeur", "Demain 10h", "https://kalanpro.com"],
+        )
+        self.assertEqual(first["in_app"].id, second["in_app"].id)
+        self.assertEqual(InAppNotification.objects.count(), 1)
+        self.assertEqual(WhatsAppDelivery.objects.filter(event_type="recruitment").count(), 1)

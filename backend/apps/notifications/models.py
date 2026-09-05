@@ -20,7 +20,12 @@ class NotificationPreference(models.Model):
     whatsapp_live_enabled = models.BooleanField(default=True)
     whatsapp_inactivity_enabled = models.BooleanField(default=True)
     whatsapp_certificate_enabled = models.BooleanField(default=True)
+    whatsapp_recruitment_enabled = models.BooleanField(default=True)
     whatsapp_consent_at = models.DateTimeField(null=True, blank=True)
+
+    # Centre interne KalanPro. Il reste activé par défaut afin que les événements
+    # importants soient visibles même sans fournisseur externe configuré.
+    in_app_enabled = models.BooleanField(default=True)
 
     # Email transactionnel via Resend. Les messages purement transactionnels sont
     # activés par défaut ; la relance d'inactivité reste opt-in pour éviter toute
@@ -30,6 +35,7 @@ class NotificationPreference(models.Model):
     email_live_enabled = models.BooleanField(default=True)
     email_inactivity_enabled = models.BooleanField(default=False)
     email_certificate_enabled = models.BooleanField(default=True)
+    email_recruitment_enabled = models.BooleanField(default=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
@@ -42,6 +48,7 @@ class WhatsAppDelivery(models.Model):
         LIVE = "live", "Rappel de live"
         INACTIVITY = "inactivity", "Relance d'inactivité"
         CERTIFICATE = "certificate", "Certificat disponible"
+        RECRUITMENT = "recruitment", "Recrutement"
         TEST = "test", "Test administrateur"
 
     class Status(models.TextChoices):
@@ -95,6 +102,7 @@ class EmailDelivery(models.Model):
         LIVE = "live", "Rappel de live"
         INACTIVITY = "inactivity", "Relance d'inactivité"
         CERTIFICATE = "certificate", "Certificat disponible"
+        RECRUITMENT = "recruitment", "Recrutement"
         PASSWORD_RESET = "password_reset", "Réinitialisation du mot de passe"
         SESSION_INVITE = "session_invite", "Invitation à une séance"
         TEST = "test", "Test administrateur"
@@ -134,3 +142,47 @@ class EmailDelivery(models.Model):
 
     def __str__(self):
         return f"Email {self.event_type} → {self.recipient} · {self.status}"
+
+
+class InAppNotification(models.Model):
+    class Category(models.TextChoices):
+        SYSTEM = "system", "Système"
+        LEARNING = "learning", "Apprentissage"
+        PAYMENT = "payment", "Paiement"
+        LIVE = "live", "Live"
+        MENTORSHIP = "mentorship", "Mentorat"
+        RECRUITMENT = "recruitment", "Recrutement"
+        CERTIFICATE = "certificate", "Certificat"
+
+    class Priority(models.TextChoices):
+        LOW = "low", "Faible"
+        NORMAL = "normal", "Normale"
+        HIGH = "high", "Haute"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="in_app_notifications"
+    )
+    event_key = models.CharField(max_length=240, unique=True)
+    category = models.CharField(max_length=24, choices=Category.choices, default=Category.SYSTEM, db_index=True)
+    event_type = models.CharField(max_length=64, db_index=True)
+    title = models.CharField(max_length=180)
+    body = models.TextField(blank=True)
+    action_url = models.CharField(max_length=500, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    priority = models.CharField(max_length=12, choices=Priority.choices, default=Priority.NORMAL, db_index=True)
+    read_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["user", "read_at", "-created_at"], name="notif_inapp_user_read_idx"),
+            models.Index(fields=["user", "category", "-created_at"], name="notif_inapp_user_cat_idx"),
+        ]
+
+    @property
+    def is_read(self):
+        return self.read_at is not None
+
+    def __str__(self):
+        return f"Notification {self.user_id} · {self.title}"

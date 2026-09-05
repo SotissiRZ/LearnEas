@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import NotificationPreference, WhatsAppDelivery, EmailDelivery
+from .models import NotificationPreference, WhatsAppDelivery, EmailDelivery, InAppNotification
 
 
 @admin.register(NotificationPreference)
@@ -23,3 +23,11 @@ class EmailDeliveryAdmin(admin.ModelAdmin):
     list_filter = ("event_type", "status")
     search_fields = ("recipient", "event_key", "provider_message_id", "user__email", "subject")
     readonly_fields = ("created_at", "sent_at", "failed_at")
+
+
+@admin.register(InAppNotification)
+class InAppNotificationAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "category", "title", "priority", "read_at", "created_at")
+    list_filter = ("category", "priority", "read_at", "created_at")
+    search_fields = ("title", "body", "user__email", "event_key")
+    readonly_fields = ("event_key", "created_at", "read_at")

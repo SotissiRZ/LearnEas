@@ -65,6 +65,14 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_API_BASE: ${RESEND_API_BASE:-https://api.resend.com}
       RESEND_HTTP_TIMEOUT: ${RESEND_HTTP_TIMEOUT:-15}
+      WHATSAPP_ENABLED: ${WHATSAPP_ENABLED:-False}
+      WHATSAPP_DRY_RUN: ${WHATSAPP_DRY_RUN:-True}
+      WHATSAPP_GRAPH_API_VERSION: ${WHATSAPP_GRAPH_API_VERSION:-v25.0}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_HTTP_TIMEOUT: ${WHATSAPP_HTTP_TIMEOUT:-15}
       AI_API_KEY: ${AI_API_KEY:-}
       AI_API_BASE: ${AI_API_BASE:-https://api.openai.com/v1}
       AI_CHAT_MODEL: ${AI_CHAT_MODEL:-}
@@ -121,6 +129,75 @@ services:
       timeout: 5s
       retries: 20
       start_period: 5m
+    networks:
+      - learneas_dev_net
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["celery", "-A", "learneas", "worker", "--loglevel=info", "-Q", "default,notifications"]
+    restart: unless-stopped
+    environment:
+      SECRET_KEY: dev-secret-key
+      DEBUG: "True"
+      SKIP_BOOTSTRAP: "true"
+      DATABASE_URL: postgresql://learneas:learneas@db:5432/learneas
+      REDIS_URL: redis://redis:6379/0
+      FRONTEND_URL: http://localhost:${FRONTEND_PORT:-3000}
+      RESEND_ENABLED: ${RESEND_ENABLED:-False}
+      RESEND_DRY_RUN: ${RESEND_DRY_RUN:-True}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      WHATSAPP_ENABLED: ${WHATSAPP_ENABLED:-False}
+      WHATSAPP_DRY_RUN: ${WHATSAPP_DRY_RUN:-True}
+      WHATSAPP_GRAPH_API_VERSION: ${WHATSAPP_GRAPH_API_VERSION:-v25.0}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_HTTP_TIMEOUT: ${WHATSAPP_HTTP_TIMEOUT:-15}
+    volumes:
+      - ./backend:/app
+      - media_data_dev:/app/media
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - learneas_dev_net
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["celery", "-A", "learneas", "beat", "--loglevel=info"]
+    restart: unless-stopped
+    environment:
+      SECRET_KEY: dev-secret-key
+      DEBUG: "True"
+      SKIP_BOOTSTRAP: "true"
+      DATABASE_URL: postgresql://learneas:learneas@db:5432/learneas
+      REDIS_URL: redis://redis:6379/0
+      FRONTEND_URL: http://localhost:${FRONTEND_PORT:-3000}
+      RESEND_ENABLED: ${RESEND_ENABLED:-False}
+      RESEND_DRY_RUN: ${RESEND_DRY_RUN:-True}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      WHATSAPP_ENABLED: ${WHATSAPP_ENABLED:-False}
+      WHATSAPP_DRY_RUN: ${WHATSAPP_DRY_RUN:-True}
+      WHATSAPP_GRAPH_API_VERSION: ${WHATSAPP_GRAPH_API_VERSION:-v25.0}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_HTTP_TIMEOUT: ${WHATSAPP_HTTP_TIMEOUT:-15}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - learneas_dev_net
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Avg, Count, Q
 from django.http import FileResponse
@@ -25,6 +26,8 @@ from .services import (
     employer_has_talent_pool_access, employer_active_job_limit, current_employer_plan,
     active_employer_entitlements, claim_publication_right, record_application_event,
 )
+from apps.notifications.models import InAppNotification
+from apps.notifications.services import queue_recruitment_update
 
 
 class OpportunityPagination(PageNumberPagination):
@@ -37,6 +40,11 @@ def approved_employer_for(user):
     if not getattr(user, "is_authenticated", False) or user.role != "employer":
         return None
     return EmployerProfile.objects.filter(user=user, status=EmployerProfile.Status.APPROVED).first()
+
+
+def queue_recruitment_after_commit(**kwargs):
+    # Les tâches externes (Resend/WhatsApp) ne doivent jamais partir avant le commit DB.
+    transaction.on_commit(lambda: queue_recruitment_update(**kwargs))
 
 
 class EmployerProfileViewSet(viewsets.ModelViewSet):
@@ -488,6 +496,16 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             application, actor=request.user, event_type="submitted",
             label="Candidature envoyée",
         )
+        recruiter = opportunity.employer.user
+        recruiter_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/employer"
+        queue_recruitment_after_commit(
+            user=recruiter, event_key=f"application-submitted:{application.id}",
+            title="Nouvelle candidature reçue",
+            body=f"{application.candidate_name_snapshot} a candidaté à « {opportunity.title} ».",
+            action_url=recruiter_url,
+            variables=[recruiter.first_name or recruiter.username, opportunity.title, application.candidate_name_snapshot, recruiter_url],
+            metadata={"application_id": application.id, "opportunity_id": opportunity.id},
+        )
         return Response(self.get_serializer(application).data, status=201)
 
     @action(detail=True, methods=["post"])
@@ -535,6 +553,15 @@ class ApplicationViewSet(viewsets.ModelViewSet):
                 label=f"Étape ATS : {application.get_status_display()}",
                 metadata={"from": previous_status, "to": target_status},
             )
+            candidate_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/student/opportunities"
+            queue_recruitment_after_commit(
+                user=application.candidate, event_key=f"application-status:{application.id}:{target_status}",
+                title="Mise à jour de votre candidature",
+                body=f"« {application.opportunity.title} » est maintenant à l’étape : {application.get_status_display()}.",
+                action_url=candidate_url,
+                variables=[application.candidate.first_name or application.candidate.username, application.opportunity.title, application.get_status_display(), candidate_url],
+                metadata={"application_id": application.id, "status": target_status},
+            )
         return Response(self.get_serializer(application).data)
 
     @action(detail=True, methods=["get"])
@@ -576,6 +603,16 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             application, actor=request.user, event_type="interview_scheduled",
             label="Entretien planifié",
             metadata={"interview_id": interview.id, "scheduled_at": interview.scheduled_at.isoformat(), "previous_status": previous},
+        )
+        candidate_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/student/opportunities"
+        when = timezone.localtime(interview.scheduled_at).strftime("%d/%m/%Y à %H:%M")
+        queue_recruitment_after_commit(
+            user=application.candidate, event_key=f"interview-scheduled:{interview.id}",
+            title="Entretien planifié",
+            body=f"{application.opportunity.title} · {when}", action_url=candidate_url,
+            variables=[application.candidate.first_name or application.candidate.username, application.opportunity.title, when, candidate_url],
+            metadata={"application_id": application.id, "interview_id": interview.id},
+            priority=InAppNotification.Priority.HIGH,
         )
         return Response(RecruitmentInterviewSerializer(interview).data, status=201)
 
@@ -619,6 +656,16 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             label="Proposition d'embauche mise à jour" if existing else "Proposition d'embauche envoyée",
             metadata={"offer_id": offer.id},
         )
+        candidate_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/student/opportunities"
+        queue_recruitment_after_commit(
+            user=application.candidate, event_key=f"offer:{offer.id}:{offer.updated_at.isoformat()}",
+            title="Proposition d’embauche reçue" if not existing else "Proposition d’embauche mise à jour",
+            body=f"{application.opportunity.employer.company_name} · {application.opportunity.title}",
+            action_url=candidate_url,
+            variables=[application.candidate.first_name or application.candidate.username, application.opportunity.title, "Offre d’embauche", candidate_url],
+            metadata={"application_id": application.id, "offer_id": offer.id},
+            priority=InAppNotification.Priority.HIGH,
+        )
         return Response(EmploymentOfferSerializer(offer).data, status=200 if existing else 201)
 
     @action(detail=True, methods=["post"], url_path="offer-response")
@@ -650,6 +697,18 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             application, actor=request.user, event_type=f"offer_{decision}",
             label="Offre acceptée par le candidat" if decision == EmploymentOffer.Status.ACCEPTED else "Offre refusée par le candidat",
             metadata={"offer_id": offer.id},
+        )
+        recruiter = application.opportunity.employer.user
+        recruiter_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/employer"
+        decision_label = "acceptée" if decision == EmploymentOffer.Status.ACCEPTED else "refusée"
+        queue_recruitment_after_commit(
+            user=recruiter, event_key=f"offer-response:{offer.id}:{decision}",
+            title=f"Offre d’embauche {decision_label}",
+            body=f"{application.candidate_name_snapshot} a {decision_label} votre offre pour « {application.opportunity.title} ».",
+            action_url=recruiter_url,
+            variables=[recruiter.first_name or recruiter.username, application.opportunity.title, f"Offre {decision_label}", recruiter_url],
+            metadata={"application_id": application.id, "offer_id": offer.id, "decision": decision},
+            priority=InAppNotification.Priority.HIGH,
         )
         return Response(EmploymentOfferSerializer(offer).data)
 

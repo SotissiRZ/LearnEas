@@ -10,8 +10,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.common.throttles import AdminTestRateThrottle, WebhookRateThrottle
-from .models import NotificationPreference, WhatsAppDelivery
-from .serializers import NotificationPreferenceSerializer, WhatsAppDeliverySerializer
+from .models import NotificationPreference, WhatsAppDelivery, InAppNotification
+from .serializers import NotificationPreferenceSerializer, WhatsAppDeliverySerializer, InAppNotificationSerializer
 from .services import create_admin_test_delivery, whatsapp_runtime_status
 
 
@@ -137,3 +137,54 @@ class WhatsAppWebhookView(APIView):
                     delivery.save(update_fields=list(dict.fromkeys(fields)))
                     updated += 1
         return Response({"received": True, "updated": updated})
+
+
+class NotificationCenterView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        qs = InAppNotification.objects.filter(user=request.user)
+        if request.query_params.get("unread") in {"1", "true", "True"}:
+            qs = qs.filter(read_at__isnull=True)
+        category = str(request.query_params.get("category") or "").strip()
+        if category:
+            qs = qs.filter(category=category)
+        try:
+            limit = max(1, min(int(request.query_params.get("limit") or 50), 100))
+        except (TypeError, ValueError):
+            limit = 50
+        unread_count = InAppNotification.objects.filter(user=request.user, read_at__isnull=True).count()
+        return Response({
+            "unread_count": unread_count,
+            "results": InAppNotificationSerializer(qs[:limit], many=True).data,
+        })
+
+
+class NotificationUnreadCountView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        count = InAppNotification.objects.filter(user=request.user, read_at__isnull=True).count()
+        return Response({"unread_count": count})
+
+
+class NotificationReadView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        obj = InAppNotification.objects.filter(pk=pk, user=request.user).first()
+        if not obj:
+            return Response({"detail": "Notification introuvable."}, status=404)
+        if not obj.read_at:
+            obj.read_at = timezone.now()
+            obj.save(update_fields=["read_at"])
+        return Response(InAppNotificationSerializer(obj).data)
+
+
+class NotificationReadAllView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        now = timezone.now()
+        updated = InAppNotification.objects.filter(user=request.user, read_at__isnull=True).update(read_at=now)
+        return Response({"updated": updated, "unread_count": 0})

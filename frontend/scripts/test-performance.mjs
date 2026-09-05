@@ -197,3 +197,44 @@ test("v81 bibliotheque video reste accessible apres redemarrage hors ligne", () 
   assert.match(middleware, /offlinePlayerCsp/);
   assert.match(middleware, /script-src 'self'/);
 });
+
+test("v82 centre de notifications est prive, lisible et global", () => {
+  const bell = read("components/notifications/NotificationBell.tsx");
+  const page = read("app/notifications/page.tsx");
+  const backend = read("../backend/apps/notifications/views.py");
+  const models = read("../backend/apps/notifications/models.py");
+  assert.match(bell, /notifications\/unread-count/);
+  assert.match(bell, /notifications\/read-all/);
+  assert.match(page, /Centre de notifications/);
+  assert.match(page, /Non lues seulement/);
+  assert.match(backend, /filter\(user=request\.user\)/);
+  assert.match(models, /class InAppNotification/);
+  assert.match(models, /event_key = models\.CharField\(max_length=240, unique=True\)/);
+});
+
+test("v82 orchestration recrutement combine in-app email et WhatsApp", () => {
+  const services = read("../backend/apps/notifications/services.py");
+  const opportunities = read("../backend/apps/opportunities/views.py");
+  const preferences = read("components/notifications/WhatsAppPreferencesCard.tsx");
+  assert.match(services, /def queue_recruitment_update/);
+  assert.match(services, /event_type=WhatsAppDelivery\.EventType\.RECRUITMENT/);
+  assert.match(services, /event_type=EmailDelivery\.EventType\.RECRUITMENT/);
+  assert.match(opportunities, /application-submitted/);
+  assert.match(opportunities, /interview-scheduled/);
+  assert.match(opportunities, /offer-response/);
+  assert.match(opportunities, /transaction\.on_commit/);
+  assert.match(preferences, /whatsapp_recruitment_enabled/);
+  assert.match(preferences, /email_recruitment_enabled/);
+});
+
+test("v82 rappels d'entretien et canaux asynchrones tournent aussi en docker dev", () => {
+  const tasks = read("../backend/apps/notifications/tasks.py");
+  const settings = read("../backend/learneas/settings.py");
+  const compose = read("../docker-compose.dev.yml");
+  assert.match(tasks, /dispatch_recruitment_interview_reminders/);
+  assert.match(tasks, /interview-reminder:/);
+  assert.match(settings, /recruitment-interview-reminders-every-5-minutes/);
+  assert.match(compose, /celery_worker:/);
+  assert.match(compose, /celery_beat:/);
+  assert.match(compose, /default,notifications/);
+});

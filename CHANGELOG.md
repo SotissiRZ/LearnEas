@@ -1238,3 +1238,15 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Bibliothèque hors connexion autonome mise en cache par Service Worker (`/offline-player.html`) : lecture après redémarrage du navigateur sans réseau.
 - La progression hors ligne utilise un jeton signé et conserve toute portion non créditée lorsque le plafond anti-triche n'en accepte qu'une partie ; resynchronisation automatique au retour du réseau.
 - Nouvelles migrations additives : `catalog.0007_lesson_offline_completion_controls` et `enrollments.0007_lessonprogress_watch_heartbeat`.
+
+## v82 — Notifications multicanal, WhatsApp recrutement et rappels fiables (2026-09-05)
+- Nouveau centre interne `InAppNotification`, privé par utilisateur et idempotent, avec catégories, priorité, lecture/non-lecture et action associée.
+- Cloche globale avec badge non lu, aperçu rapide et page `/notifications` filtrable.
+- Préférences unifiées : centre KalanPro, email Resend et WhatsApp, avec catégorie recrutement dédiée.
+- Nouvelle orchestration recrutement après commit DB : candidature reçue, changement ATS, entretien, offre d'embauche et réponse à l'offre.
+- Nouveau template Meta configurable `kalanpro_recruitment_update` (`whatsapp_recruitment_template_name`).
+- Rappel d'entretien automatique à environ 60 minutes via Celery Beat, idempotent sur les trois canaux autorisés.
+- Les rappels live/mentorat et les relances de progression créent également une notification interne KalanPro.
+- Docker dev démarre désormais un worker Celery `default,notifications` et Celery Beat, afin que les notifications asynchrones fonctionnent réellement en local.
+- Restauration de `.github/workflows/ci.yml` et `.gitignore` dans l'archive source afin que les release gates v79 restent reproductibles après extraction.
+- Migrations additives : `accounts.0011_whatsapp_recruitment_template` et `notifications.0003_notification_center`.

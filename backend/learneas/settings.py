@@ -457,6 +457,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.notifications.tasks.dispatch_whatsapp_inactivity_reminders",
         "schedule": 86400.0,
     },
+    "recruitment-interview-reminders-every-5-minutes": {
+        "task": "apps.notifications.tasks.dispatch_recruitment_interview_reminders",
+        "schedule": 300.0,
+    },
     "certificate-expiration-hourly": {
         "task": "apps.enrollments.tasks.expire_certificates",
         "schedule": 3600.0,

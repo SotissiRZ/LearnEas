@@ -261,7 +261,7 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "whatsapp_enabled", "whatsapp_template_language",
             "whatsapp_payment_template_name", "whatsapp_live_template_name",
             "whatsapp_inactivity_template_name", "whatsapp_certificate_template_name",
-            "whatsapp_test_template_name", "whatsapp_live_reminder_minutes",
+            "whatsapp_recruitment_template_name", "whatsapp_test_template_name", "whatsapp_live_reminder_minutes",
             "whatsapp_inactivity_days",
             "resend_enabled", "resend_from_name", "resend_from_email", "resend_reply_to",
             "updated_at",

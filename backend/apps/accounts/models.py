@@ -96,6 +96,7 @@ class PlatformSettings(models.Model):
     whatsapp_live_template_name = models.CharField(max_length=120, default="kalanpro_live_reminder")
     whatsapp_inactivity_template_name = models.CharField(max_length=120, default="kalanpro_inactivity_reminder")
     whatsapp_certificate_template_name = models.CharField(max_length=120, default="kalanpro_certificate_ready")
+    whatsapp_recruitment_template_name = models.CharField(max_length=120, default="kalanpro_recruitment_update")
     whatsapp_test_template_name = models.CharField(max_length=120, default="hello_world")
     whatsapp_live_reminder_minutes = models.PositiveSmallIntegerField(default=30)
     whatsapp_inactivity_days = models.PositiveSmallIntegerField(default=4)

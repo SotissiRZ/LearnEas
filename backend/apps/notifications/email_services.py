@@ -20,6 +20,7 @@ _EMAIL_PREF_FIELD = {
     EmailDelivery.EventType.LIVE: "email_live_enabled",
     EmailDelivery.EventType.INACTIVITY: "email_inactivity_enabled",
     EmailDelivery.EventType.CERTIFICATE: "email_certificate_enabled",
+    EmailDelivery.EventType.RECRUITMENT: "email_recruitment_enabled",
 }
 
 

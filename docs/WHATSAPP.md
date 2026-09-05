@@ -1,4 +1,4 @@
-# WhatsApp transactionnel — KalanPro v44
+# WhatsApp transactionnel — KalanPro v82
 
 KalanPro utilise **Meta WhatsApp Cloud API** directement. Aucun token Meta n'est exposé au frontend.
 
@@ -8,13 +8,14 @@ Les messages business-initiated sont envoyés avec des **templates approuvés** 
 
 | Événement | Template par défaut | Variables BODY, dans l'ordre |
 | --- | --- | --- |
-| Paiement confirmé | `learneas_payment_confirmed` | `{{1}}` prénom/nom, `{{2}}` n° commande, `{{3}}` montant + devise |
-| Rappel live | `learneas_live_reminder` | `{{1}}` prénom/nom, `{{2}}` formation, `{{3}}` date/heure, `{{4}}` URL de la salle |
-| Reprise après inactivité | `learneas_inactivity_reminder` | `{{1}}` prénom/nom, `{{2}}` cours, `{{3}}` progression, `{{4}}` URL du cours |
-| Certificat disponible | `learneas_certificate_ready` | `{{1}}` prénom/nom, `{{2}}` contenu, `{{3}}` URL de vérification |
+| Paiement confirmé | `kalanpro_payment_confirmed` | `{{1}}` prénom/nom, `{{2}}` n° commande, `{{3}}` montant + devise |
+| Rappel live / mentorat | `kalanpro_live_reminder` | `{{1}}` prénom/nom, `{{2}}` formation/séance, `{{3}}` date/heure, `{{4}}` URL de la salle |
+| Reprise après inactivité | `kalanpro_inactivity_reminder` | `{{1}}` prénom/nom, `{{2}}` cours, `{{3}}` progression, `{{4}}` URL du cours |
+| Certificat disponible | `kalanpro_certificate_ready` | `{{1}}` prénom/nom, `{{2}}` contenu, `{{3}}` URL de vérification |
+| Recrutement | `kalanpro_recruitment_update` | `{{1}}` prénom/nom, `{{2}}` opportunité, `{{3}}` détail événement, `{{4}}` URL KalanPro |
 | Test administrateur | `hello_world` | aucune |
 
-Les noms des quatre templates KalanPro sont modifiables dans **Administration → Paramètres → WhatsApp transactionnel**.
+Les noms des templates KalanPro sont modifiables dans **Administration → Paramètres → WhatsApp transactionnel**.
 
 ## 2. Consentement utilisateur
 
@@ -43,7 +44,7 @@ docker compose up --build -d
 docker compose exec backend python manage.py migrate
 ```
 
-Le service `celery_beat` exécute les rappels live toutes les 5 minutes et les relances d'inactivité une fois par jour.
+Le service `celery_beat` exécute les rappels live et recrutement toutes les 5 minutes et les relances d'inactivité une fois par jour. En v82, Docker dev inclut également `celery_worker` et `celery_beat`.
 
 ## 4. Production Meta WhatsApp Cloud API
 

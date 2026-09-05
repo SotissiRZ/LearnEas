@@ -691,3 +691,24 @@ docker compose -f docker-compose.dev.yml exec backend python manage.py reconcile
 Le back-office permet de filtrer les commandes avec anomalie, consulter leur audit détaillé, résoudre une anomalie et exporter les transactions en CSV. Les commandes Mobile Money anciennes sont signalées pour revue plutôt qu’annulées automatiquement afin de supporter les confirmations tardives des wallets.
 
 Pour le détail des variables, garanties d’idempotence et scénarios de validation live, voir `docs/V80_MOBILE_MONEY_FINANCE.md` et `docs/VALIDATION_V80.md`. Les clés/identifiants marchands réels restent des secrets de déploiement et ne sont pas inclus dans le dépôt.
+
+## Centre de notifications multicanal (v82)
+
+KalanPro dispose maintenant d'un centre de notifications interne accessible via la **cloche de la barre de navigation** et la page `/notifications`. Les alertes importantes restent donc visibles même lorsque Resend ou WhatsApp ne sont pas activés.
+
+Canaux disponibles :
+
+- **KalanPro** : notifications internes, lecture/non-lecture, historique et liens d'action ;
+- **Email** : Resend, selon les préférences par catégorie ;
+- **WhatsApp** : Meta Cloud API, uniquement après consentement explicite.
+
+Le recrutement couvre notamment les nouvelles candidatures, changements d'étape ATS, entretiens, rappels d'entretien, propositions d'embauche et réponses candidat. Les notifications externes sont déclenchées après commit de la transaction métier pour éviter les courses avec Celery.
+
+En développement, `docker-compose.dev.yml` inclut désormais `celery_worker` et `celery_beat`. Pour tester WhatsApp sans appel Meta :
+
+```env
+WHATSAPP_ENABLED=True
+WHATSAPP_DRY_RUN=True
+```
+
+Activez ensuite WhatsApp dans **Administration → Paramètres** et configurez le template recrutement `kalanpro_recruitment_update`. Voir `docs/V82_NOTIFICATIONS.md` et `docs/WHATSAPP.md`.
