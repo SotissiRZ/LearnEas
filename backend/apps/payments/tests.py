@@ -11,7 +11,7 @@ from apps.accounts.models import User
 from apps.catalog.models import Category, Course
 from apps.enrollments.models import CourseEnrollment
 from apps.formations.models import InteractiveFormation
-from .models import Order, OrderItem, FormationSeatReservation, Currency, PaymentGateway
+from .models import Order, OrderItem, FormationSeatReservation, Currency, PaymentGateway, InstructorLedgerEntry
 from .providers import _to_minor_units, _from_minor_units, normalize_provider_amount
 
 
@@ -108,6 +108,102 @@ class PaymentAccessRegressionTests(APITestCase):
         self.assertEqual(order.status, Order.Status.PAID)
         self.assertTrue(order.provider_sandbox)
         self.assertTrue(CourseEnrollment.objects.filter(user=self.student, course=self.course).exists())
+
+    @override_settings(TEST_PAYMENTS_ENABLED=True)
+    def test_checkout_idempotency_replays_same_order_without_duplicate_rights_or_ledger(self):
+        payload = {
+            "course_ids": [self.course.id], "pdf_ids": [], "formation_ids": [],
+            "provider": "manual", "currency": "EUR", "test_payment": True,
+        }
+        first = self.client.post(
+            "/api/payments/checkout/", payload, format="json", HTTP_IDEMPOTENCY_KEY="checkout-course-001"
+        )
+        second = self.client.post(
+            "/api/payments/checkout/", payload, format="json", HTTP_IDEMPOTENCY_KEY="checkout-course-001"
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED, first.data)
+        self.assertEqual(second.status_code, status.HTTP_200_OK, second.data)
+        self.assertTrue(second.data["idempotent_replay"])
+        self.assertEqual(first.data["order"]["id"], second.data["order"]["id"])
+        self.assertEqual(Order.objects.filter(user=self.student).count(), 1)
+        self.assertEqual(CourseEnrollment.objects.filter(user=self.student, course=self.course).count(), 1)
+        self.assertEqual(
+            InstructorLedgerEntry.objects.filter(entry_type=InstructorLedgerEntry.EntryType.SALE).count(), 1
+        )
+
+    @override_settings(TEST_PAYMENTS_ENABLED=True)
+    def test_checkout_idempotency_key_rejects_different_payload(self):
+        payload = {
+            "course_ids": [self.course.id], "pdf_ids": [], "formation_ids": [],
+            "provider": "manual", "currency": "EUR", "test_payment": True,
+        }
+        first = self.client.post(
+            "/api/payments/checkout/", payload, format="json", HTTP_IDEMPOTENCY_KEY="checkout-course-002"
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED, first.data)
+        changed = dict(payload)
+        changed["currency"] = "MAD"
+        second = self.client.post(
+            "/api/payments/checkout/", changed, format="json", HTTP_IDEMPOTENCY_KEY="checkout-course-002"
+        )
+        self.assertEqual(second.status_code, status.HTTP_409_CONFLICT, second.data)
+        self.assertEqual(Order.objects.filter(user=self.student).count(), 1)
+
+    @override_settings(TEST_PAYMENTS_ENABLED=True)
+    def test_refund_revokes_access_and_offsets_instructor_ledger(self):
+        checkout = self.client.post(
+            "/api/payments/checkout/",
+            {
+                "course_ids": [self.course.id], "pdf_ids": [], "formation_ids": [],
+                "provider": "manual", "currency": "EUR", "test_payment": True,
+            },
+            format="json",
+        )
+        self.assertEqual(checkout.status_code, status.HTTP_201_CREATED, checkout.data)
+        order_id = checkout.data["order"]["id"]
+        entitlement = CourseEnrollment.objects.get(user=self.student, course=self.course)
+        self.assertEqual(entitlement.source_order_id, order_id)
+        self.assertEqual(
+            InstructorLedgerEntry.objects.filter(instructor=self.instructor, entry_type="sale").count(), 1
+        )
+
+        admin = User.objects.create_user(
+            username="refund_admin", email="refund-admin@example.com", password="passpass123", role=User.Role.ADMIN
+        )
+        self.client.force_authenticate(admin)
+        refunded = self.client.post(
+            f"/api/payments/orders/{order_id}/set_status/",
+            {"status": Order.Status.REFUNDED, "reference": "manual-ref-001", "reason": "Demande client"},
+            format="json",
+        )
+        self.assertEqual(refunded.status_code, status.HTTP_200_OK, refunded.data)
+        self.assertFalse(CourseEnrollment.objects.filter(user=self.student, course=self.course).exists())
+        historical = CourseEnrollment.all_objects.get(user=self.student, course=self.course)
+        self.assertIsNotNone(historical.revoked_at)
+        self.assertEqual(historical.source_order_id, order_id)
+        amounts = list(
+            InstructorLedgerEntry.objects.filter(instructor=self.instructor).order_by("entry_type").values_list("amount", flat=True)
+        )
+        self.assertEqual(sum(amounts, Decimal("0")), Decimal("0"))
+        order = Order.objects.get(pk=order_id)
+        self.assertIsNotNone(order.refunded_at)
+        self.assertEqual(order.refund_reference, "manual-ref-001")
+
+    def test_external_refund_requires_provider_reference(self):
+        order = Order.objects.create(
+            user=self.student, status=Order.Status.PAID, provider=Order.Provider.STRIPE,
+            total_amount=Decimal("100.00"), base_total_amount=Decimal("100.00"), currency="EUR",
+        )
+        admin = User.objects.create_user(
+            username="refund_admin_ext", email="refund-admin-ext@example.com", password="passpass123", role=User.Role.ADMIN
+        )
+        self.client.force_authenticate(admin)
+        response = self.client.post(
+            f"/api/payments/orders/{order.id}/set_status/", {"status": Order.Status.REFUNDED}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.PAID)
 
     @override_settings(TEST_PAYMENTS_ENABLED=False)
     def test_internal_test_payment_is_rejected_when_disabled(self):

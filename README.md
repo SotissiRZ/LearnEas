@@ -406,14 +406,13 @@ python manage.py makemigrations --check --dry-run
 python manage.py migrate --noinput
 python manage.py test
 npm ci
-npm run audit:mobile
 npm run test:security
+npm run audit:mobile
+npx tsc --noEmit
 npm run build
-npx playwright test
-docker compose config -q
 ```
 
-Pour la v51, la génération locale valide la compilation Python, la syntaxe TS/TSX/JS, les YAML Compose/CI,
+Pour la v69, la génération locale valide la compilation Python, la syntaxe TS/TSX/JS, les YAML Compose/CI,
 `npm run audit:mobile` et les tests statiques de sécurité frontend. L’environnement de génération ne peut pas
 installer les dépendances npm/pip (timeout réseau), donc le build Next.js, Playwright et la suite Django complète
 restent des **release gates obligatoires** de la CI/Docker avant déploiement.

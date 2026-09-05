@@ -3,6 +3,12 @@ from django.conf import settings
 from django.db import models
 
 
+class ActiveEntitlementManager(models.Manager):
+    """Manager par défaut : seuls les droits encore actifs sont visibles par les contrôles d'accès."""
+    def get_queryset(self):
+        return super().get_queryset().filter(revoked_at__isnull=True)
+
+
 class CourseEnrollment(models.Model):
     """Accès acquis à un cours COMPLET (playlist), jamais à une seule vidéo."""
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="enrollments")
@@ -15,6 +21,14 @@ class CourseEnrollment(models.Model):
     last_accessed_lesson = models.ForeignKey(
         "catalog.Lesson", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
+    source_order = models.ForeignKey(
+        "payments.Order", on_delete=models.SET_NULL, null=True, blank=True, related_name="course_entitlements"
+    )
+    revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    revocation_reason = models.CharField(max_length=255, blank=True)
+
+    objects = ActiveEntitlementManager()
+    all_objects = models.Manager()
 
     class Meta:
         unique_together = ("user", "course")
@@ -41,6 +55,14 @@ class PDFPurchase(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="pdf_purchases")
     pdf_product = models.ForeignKey("catalog.PDFProduct", on_delete=models.CASCADE, related_name="purchases")
     purchased_at = models.DateTimeField(auto_now_add=True)
+    source_order = models.ForeignKey(
+        "payments.Order", on_delete=models.SET_NULL, null=True, blank=True, related_name="pdf_entitlements"
+    )
+    revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    revocation_reason = models.CharField(max_length=255, blank=True)
+
+    objects = ActiveEntitlementManager()
+    all_objects = models.Manager()
 
     class Meta:
         unique_together = ("user", "pdf_product")
@@ -78,10 +100,10 @@ class Certificate(models.Model):
     # Plusieurs versions peuvent exister pour une même inscription (révocation / expiration / réémission).
     # Les anciens certificats restent vérifiables au lieu d'être écrasés.
     course_enrollment = models.ForeignKey(
-        CourseEnrollment, on_delete=models.CASCADE, null=True, blank=True, related_name="certificate_records"
+        CourseEnrollment, on_delete=models.SET_NULL, null=True, blank=True, related_name="certificate_records"
     )
     formation_enrollment = models.ForeignKey(
-        "formations.FormationEnrollment", on_delete=models.CASCADE, null=True, blank=True,
+        "formations.FormationEnrollment", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="certificate_records",
     )
     supersedes = models.ForeignKey(
@@ -129,11 +151,8 @@ class Certificate(models.Model):
         ordering = ["-issued_at"]
         constraints = [
             models.CheckConstraint(
-                check=(
-                    models.Q(course_enrollment__isnull=False, formation_enrollment__isnull=True)
-                    | models.Q(course_enrollment__isnull=True, formation_enrollment__isnull=False)
-                ),
-                name="certificate_exactly_one_enrollment",
+                check=~models.Q(course_enrollment__isnull=False, formation_enrollment__isnull=False),
+                name="certificate_not_two_enrollments",
             ),
             models.UniqueConstraint(
                 fields=["course_enrollment"],

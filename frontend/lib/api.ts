@@ -253,7 +253,7 @@ export async function apiUploadWithProgress<T>(
 }
 
 /** Télécharge un fichier privé en réutilisant le jeton d'accès mémoire et le refresh HttpOnly. */
-export async function apiDownload(path: string, filename: string): Promise<void> {
+export async function apiDownload(path: string, filename = "download"): Promise<void> {
   const attempt = async (token: string | null) => fetch(`${API_URL}${path}`, {
     method: "GET",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -279,7 +279,8 @@ export async function apiDownload(path: string, filename: string): Promise<void>
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = filename || "kalanpro-document";
+  link.download = filename || "download";
+  link.rel = "noopener";
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -322,38 +323,3 @@ export function levelLabel(level: string): string {
   return { beginner: "Débutant", intermediate: "Intermédiaire", expert: "Expert" }[level] || level;
 }
 
-/** Télécharge une ressource protégée avec le même jeton JWT que les appels API. */
-export async function apiDownload(path: string, filename = "download"): Promise<void> {
-  const doFetch = (token: string | null) => fetch(`${API_URL}${path}`, {
-    method: "GET",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    credentials: "include",
-    cache: "no-store",
-  });
-
-  let response: Response;
-  try {
-    response = await doFetch(getToken());
-    if (response.status === 401 && typeof window !== "undefined") {
-      const renewed = await refreshAccessToken();
-      if (renewed) response = await doFetch(renewed);
-    }
-  } catch {
-    throw new ApiError("Impossible de télécharger le fichier. Vérifiez votre connexion.");
-  }
-  if (!response.ok) {
-    let data: unknown = null;
-    try { data = await response.json(); } catch { /* réponse non JSON */ }
-    throw buildErrorMessage(response.status, data);
-  }
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.rel = "noopener";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}

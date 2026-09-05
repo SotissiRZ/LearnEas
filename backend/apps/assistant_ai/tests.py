@@ -49,6 +49,16 @@ class AssistantAITests(TestCase):
         source_types = {s["type"] for s in response.data["message"]["sources"]}
         self.assertNotIn("lesson", source_types)
 
+    @override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
+    def test_ai_single_flight_rejects_second_concurrent_request_for_same_user(self):
+        from .services import ai_request_guard
+        with ai_request_guard(self.student) as first:
+            self.assertTrue(first)
+            with ai_request_guard(self.student) as second:
+                self.assertFalse(second)
+        with ai_request_guard(self.student) as after_release:
+            self.assertTrue(after_release)
+
     def test_monthly_quota_is_enforced(self):
         self.cfg.student_monthly_limit = 1
         self.cfg.save()

@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from datetime import timedelta, timezone as dt_timezone
 from urllib.parse import quote
 from django.conf import settings
@@ -17,6 +18,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.catalog.permissions import IsInstructorOrAdmin
 from apps.common.throttles import LiveRateThrottle
+from apps.common.media_metadata import validate_upload_limits
 from .models import (
     InteractiveFormation, FormationSession, FormationEnrollment,
     FormationAttendance, FormationSignal, FormationStatus, FormationRoomFile, FormationSessionInvite,
@@ -36,6 +38,12 @@ from .serializers import (
 )
 
 User = get_user_model()
+
+ROOM_FILE_EXTENSIONS = {
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".txt", ".csv", ".md", ".json",
+    ".png", ".jpg", ".jpeg", ".webp", ".gif",
+}
 
 
 def _enrolled_formation_ids(user):
@@ -488,18 +496,24 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
             if not upload:
                 return Response({"file": ["Sélectionnez un fichier."]}, status=400)
             max_size = 20 * 1024 * 1024
-            if upload.size > max_size:
-                return Response({"file": ["Le fichier dépasse la limite de 20 Mo."]}, status=400)
-            blocked = {".exe", ".msi", ".bat", ".cmd", ".com", ".scr", ".js", ".vbs", ".ps1", ".sh"}
-            lower_name = upload.name.lower()
-            if any(lower_name.endswith(ext) for ext in blocked):
-                return Response({"file": ["Ce type de fichier n'est pas autorisé dans une salle live."]}, status=400)
+            try:
+                validate_upload_limits(
+                    upload, max_bytes=max_size, extensions=ROOM_FILE_EXTENSIONS, field="file"
+                )
+            except Exception as exc:
+                detail = getattr(exc, "detail", None)
+                if detail is not None:
+                    return Response(detail, status=400)
+                return Response({"file": ["Fichier invalide ou non autorisé."]}, status=400)
+            safe_name = Path(str(getattr(upload, "name", "fichier"))).name[:255] or "fichier"
             item = FormationRoomFile.objects.create(
                 session=session,
                 uploader=request.user,
                 file=upload,
-                original_name=upload.name[:255],
-                content_type=getattr(upload, "content_type", "") or "",
+                original_name=safe_name,
+                # Le MIME client est conservé uniquement comme métadonnée d'affichage.
+                # Le téléchargement, lui, est forcé en octet-stream.
+                content_type=(getattr(upload, "content_type", "") or "")[:120],
                 size=upload.size,
             )
             publish_files_changed(session.id)
@@ -531,10 +545,12 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
             handle = item.file.open("rb")
         except (FileNotFoundError, OSError):
             return Response({"detail": "Fichier indisponible sur le stockage."}, status=404)
-        response = FileResponse(handle, as_attachment=True, filename=item.original_name)
-        if item.content_type:
-            response["Content-Type"] = item.content_type
+        response = FileResponse(
+            handle, as_attachment=True, filename=item.original_name, content_type="application/octet-stream"
+        )
         response["X-Content-Type-Options"] = "nosniff"
+        response["Cache-Control"] = "private, no-store"
+        response["Content-Security-Policy"] = "sandbox"
         return response
 
     @action(detail=True, methods=["get", "post"], throttle_classes=[LiveRateThrottle])

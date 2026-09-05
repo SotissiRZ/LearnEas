@@ -25,7 +25,7 @@ from apps.accounts.models import User, PlatformSettings, InstructorApplication
 from apps.catalog.models import Course, PDFProduct
 from apps.enrollments.models import CourseEnrollment, PDFPurchase
 from apps.formations.models import InteractiveFormation, FormationEnrollment, FormationSession, FormationAttendance, MentorshipBooking, FormationKind
-from .models import Order, OrderItem, PayoutProfile, InstructorPayout, FormationSeatReservation, Currency, PaymentGateway
+from .models import Order, OrderItem, PayoutProfile, InstructorPayout, FormationSeatReservation, Currency, PaymentGateway, InstructorLedgerEntry
 import stripe
 from apps.common.throttles import CheckoutRateThrottle, AdminTestRateThrottle, WebhookRateThrottle
 
@@ -37,6 +37,7 @@ from .providers import (
     ProviderError, create_checkout, test_provider, verify_payment, is_configured,
     _from_minor_units, normalize_provider_amount, _cinetpay_config,
 )
+from .services import record_payout_ledger, record_sale_ledger, revoke_order_entitlements
 
 logger = logging.getLogger(__name__)
 
@@ -96,18 +97,23 @@ def _release_failed_order_reservations(order):
 def _finance_totals(instructor):
     paid_items = OrderItem.objects.filter(instructor=instructor, order__status=Order.Status.PAID)
     gross = paid_items.aggregate(v=Sum("unit_price"))["v"] or Decimal("0")
-    earnings = paid_items.aggregate(v=Sum("instructor_earning_amount"))["v"] or Decimal("0")
-    locked = InstructorPayout.objects.filter(
+    net_earnings = InstructorLedgerEntry.objects.filter(
         instructor=instructor,
-        status__in=[InstructorPayout.Status.PENDING, InstructorPayout.Status.PROCESSING, InstructorPayout.Status.PAID],
+        entry_type__in=[InstructorLedgerEntry.EntryType.SALE, InstructorLedgerEntry.EntryType.REFUND],
+    ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+    ledger_balance = InstructorLedgerEntry.objects.filter(instructor=instructor).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+    pending_locked = InstructorPayout.objects.filter(
+        instructor=instructor,
+        status__in=[InstructorPayout.Status.PENDING, InstructorPayout.Status.PROCESSING],
     ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
     paid_out = InstructorPayout.objects.filter(
         instructor=instructor, status=InstructorPayout.Status.PAID
     ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
     return {
         "gross_revenue": gross,
-        "total_earnings": earnings,
-        "available_balance": max(earnings - locked, Decimal("0")),
+        "total_earnings": net_earnings,
+        "available_balance": max(ledger_balance - pending_locked, Decimal("0")),
+        "ledger_balance": ledger_balance,
         "paid_out": paid_out,
         "sales_count": paid_items.count(),
     }
@@ -130,8 +136,12 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
         return qs.filter(user=user)
 
     @action(detail=True, methods=["post"], permission_classes=[IsAdminRole])
+    @transaction.atomic
     def set_status(self, request, pk=None):
-        order = self.get_object()
+        # Verrou métier explicite : deux actions admin concurrentes ne peuvent pas
+        # rembourser/confirmer la même commande deux fois.
+        visible = self.get_object()
+        order = Order.objects.select_for_update().get(pk=visible.pk)
         new_status = request.data.get("status")
         if new_status not in Order.Status.values:
             return Response({"status": ["Statut invalide."]}, status=400)
@@ -145,15 +155,40 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
             return Response(self.get_serializer(order).data)
         if new_status not in allowed.get(order.status, set()):
             return Response({"detail": "Transition de statut invalide."}, status=409)
+
         if new_status == Order.Status.PAID:
             if order.base_total_amount > 0 and order.provider != Order.Provider.MANUAL and not settings.DEBUG:
                 return Response({"detail": "Seuls le webhook/contrôle du prestataire peuvent confirmer une commande externe."}, status=403)
-            CheckoutView()._fulfill(order)
+            try:
+                CheckoutView()._fulfill(order)
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=409)
+
+        elif new_status == Order.Status.REFUNDED:
+            refund_reason = str(request.data.get("refund_reason") or request.data.get("reason") or "Remboursement administratif").strip()[:500]
+            refund_reference = str(request.data.get("refund_reference") or request.data.get("reference") or "").strip()[:255]
+            if order.provider != Order.Provider.MANUAL and not refund_reference:
+                return Response({
+                    "refund_reference": [
+                        "La référence du remboursement confirmé par le prestataire est obligatoire avant révocation des droits."
+                    ]
+                }, status=400)
+            if not refund_reference:
+                refund_reference = f"manual-refund-{order.invoice_number or order.pk}"
+
+            order.status = Order.Status.REFUNDED
+            order.refunded_at = timezone.now()
+            order.refund_reference = refund_reference
+            order.refund_reason = refund_reason
+            order.save(update_fields=["status", "refunded_at", "refund_reference", "refund_reason"])
+            revoke_order_entitlements(order, actor=request.user, reason=refund_reason)
+
         else:
             order.status = new_status
             order.save(update_fields=["status"])
             if new_status == Order.Status.FAILED:
                 _release_failed_order_reservations(order)
+
         order.refresh_from_db()
         return Response(self.get_serializer(order).data)
 
@@ -168,6 +203,25 @@ class CheckoutView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         user = request.user
+        idempotency_key = str(request.headers.get("Idempotency-Key") or "").strip()
+        if len(idempotency_key) > 128 or any(ord(ch) < 33 or ord(ch) > 126 for ch in idempotency_key):
+            return Response({"detail": "Clé d'idempotence invalide."}, status=400)
+        request_fingerprint = hashlib.sha256(
+            json.dumps(data, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        ).hexdigest()
+        if idempotency_key:
+            existing = Order.objects.filter(user=user, idempotency_key=idempotency_key).first()
+            if existing:
+                if existing.request_fingerprint and existing.request_fingerprint != request_fingerprint:
+                    return Response({"detail": "Cette clé d'idempotence a déjà été utilisée pour un autre panier."}, status=409)
+                return Response({
+                    "order": OrderSerializer(existing).data,
+                    "requires_payment": existing.base_total_amount > 0,
+                    "checkout_url": existing.checkout_url or None,
+                    "manual_review": bool(existing.base_total_amount > 0 and existing.provider == Order.Provider.MANUAL and existing.status == Order.Status.PENDING),
+                    "test_payment": bool(existing.provider == Order.Provider.MANUAL and existing.provider_sandbox and existing.status == Order.Status.PAID),
+                    "idempotent_replay": True,
+                }, status=200)
         test_payment = bool(data.get("test_payment"))
         if test_payment and not settings.TEST_PAYMENTS_ENABLED:
             return Response({"detail": "Les paiements de test sont désactivés sur cet environnement."}, status=403)
@@ -252,14 +306,31 @@ class CheckoutView(APIView):
         # devient la source de vérité de la commande avant tout appel externe.
         payment_total = normalize_provider_amount(provider_code, payment_total, currency.code)
 
-        order = Order.objects.create(
-            user=user,
-            provider=provider_code,
-            provider_sandbox=bool(test_payment or (gateway.sandbox if base_total > 0 and gateway else False)),
-            base_total_amount=base_total,
-            total_amount=payment_total,
-            currency=currency.code,
-        )
+        order_defaults = {
+            "provider": provider_code,
+            "provider_sandbox": bool(test_payment or (gateway.sandbox if base_total > 0 and gateway else False)),
+            "base_total_amount": base_total,
+            "total_amount": payment_total,
+            "currency": currency.code,
+            "request_fingerprint": request_fingerprint,
+        }
+        if idempotency_key:
+            order, created = Order.objects.get_or_create(
+                user=user, idempotency_key=idempotency_key, defaults=order_defaults
+            )
+            if not created:
+                if order.request_fingerprint and order.request_fingerprint != request_fingerprint:
+                    return Response({"detail": "Cette clé d'idempotence a déjà été utilisée pour un autre panier."}, status=409)
+                return Response({
+                    "order": OrderSerializer(order).data,
+                    "requires_payment": order.base_total_amount > 0,
+                    "checkout_url": order.checkout_url or None,
+                    "manual_review": bool(order.base_total_amount > 0 and order.provider == Order.Provider.MANUAL and order.status == Order.Status.PENDING),
+                    "test_payment": bool(order.provider == Order.Provider.MANUAL and order.provider_sandbox and order.status == Order.Status.PAID),
+                    "idempotent_replay": True,
+                }, status=200)
+        else:
+            order = Order.objects.create(user=user, **order_defaults)
         for course in courses:
             price = Decimal("0") if course.is_free else (course.discount_price if course.discount_price is not None else course.price)
             fee, earning = _split_revenue(price)
@@ -305,7 +376,8 @@ class CheckoutView(APIView):
                 transaction.set_rollback(True)
                 return Response({"provider": [str(exc)]}, status=502)
             order.provider_reference = reference
-            order.save(update_fields=["provider_reference"])
+            order.checkout_url = checkout_url or ""
+            order.save(update_fields=["provider_reference", "checkout_url"])
 
         return Response({
             "order": OrderSerializer(order).data,
@@ -315,45 +387,100 @@ class CheckoutView(APIView):
             "test_payment": test_payment,
         }, status=201)
 
+    @transaction.atomic
     def _fulfill(self, order):
-        if order.status != Order.Status.PAID:
+        # Verrouille la commande : deux webhooks/retries concurrents ne peuvent pas exécuter
+        # deux fois les effets métier ni envoyer plusieurs confirmations.
+        order = Order.objects.select_for_update().get(pk=order.pk)
+        if order.status in {Order.Status.FAILED, Order.Status.REFUNDED}:
+            raise ValueError("Cette commande ne peut plus être exécutée.")
+        newly_paid = order.status != Order.Status.PAID
+        if newly_paid:
             order.status = Order.Status.PAID
             order.paid_at = timezone.now()
             order.save(update_fields=["status", "paid_at"])
         elif not order.paid_at:
             order.paid_at = timezone.now()
             order.save(update_fields=["paid_at"])
-        for item in order.items.select_related("course", "pdf_product", "formation", "mentorship_booking__offering", "mentorship_booking__slot").all():
+
+        for item in order.items.select_related(
+            "course", "pdf_product", "formation", "mentorship_booking__offering", "mentorship_booking__slot"
+        ).all():
             if item.course:
-                CourseEnrollment.objects.get_or_create(user=order.user, course=item.course)
+                enrollment, created = CourseEnrollment.all_objects.get_or_create(
+                    user=order.user, course=item.course, defaults={"source_order": order}
+                )
+                if not created and enrollment.revoked_at is not None:
+                    enrollment.revoked_at = None
+                    enrollment.revocation_reason = ""
+                    enrollment.source_order = order
+                    enrollment.certificate_issued = False
+                    enrollment.save(update_fields=["revoked_at", "revocation_reason", "source_order", "certificate_issued"])
+                elif not created and enrollment.source_order_id is None:
+                    # Réparation d'un ancien droit créé avant le rattachement aux commandes.
+                    enrollment.source_order = order
+                    enrollment.save(update_fields=["source_order"])
                 item.course.students_count = item.course.enrollments.count()
                 item.course.save(update_fields=["students_count"])
+
             if item.pdf_product:
-                purchase, created = PDFPurchase.objects.get_or_create(user=order.user, pdf_product=item.pdf_product)
-                if created:
+                purchase, created = PDFPurchase.all_objects.get_or_create(
+                    user=order.user, pdf_product=item.pdf_product, defaults={"source_order": order}
+                )
+                reactivated = False
+                if not created and purchase.revoked_at is not None:
+                    purchase.revoked_at = None
+                    purchase.revocation_reason = ""
+                    purchase.source_order = order
+                    purchase.save(update_fields=["revoked_at", "revocation_reason", "source_order"])
+                    reactivated = True
+                elif not created and purchase.source_order_id is None:
+                    purchase.source_order = order
+                    purchase.save(update_fields=["source_order"])
+                if created or reactivated:
                     item.pdf_product.downloads_count += 1
                     item.pdf_product.save(update_fields=["downloads_count"])
+
             if item.formation:
                 formation = InteractiveFormation.objects.select_for_update().get(pk=item.formation_id)
-                if not FormationEnrollment.objects.filter(user=order.user, formation=formation).exists():
+                enrollment = FormationEnrollment.all_objects.filter(user=order.user, formation=formation).first()
+                if enrollment is None or enrollment.revoked_at is not None:
                     now = timezone.now()
                     reservation = FormationSeatReservation.objects.filter(order=order, formation=formation).first()
                     reservation_valid = bool(reservation and reservation.expires_at > now)
-                    active_other = FormationSeatReservation.objects.filter(formation=formation, order__status=Order.Status.PENDING, expires_at__gt=now).exclude(order=order).count()
+                    active_other = FormationSeatReservation.objects.filter(
+                        formation=formation, order__status=Order.Status.PENDING, expires_at__gt=now
+                    ).exclude(order=order).count()
                     if formation.enrollments.count() + active_other >= formation.max_students and not reservation_valid:
                         raise ValueError(f"Plus de place disponible pour la formation {formation.title}.")
-                    FormationEnrollment.objects.create(user=order.user, formation=formation)
+                    if enrollment is None:
+                        FormationEnrollment.all_objects.create(user=order.user, formation=formation, source_order=order)
+                    else:
+                        enrollment.revoked_at = None
+                        enrollment.revocation_reason = ""
+                        enrollment.source_order = order
+                        enrollment.certificate_issued = False
+                        enrollment.save(update_fields=["revoked_at", "revocation_reason", "source_order", "certificate_issued"])
+                elif enrollment.source_order_id is None:
+                    enrollment.source_order = order
+                    enrollment.save(update_fields=["source_order"])
+
             if item.mentorship_booking:
                 from apps.formations.mentorship import confirm_booking
                 confirm_booking(item.mentorship_booking)
+
+        # Le journal est créé après les droits mais dans la même transaction. Une panne
+        # d'exécution annule donc simultanément statut, droits et écritures financières.
+        record_sale_ledger(order)
         FormationSeatReservation.objects.filter(order=order).delete()
-        # La notification est lancée après COMMIT afin qu'une panne WhatsApp ne puisse jamais
-        # invalider une commande déjà payée et que le worker voie les inscriptions créées.
-        try:
-            from apps.notifications.services import queue_payment_confirmation
-            transaction.on_commit(lambda order_id=order.id: queue_payment_confirmation(order_id))
-        except Exception:
-            logger.exception("Impossible de planifier la notification WhatsApp de la commande %s", order.id)
+
+        if newly_paid:
+            # Notification après COMMIT : jamais de rollback financier à cause d'un canal externe.
+            try:
+                from apps.notifications.services import queue_payment_confirmation
+                transaction.on_commit(lambda order_id=order.id: queue_payment_confirmation(order_id))
+            except Exception:
+                logger.exception("Impossible de planifier la notification WhatsApp de la commande %s", order.id)
         return order
 
 
@@ -367,7 +494,17 @@ class ConfirmPaymentView(APIView):
         if not order:
             return Response({"detail": "Commande introuvable."}, status=404)
         if order.status == Order.Status.PAID:
+            # Une commande payée peut avoir subi une panne entre le paiement et la
+            # création des droits. Rejouer _fulfill est volontairement idempotent et
+            # répare les inscriptions/ledger manquants sans renotifier le client.
+            try:
+                CheckoutView()._fulfill(order)
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=409)
+            order.refresh_from_db()
             return Response(OrderSerializer(order).data)
+        if order.status == Order.Status.REFUNDED:
+            return Response({"detail": "Cette commande a été remboursée et ses droits ont été révoqués."}, status=409)
         if order.status == Order.Status.FAILED:
             return Response({"detail": "Cette commande a déjà échoué. Relancez un nouveau paiement."}, status=402)
         if order.base_total_amount == 0:
@@ -539,8 +676,10 @@ class InstructorPayoutViewSet(viewsets.ModelViewSet):
         return Response(InstructorPayoutSerializer(payout).data, status=201)
 
     @action(detail=True, methods=["post"], permission_classes=[IsAdminRole])
+    @transaction.atomic
     def mark_paid(self, request, pk=None):
-        payout = self.get_object()
+        visible = self.get_object()
+        payout = InstructorPayout.objects.select_for_update().get(pk=visible.pk)
         reference = (request.data.get("reference") or "").strip()
         if not reference:
             return Response({"reference": ["La référence de transaction est obligatoire."]}, status=400)
@@ -551,6 +690,7 @@ class InstructorPayoutViewSet(viewsets.ModelViewSet):
         payout.reference = reference
         payout.note = request.data.get("note", "")
         payout.save(update_fields=["status", "processed_at", "reference", "note"])
+        record_payout_ledger(payout)
         return Response(self.get_serializer(payout).data)
 
     @action(detail=True, methods=["post"], permission_classes=[IsAdminRole])

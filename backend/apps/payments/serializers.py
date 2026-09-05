@@ -40,7 +40,8 @@ class OrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             "id", "status", "provider", "provider_sandbox", "base_total_amount", "total_amount", "currency", "invoice_number",
-            "created_at", "paid_at", "items", "customer_name", "customer_email",
+            "created_at", "paid_at", "refunded_at", "refund_reference", "refund_reason",
+            "items", "customer_name", "customer_email",
         ]
 
     def get_customer_name(self, obj):

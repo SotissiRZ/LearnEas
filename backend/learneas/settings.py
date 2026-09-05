@@ -428,7 +428,14 @@ AI_DRY_RUN = config("AI_DRY_RUN", default=DEBUG, cast=bool)
 AI_INDEX_ASYNC = config("AI_INDEX_ASYNC", default=not DEBUG, cast=bool)
 AI_VISION_ENABLED = config("AI_VISION_ENABLED", default=False, cast=bool)
 
+PAYMENT_RECONCILIATION_MIN_AGE_SECONDS = config("PAYMENT_RECONCILIATION_MIN_AGE_SECONDS", default=120, cast=int)
+PAYMENT_RECONCILIATION_BATCH_SIZE = config("PAYMENT_RECONCILIATION_BATCH_SIZE", default=100, cast=int)
+
 CELERY_BEAT_SCHEDULE = {
+    "payment-reconciliation-every-5-minutes": {
+        "task": "apps.payments.tasks.reconcile_pending_payments",
+        "schedule": 300.0,
+    },
     "whatsapp-live-reminders-every-5-minutes": {
         "task": "apps.notifications.tasks.dispatch_whatsapp_live_reminders",
         "schedule": 300.0,
@@ -479,6 +486,12 @@ if not DEBUG:
         raise RuntimeError("ALLOWED_HOSTS='*' est interdit en production.")
     if not AUTH_REFRESH_COOKIE_SECURE:
         raise RuntimeError("AUTH_REFRESH_COOKIE_SECURE=False est interdit en production.")
+    if TEST_PAYMENTS_ENABLED:
+        raise RuntimeError("TEST_PAYMENTS_ENABLED=True est interdit en production.")
+    if not REALTIME_ALLOWED_ORIGINS or any(
+        str(origin).strip() in {"*", "http://*", "https://*"} for origin in REALTIME_ALLOWED_ORIGINS
+    ):
+        raise RuntimeError("REALTIME_ALLOWED_ORIGINS doit contenir uniquement des origines explicites en production.")
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
     X_FRAME_OPTIONS = "DENY"

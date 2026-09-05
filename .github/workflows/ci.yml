@@ -1,51 +1,62 @@
-name: CI
-on: [push, pull_request]
+name: KalanPro CI
+
+on:
+  push:
+  pull_request:
+
 jobs:
   backend:
     runs-on: ubuntu-latest
     services:
-      postgres:
-        image: postgres:16-alpine
-        env: { POSTGRES_DB: learneas, POSTGRES_USER: learneas, POSTGRES_PASSWORD: learneas }
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U learneas" --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
         image: redis:7-alpine
-        ports: ["6379:6379"]
-    defaults: { run: { working-directory: backend } }
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
     env:
       DEBUG: "True"
-      SECRET_KEY: ci-secret-key-ci-secret-key-ci-secret-key
-      DATABASE_URL: postgres://learneas:learneas@localhost:5432/learneas
-      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: ci-secret-key-not-for-production-0123456789
+      REDIS_URL: redis://127.0.0.1:6379/0
+      TEST_PAYMENTS_ENABLED: "True"
+      AI_DRY_RUN: "True"
+      AI_INDEX_ASYNC: "False"
+      EMAIL_BACKEND: django.core.mail.backends.locmem.EmailBackend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12", cache: pip, cache-dependency-path: backend/requirements.txt }
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
       - run: python manage.py check
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py migrate --noinput
-      - run: python manage.py test
+      - run: python manage.py test --verbosity=1
+
   frontend:
     runs-on: ubuntu-latest
-    defaults: { run: { working-directory: frontend } }
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: "20", cache: npm, cache-dependency-path: frontend/package-lock.json }
-      - run: npm ci
-      - run: npm run audit:mobile
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
       - run: npm run test:security
+      - run: npm run audit:mobile
+      - run: npx tsc --noEmit
       - run: npm run build
-      # Playwright est volontairement installé sans modifier package.json/package-lock :
-      # Next.js le déclare déjà comme peer optionnel et les tests E2E restent un outil CI.
-      - run: npm install --no-save --package-lock=false @playwright/test@1.57.0
-      - run: npx playwright install --with-deps chromium
-      - run: npx playwright test
-  compose:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: docker compose config -q

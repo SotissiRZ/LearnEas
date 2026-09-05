@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 from .models import AIConversation, AIMessage, AISettings, AIUsage, AIKnowledgeChunk, AIEvaluationCase, AIActionLog, AIDraft, AIAttachment
 from .serializers import AIConversationListSerializer, AIConversationDetailSerializer, AISettingsSerializer
-from .services import answer, quota_state, role_enabled, estimate_cost_eur
+from .services import answer, quota_state, role_enabled, estimate_cost_eur, ai_request_guard
 from .attachments import validate_ai_attachment, extract_attachment_text, attachment_mime_type, serialize_attachment, attachment_context
 from .tools import capabilities_for, create_action_proposal, serialize_action, execute_action, reject_action
 from .evaluation import seed_evaluation_cases, run_evaluation
@@ -138,8 +138,12 @@ def attachment_download_view(request, attachment_id: int):
         return Response({"detail": "Pièce jointe introuvable."}, status=status.HTTP_404_NOT_FOUND)
     try:
         row.file.open("rb")
-        response = FileResponse(row.file, as_attachment=True, filename=row.original_name, content_type=row.mime_type or "application/octet-stream")
+        response = FileResponse(
+            row.file, as_attachment=True, filename=row.original_name, content_type="application/octet-stream"
+        )
         response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Content-Security-Policy"] = "sandbox"
         return response
     except Exception:
         return Response({"detail": "Le fichier est temporairement indisponible."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
@@ -152,6 +156,18 @@ def chat_view(request):
     cfg = AISettings.load()
     if not cfg.enabled or not role_enabled(request.user, cfg):
         return Response({"detail": "L'assistant IA n'est pas activé pour ce profil."}, status=status.HTTP_403_FORBIDDEN)
+    with ai_request_guard(request.user) as acquired:
+        if not acquired:
+            return Response(
+                {"detail": "Une autre requête IA est déjà en cours pour ce compte. Réessayez après sa fin."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return _chat_view_unlocked(request, cfg)
+
+
+def _chat_view_unlocked(request, cfg):
+    # Le verrou single-flight est déjà détenu ici : lecture du quota et création de
+    # AIUsage appartiennent donc à la même section critique utilisateur.
     quota = quota_state(request.user, cfg)
     if not quota["unlimited"] and quota["remaining"] <= 0:
         return Response({"detail": "Votre quota IA mensuel est atteint.", "quota": quota}, status=status.HTTP_429_TOO_MANY_REQUESTS)

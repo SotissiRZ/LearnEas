@@ -186,6 +186,12 @@ class FormationSession(models.Model):
         return round(seconds / 60, 1)
 
 
+class ActiveFormationEnrollmentManager(models.Manager):
+    """Les contrôles d'accès et capacités ne comptent que les inscriptions non révoquées."""
+    def get_queryset(self):
+        return super().get_queryset().filter(revoked_at__isnull=True)
+
+
 class FormationEnrollment(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="formation_enrollments"
@@ -194,6 +200,14 @@ class FormationEnrollment(models.Model):
     enrolled_at = models.DateTimeField(auto_now_add=True)
     attended_sessions = models.ManyToManyField(FormationSession, blank=True, related_name="attendees")
     certificate_issued = models.BooleanField(default=False)
+    source_order = models.ForeignKey(
+        "payments.Order", on_delete=models.SET_NULL, null=True, blank=True, related_name="formation_entitlements"
+    )
+    revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    revocation_reason = models.CharField(max_length=255, blank=True)
+
+    objects = ActiveFormationEnrollmentManager()
+    all_objects = models.Manager()
 
     class Meta:
         unique_together = ("user", "formation")

@@ -125,6 +125,12 @@ class Order(models.Model):
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     currency = models.CharField(max_length=3, default="EUR")
     provider_reference = models.CharField(max_length=255, blank=True)
+    checkout_url = models.TextField(blank=True)
+    idempotency_key = models.CharField(max_length=128, blank=True)
+    request_fingerprint = models.CharField(max_length=64, blank=True)
+    refunded_at = models.DateTimeField(null=True, blank=True)
+    refund_reference = models.CharField(max_length=255, blank=True)
+    refund_reason = models.CharField(max_length=500, blank=True)
     invoice_number = models.CharField(max_length=50, unique=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     paid_at = models.DateTimeField(null=True, blank=True)
@@ -134,6 +140,13 @@ class Order(models.Model):
         indexes = [
             models.Index(fields=["status", "created_at"], name="payments_or_status_6f471d_idx"),
             models.Index(fields=["user", "status"], name="payments_or_user_id_8d1a2e_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "idempotency_key"],
+                condition=~models.Q(idempotency_key=""),
+                name="uniq_order_user_idempotency",
+            ),
         ]
 
     def __str__(self):
@@ -256,3 +269,53 @@ class InstructorPayout(models.Model):
 
     def __str__(self):
         return f"{self.instructor} · {self.amount} EUR · {self.status}"
+
+
+class InstructorLedgerEntry(models.Model):
+    """Journal financier immuable des montants dus aux instructeurs.
+
+    `amount` est signé : vente positive, remboursement/versement négatif.
+    """
+    class EntryType(models.TextChoices):
+        SALE = "sale", "Vente"
+        REFUND = "refund", "Remboursement"
+        PAYOUT = "payout", "Versement"
+        ADJUSTMENT = "adjustment", "Ajustement"
+
+    instructor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ledger_entries"
+    )
+    entry_type = models.CharField(max_length=20, choices=EntryType.choices, db_index=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    order_item = models.ForeignKey(
+        OrderItem, on_delete=models.SET_NULL, null=True, blank=True, related_name="ledger_entries"
+    )
+    payout = models.ForeignKey(
+        InstructorPayout, on_delete=models.SET_NULL, null=True, blank=True, related_name="ledger_entries"
+    )
+    reference = models.CharField(max_length=160, blank=True)
+    note = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["instructor", "created_at"], name="ledger_instr_created_idx"),
+            models.Index(fields=["entry_type", "created_at"], name="ledger_type_created_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(condition=~models.Q(amount=0), name="ledger_amount_nonzero"),
+            models.UniqueConstraint(
+                fields=["order_item", "entry_type"],
+                condition=models.Q(order_item__isnull=False, entry_type__in=["sale", "refund"]),
+                name="uniq_ledger_item_type",
+            ),
+            models.UniqueConstraint(
+                fields=["payout", "entry_type"],
+                condition=models.Q(payout__isnull=False, entry_type="payout"),
+                name="uniq_ledger_payout",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.instructor} · {self.entry_type} · {self.amount}"

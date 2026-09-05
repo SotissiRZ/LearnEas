@@ -2,9 +2,12 @@ import time
 import json
 from decimal import Decimal
 import requests
+from contextlib import contextmanager
+import uuid
 from django.conf import settings
 from django.utils import timezone
 from django.db.models import Count, Sum
+from django.core.cache import cache
 from apps.catalog.models import Course, Lesson, PDFProduct
 from apps.enrollments.models import CourseEnrollment, PDFPurchase, Certificate
 from apps.formations.models import MentorshipOffering
@@ -12,6 +15,27 @@ from .models import AISettings, AIUsage
 from .rag import retrieve
 from .tools import definitions_for, execute_read_tool, parse_tool_arguments, READ_TOOLS, WRITE_TOOLS, validate_write_tool
 from .attachments import attachment_context, image_data_urls
+
+
+@contextmanager
+def ai_request_guard(user):
+    """Single-flight distribué par utilisateur pour protéger quota et facturation IA.
+
+    Redis `add` est atomique entre workers/processus. Le TTL dépasse largement le timeout
+    HTTP fournisseur pour éviter un déverrouillage pendant une requête normale.
+    """
+    key = f"ai:inflight:user:{user.pk}"
+    token = uuid.uuid4().hex
+    ttl = max(int(getattr(settings, "AI_HTTP_TIMEOUT", 60)) * 2 + 120, 300)
+    acquired = bool(cache.add(key, token, timeout=ttl))
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            # Le TTL est volontairement supérieur à la durée maximale attendue de la
+            # requête. La suppression rend immédiatement possible le tour suivant.
+            if cache.get(key) == token:
+                cache.delete(key)
 
 
 def role_enabled(user, cfg: AISettings) -> bool:

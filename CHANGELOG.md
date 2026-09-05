@@ -1,3 +1,19 @@
+# KalanPro v69 — Durcissement paiements, droits, IA et fichiers live
+
+- Correction du build frontend : suppression du doublon `apiDownload` et conservation d'un téléchargement authentifié avec refresh HttpOnly.
+- Checkout idempotent via `Idempotency-Key` + empreinte du panier ; un retry ne recrée plus commande, droits ou écritures financières.
+- `_fulfill` transactionnel et rejouable : verrou de commande, réparation des droits manquants et notifications déclenchées uniquement après commit.
+- Réconciliation Celery des paiements externes toutes les 5 minutes pour couvrir les webhooks perdus/retardés, avec contrôle strict montant/devise.
+- Nouveau ledger instructeur immuable : ventes positives, remboursements et versements en contre-écritures négatives.
+- Remboursement admin transactionnel avec référence prestataire, motif, date, révocation des droits et contre-écriture financière.
+- Droits cours/PDF/cohortes désormais révocables sans supprimer progression ni historique ; rattachement à la commande source et reprise des données historiques.
+- Certificats conservés après suppression/révocation d'une inscription (`SET_NULL`) et automatiquement révoqués lors d'un remboursement.
+- Single-flight Redis des requêtes KalanPro AI par utilisateur pour empêcher le dépassement concurrent des quotas.
+- Fichiers live : liste blanche, validation structurelle/antivirus, noms neutralisés et téléchargement forcé `application/octet-stream` + `nosniff` + `sandbox`.
+- Garde-fous production : refus de `TEST_PAYMENTS_ENABLED=True` et des origines WebSocket génériques.
+- Nouvelle CI GitHub Actions : Django check/migrations/tests, Redis, tests sécurité/mobile, TypeScript et build Next.
+- Tests de régression ajoutés pour idempotence checkout, collision de clé, remboursement/ledger et verrou IA.
+
 # KalanPro v68 — Simulation d’entretien, scorecards et suivi post-entretien
 
 - Simulation d’entretien candidat guidée par KalanPro AI : une question à la fois, feedback progressif et synthèse sur demande.
