@@ -47,3 +47,67 @@ test('offres et page entreprise affichent les visuels publics', () => {
   assert.match(company, /benefits/);
   assert.match(company, /values/);
 });
+
+test('branding entreprise ne superpose plus le logo sur la bannière', () => {
+  const dashboard = read('app/dashboard/employer/page.tsx');
+  assert.doesNotMatch(dashboard, /-mt-10 ml-5 flex items-end/);
+  assert.match(dashboard, /mt-5 flex flex-col gap-3 sm:flex-row sm:items-center/);
+  assert.match(dashboard, /Le logo est affiché séparément de la bannière/);
+});
+
+test('v78 relie les offres recruteur au checkout self-service', () => {
+  const pricing = read('components/pricing/PricingPageClient.tsx');
+  const checkout = read('app/checkout/page.tsx');
+  assert.match(pricing, /\/checkout\?employer_product=single_post/);
+  assert.match(pricing, /\/checkout\?employer_product=pro/);
+  assert.match(pricing, /\/checkout\?employer_product=business/);
+  assert.match(checkout, /Idempotency-Key/);
+  assert.match(checkout, /employer_product/);
+  assert.match(checkout, /platform-settings/);
+  assert.doesNotMatch(checkout, /amount:\s*employerAmount/);
+});
+
+test('v78 separe historique entretiens et offre dans le drawer ATS', () => {
+  const dashboard = read('app/dashboard/employer/page.tsx');
+  assert.match(dashboard, /applications\/\$\{app\.id\}\/\?recruiter=1/);
+  assert.match(dashboard, /applications\/\$\{app\.id\}\/history\//);
+  assert.match(dashboard, /applications\/\$\{app\.id\}\/interviews\//);
+  assert.match(dashboard, /applications\/\$\{app\.id\}\/offer\//);
+  assert.match(dashboard, /Promise\.allSettled/);
+  assert.match(dashboard, /processError/);
+  assert.match(dashboard, /remove_cover_image/);
+});
+
+test('v78 expose la reponse candidat et le journal des acces recruteur', () => {
+  const student = read('app/dashboard/student/opportunities/page.tsx');
+  assert.match(student, /offer-response/);
+  assert.match(student, /talent-accesses/);
+  assert.match(student, /Accepter/);
+  assert.match(student, /Refuser/);
+});
+
+test('v78 publie un schema SEO JobPosting', () => {
+  const layout = read('app/opportunities/[slug]/layout.tsx');
+  assert.match(layout, /"@type": "JobPosting"/);
+  assert.match(layout, /datePosted/);
+  assert.match(layout, /hiringOrganization/);
+  assert.match(layout, /baseSalary/);
+  assert.match(layout, /jobLocationType/);
+  assert.match(layout, /fixed_term: "TEMPORARY"/);
+  assert.match(layout, /permanent: "FULL_TIME"/);
+  assert.match(layout, /dangerouslySetInnerHTML/);
+});
+
+test('v78 checkout recruteur respecte les quotas configurables et le contrat entretien', () => {
+  const checkout = read('app/checkout/page.tsx');
+  const dashboard = read('app/dashboard/employer/page.tsx');
+  assert.match(checkout, /employer_pro_active_jobs: number/);
+  assert.match(checkout, /employer_business_active_jobs: number/);
+  assert.match(checkout, /employerPricing\?\.employer_pro_active_jobs/);
+  assert.match(checkout, /employerPricing\?\.employer_business_active_jobs/);
+  assert.doesNotMatch(checkout, /detail: "5 offres actives/);
+  assert.doesNotMatch(checkout, /detail: "20 offres actives/);
+  const scheduleBlock = dashboard.slice(dashboard.indexOf('async function scheduleInterview'), dashboard.indexOf('async function saveOffer'));
+  assert.doesNotMatch(scheduleBlock, /note:\s*""/);
+  assert.match(scheduleBlock, /location_or_url: interviewLocation/);
+});

@@ -46,7 +46,7 @@ Tous les montants commerciaux sont stockés en **EUR**, devise comptable de base
 - Pro : 30,34 EUR / mois (environ 19 900 XOF), 5 offres actives par défaut.
 - Business : 76,07 EUR / mois (environ 49 900 XOF), 20 offres actives par défaut.
 
-Les abonnements recruteur ne sont **pas encore facturés automatiquement** : la page publique les présente comme offres commerciales de lancement et renvoie vers l'équipe KalanPro. Le prochain lot de monétisation devra relier ces plans à des droits (`entitlements`) et aux passerelles de paiement récurrent.
+Depuis la v78, les offres recruteur sont achetables en self-service via le checkout KalanPro. Chaque achat crée un droit (`entitlement`) rattaché à sa commande : annonce à l’unité, Pro ou Business. Les périodes Pro/Business durent 30 jours et les achats successifs sont chaînés ; les droits sont révoqués ou recalés lors d’un remboursement.
 
 ## Administration
 
@@ -65,4 +65,4 @@ La route publique `/api/auth/platform-settings/` expose uniquement les paramètr
 
 ## Étape suivante recommandée
 
-Créer un véritable module d'abonnement / entitlement avant d'autoriser l'achat self-service des plans Pro et Business : statut de plan, période, renouvellement, annulation, facture, webhook de paiement, droits d'usage et limites d'offres actives.
+Le module d’entitlements recruteur est disponible depuis la v78 : statut payé, périodes de 30 jours, enchaînement des renouvellements, révocation au remboursement, crédits d’annonce et limites d’offres actives. Une future évolution pourra ajouter une facturation récurrente automatique par mandat ; la v78 reste fondée sur des achats/renouvellements explicites via les passerelles existantes.

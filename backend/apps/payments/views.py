@@ -203,9 +203,25 @@ class CheckoutView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         user = request.user
+        employer_product = str(data.get("employer_product") or "").strip()
         idempotency_key = str(request.headers.get("Idempotency-Key") or "").strip()
         if len(idempotency_key) > 128 or any(ord(ch) < 33 or ord(ch) > 126 for ch in idempotency_key):
             return Response({"detail": "Clé d'idempotence invalide."}, status=400)
+        if employer_product and not idempotency_key:
+            return Response(
+                {"detail": "Une clé d'idempotence est obligatoire pour tout achat recruteur."},
+                status=400,
+            )
+        if employer_product:
+            from apps.opportunities.models import EmployerProfile
+            employer_profile = EmployerProfile.objects.filter(
+                user=user, status=EmployerProfile.Status.APPROVED
+            ).first()
+            if user.role != "employer" or not employer_profile:
+                return Response(
+                    {"detail": "Un espace recruteur approuvé est requis pour acheter ce produit."},
+                    status=403,
+                )
         request_fingerprint = hashlib.sha256(
             json.dumps(data, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
         ).hexdigest()
@@ -233,23 +249,31 @@ class CheckoutView(APIView):
         # un contenu gratuit ne doit jamais dépendre de la disponibilité d'une passerelle externe.
         gateway = PaymentGateway.objects.filter(code=data["provider"]).first()
 
-        owned_course_ids = set(CourseEnrollment.objects.filter(user=user).values_list("course_id", flat=True))
-        owned_pdf_ids = set(PDFPurchase.objects.filter(user=user).values_list("pdf_product_id", flat=True))
-        owned_formation_ids = set(FormationEnrollment.objects.filter(user=user).values_list("formation_id", flat=True))
-        courses = list(Course.objects.filter(id__in=[pk for pk in data["course_ids"] if pk not in owned_course_ids], published=True).select_related("instructor"))
-        pdfs = list(PDFProduct.objects.filter(id__in=[pk for pk in data["pdf_ids"] if pk not in owned_pdf_ids], published=True).select_related("instructor"))
-        formations = list(InteractiveFormation.objects.select_for_update().filter(
-            id__in=[pk for pk in data["formation_ids"] if pk not in owned_formation_ids],
-            published=True, kind=FormationKind.COHORT,
-        ).select_related("instructor"))
-        from apps.formations.mentorship import expire_stale_bookings
-        expire_stale_bookings()
-        mentorship_bookings = list(MentorshipBooking.objects.select_for_update().filter(
-            id__in=data["mentorship_booking_ids"],
-            user=user,
-            status=MentorshipBooking.Status.PENDING_PAYMENT,
-        ).select_related("offering", "offering__instructor", "slot"))
-        if not courses and not pdfs and not formations and not mentorship_bookings:
+        owned_course_ids = set()
+        owned_pdf_ids = set()
+        owned_formation_ids = set()
+        courses = []
+        pdfs = []
+        formations = []
+        mentorship_bookings = []
+        if not employer_product:
+            owned_course_ids = set(CourseEnrollment.objects.filter(user=user).values_list("course_id", flat=True))
+            owned_pdf_ids = set(PDFPurchase.objects.filter(user=user).values_list("pdf_product_id", flat=True))
+            owned_formation_ids = set(FormationEnrollment.objects.filter(user=user).values_list("formation_id", flat=True))
+            courses = list(Course.objects.filter(id__in=[pk for pk in data["course_ids"] if pk not in owned_course_ids], published=True).select_related("instructor"))
+            pdfs = list(PDFProduct.objects.filter(id__in=[pk for pk in data["pdf_ids"] if pk not in owned_pdf_ids], published=True).select_related("instructor"))
+            formations = list(InteractiveFormation.objects.select_for_update().filter(
+                id__in=[pk for pk in data["formation_ids"] if pk not in owned_formation_ids],
+                published=True, kind=FormationKind.COHORT,
+            ).select_related("instructor"))
+            from apps.formations.mentorship import expire_stale_bookings
+            expire_stale_bookings()
+            mentorship_bookings = list(MentorshipBooking.objects.select_for_update().filter(
+                id__in=data["mentorship_booking_ids"],
+                user=user,
+                status=MentorshipBooking.Status.PENDING_PAYMENT,
+            ).select_related("offering", "offering__instructor", "slot"))
+        if not employer_product and not courses and not pdfs and not formations and not mentorship_bookings:
             return Response({"detail": "Tous les éléments du panier sont déjà acquis, expirés ou indisponibles."}, status=400)
 
         now = timezone.now()
@@ -276,10 +300,19 @@ class CheckoutView(APIView):
         if invalid_bookings:
             return Response({"detail": "Une réservation de mentorat est expirée ou possède déjà une commande en cours."}, status=409)
 
-        base_total = sum((Decimal("0") if c.is_free else (c.discount_price if c.discount_price is not None else c.price) for c in courses), Decimal("0"))
-        base_total += sum((Decimal("0") if item.is_free else item.price for item in pdfs), Decimal("0"))
-        base_total += sum((item.price for item in formations), Decimal("0"))
-        base_total += sum((item.price_snapshot for item in mentorship_bookings), Decimal("0"))
+        if employer_product:
+            pricing = PlatformSettings.load()
+            employer_prices = {
+                "single_post": pricing.employer_single_post_eur,
+                "pro": pricing.employer_pro_monthly_eur,
+                "business": pricing.employer_business_monthly_eur,
+            }
+            base_total = Decimal(employer_prices[employer_product])
+        else:
+            base_total = sum((Decimal("0") if c.is_free else (c.discount_price if c.discount_price is not None else c.price) for c in courses), Decimal("0"))
+            base_total += sum((Decimal("0") if item.is_free else item.price for item in pdfs), Decimal("0"))
+            base_total += sum((item.price for item in formations), Decimal("0"))
+            base_total += sum((item.price_snapshot for item in mentorship_bookings), Decimal("0"))
         quantum = Decimal("1").scaleb(-int(currency.decimal_places))
         payment_total = (base_total * Decimal(currency.exchange_rate)).quantize(quantum, rounding=ROUND_HALF_UP)
 
@@ -342,6 +375,15 @@ class CheckoutView(APIView):
         for formation in formations:
             fee, earning = _split_revenue(formation.price)
             OrderItem.objects.create(order=order, item_type=OrderItem.ItemType.FORMATION, formation=formation, instructor=formation.instructor, unit_price=formation.price, platform_fee_amount=fee, instructor_earning_amount=earning)
+        if employer_product:
+            OrderItem.objects.create(
+                order=order,
+                item_type=OrderItem.ItemType.EMPLOYER,
+                entitlement_code=employer_product,
+                unit_price=base_total,
+                platform_fee_amount=base_total,
+                instructor_earning_amount=Decimal("0"),
+            )
         mentorship_payment_expiry = timezone.now() + timedelta(hours=2)
         for booking in mentorship_bookings:
             # Une fois le checkout lancé, le créneau reste bloqué assez longtemps pour
@@ -406,6 +448,12 @@ class CheckoutView(APIView):
         for item in order.items.select_related(
             "course", "pdf_product", "formation", "mentorship_booking__offering", "mentorship_booking__slot"
         ).all():
+            if item.item_type == OrderItem.ItemType.EMPLOYER:
+                from apps.opportunities.models import EmployerEntitlement
+                from apps.opportunities.services import activate_employer_entitlement
+                if item.entitlement_code not in EmployerEntitlement.Kind.values:
+                    raise ValueError("Produit recruteur invalide sur la commande.")
+                activate_employer_entitlement(order, kind=item.entitlement_code)
             if item.course:
                 enrollment, created = CourseEnrollment.all_objects.get_or_create(
                     user=order.user, course=item.course, defaults={"source_order": order}

@@ -48,3 +48,11 @@ test("proxy dev preserve le slash final exige par Django pour les POST", () => {
   assert.match(login, /err\.message === "Identifiants invalides ou session expirée\."/);
   assert.match(login, /: err\.message/);
 });
+
+
+test("workflow candidat ne charge pas entretiens et offre pour chaque candidature", () => {
+  const page = read("app/dashboard/student/opportunities/page.tsx");
+  assert.match(page, /const needsInterviews = \["interview", "offer", "hired", "rejected"\]/);
+  assert.match(page, /const needsOffer = \["offer", "hired", "rejected"\]/);
+  assert.match(page, /Promise\.resolve\(\[\] as RecruitmentInterview\[\]\)/);
+});

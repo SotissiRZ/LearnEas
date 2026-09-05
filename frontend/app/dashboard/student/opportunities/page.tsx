@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BriefcaseBusiness, CheckCircle2, Download, Loader2, Search, Sparkles, UserRoundSearch } from "lucide-react";
+import { BriefcaseBusiness, CalendarClock, CheckCircle2, Download, Eye, Loader2, Search, Sparkles, UserRoundSearch } from "lucide-react";
 import DashboardNav from "@/components/dashboard/DashboardNav";
 import GuardScreen from "@/components/ui/GuardScreen";
 import CountryMultiSelect from "@/components/ui/CountryMultiSelect";
 import OpportunityCard from "@/components/opportunities/OpportunityCard";
 import { api, apiDownload, ApiError } from "@/lib/api";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
-import type { CandidateProfile, Opportunity, OpportunityApplication } from "@/types/opportunities";
+import type { CandidateProfile, EmploymentOffer, Opportunity, OpportunityApplication, RecruitmentInterview, TalentAccessLog } from "@/types/opportunities";
 
 type Paginated<T> = { count: number; next: string | null; previous: string | null; results: T[] };
 const statusLabel: Record<string, string> = { submitted: "Envoyée", reviewing: "En étude", shortlisted: "Présélectionné", interview: "Entretien", offer: "Offre", hired: "Retenu", rejected: "Non retenu", withdrawn: "Retirée" };
@@ -22,6 +22,7 @@ export default function StudentOpportunitiesPage() {
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
   const [matches, setMatches] = useState<Opportunity[]>([]);
   const [applications, setApplications] = useState<OpportunityApplication[]>([]);
+  const [accessLogs, setAccessLogs] = useState<TalentAccessLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -33,13 +34,14 @@ export default function StudentOpportunitiesPage() {
   async function load() {
     setLoading(true); setError("");
     try {
-      const [p, m, a] = await Promise.all([
+      const [p, m, a, accesses] = await Promise.all([
         api.get<CandidateProfile>("/opportunities/candidate-profile/"),
         api.get<Opportunity[]>("/opportunities/listings/matches/"),
         api.get<Paginated<OpportunityApplication> | OpportunityApplication[]>("/opportunities/applications/?page_size=100&ordering=-applied_at"),
+        api.get<TalentAccessLog[]>("/opportunities/candidate-profile/talent-accesses/").catch(() => []),
       ]);
       setProfile(p); setSkillsText((p.skills || []).join(", ")); setRolesText((p.desired_roles || []).join(", "));
-      setMatches(m); setApplications(Array.isArray(a) ? a : a.results);
+      setMatches(m); setApplications(Array.isArray(a) ? a : a.results); setAccessLogs(accesses);
     } catch (e) { setError(e instanceof ApiError ? e.message : "Impossible de charger votre espace opportunités."); }
     finally { setLoading(false); }
   }
@@ -109,9 +111,54 @@ export default function StudentOpportunitiesPage() {
 
       <section className="mb-9"><div className="mb-4 flex items-center justify-between"><div><h2 className="flex items-center gap-2 text-xl font-bold"><Sparkles size={18} className="text-violet-600" /> Meilleurs matchs</h2><p className="mt-1 text-xs text-gray-500">Score calculé à partir de vos compétences, préférences et preuves KalanPro.</p></div></div>{matches.length ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{matches.slice(0, 9).map((m) => <OpportunityCard key={m.id} opportunity={m} />)}</div> : <div className="card p-8 text-center text-gray-500">Complétez votre profil pour améliorer les recommandations.</div>}</section>
 
-      <section><h2 className="mb-4 flex items-center gap-2 text-xl font-bold"><BriefcaseBusiness size={18} /> Mes candidatures</h2>{applications.length === 0 ? <div className="card p-8 text-center text-gray-500">Aucune candidature pour le moment.</div> : <div className="space-y-3">{applications.map((app) => <div key={app.id} className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><Link href={`/opportunities/${app.opportunity_slug}`} className="font-bold hover:text-brand-700">{app.opportunity_title}</Link><p className="mt-1 text-xs text-gray-500">{app.company_name} · candidature du {new Date(app.applied_at).toLocaleDateString("fr-FR")} · match {app.match_score}%</p></div><span className={`badge ${statusClass[app.status] || "bg-gray-100 text-gray-600"}`}>{statusLabel[app.status] || app.status}</span>{!["hired","rejected","withdrawn"].includes(app.status) && <button onClick={() => withdraw(app.id)} className="text-xs font-semibold text-red-600">Retirer</button>}</div>)}</div>}</section>
+      <section><h2 className="mb-4 flex items-center gap-2 text-xl font-bold"><BriefcaseBusiness size={18} /> Mes candidatures</h2>{applications.length === 0 ? <div className="card p-8 text-center text-gray-500">Aucune candidature pour le moment.</div> : <div className="space-y-3">{applications.map((app) => <div key={app.id} className="card p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><Link href={`/opportunities/${app.opportunity_slug}`} className="font-bold hover:text-brand-700">{app.opportunity_title}</Link><p className="mt-1 text-xs text-gray-500">{app.company_name} · candidature du {new Date(app.applied_at).toLocaleDateString("fr-FR")} · match {app.match_score}%</p></div><span className={`badge ${statusClass[app.status] || "bg-gray-100 text-gray-600"}`}>{statusLabel[app.status] || app.status}</span>{!["hired","rejected","withdrawn"].includes(app.status) && <button onClick={() => withdraw(app.id)} className="text-xs font-semibold text-red-600">Retirer</button>}</div><ApplicationProcess application={app} onChanged={load} /></div>)}</div>}</section>
+
+      <section className="mt-9"><h2 className="mb-2 flex items-center gap-2 text-xl font-bold"><Eye size={18} /> Journal d’accès recruteur</h2><p className="mb-4 text-xs text-gray-500">Vous voyez quelles entreprises ont consulté votre profil, ajouté votre profil aux favoris ou ouvert votre candidature.</p>{accessLogs.length === 0 ? <div className="card p-6 text-sm text-gray-500">Aucun accès recruteur enregistré.</div> : <div className="card divide-y divide-gray-100">{accessLogs.slice(0, 30).map((row) => <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 p-4 text-sm"><div><strong>{row.company_name}</strong><p className="mt-0.5 text-xs text-gray-500">{row.access_type === "bookmark" ? "Ajout aux favoris" : row.access_type === "application" ? "Consultation de candidature" : "Consultation du profil"}</p></div><time className="text-xs text-gray-400">{new Date(row.created_at).toLocaleString("fr-FR")}</time></div>)}</div>}</section>
     </div>
   );
+}
+
+function ApplicationProcess({ application, onChanged }: { application: OpportunityApplication; onChanged: () => Promise<void> }) {
+  const [interviews, setInterviews] = useState<RecruitmentInterview[]>([]);
+  const [offer, setOffer] = useState<EmploymentOffer | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    const needsInterviews = ["interview", "offer", "hired", "rejected"].includes(application.status);
+    const needsOffer = ["offer", "hired", "rejected"].includes(application.status);
+    if (!needsInterviews && !needsOffer) {
+      setInterviews([]); setOffer(null);
+      return () => { active = false; };
+    }
+    Promise.all([
+      needsInterviews
+        ? api.get<RecruitmentInterview[]>(`/opportunities/applications/${application.id}/interviews/`).catch(() => [])
+        : Promise.resolve([] as RecruitmentInterview[]),
+      needsOffer
+        ? api.get<EmploymentOffer>(`/opportunities/applications/${application.id}/offer/`).catch(() => null)
+        : Promise.resolve(null),
+    ]).then(([rows, currentOffer]) => { if (active) { setInterviews(rows); setOffer(currentOffer); } });
+    return () => { active = false; };
+  }, [application.id, application.status]);
+
+  async function respond(decision: "accepted" | "declined") {
+    if (!window.confirm(decision === "accepted" ? "Accepter cette offre d’embauche ?" : "Refuser cette offre d’embauche ?")) return;
+    setBusy(true); setError("");
+    try {
+      const updated = await api.post<EmploymentOffer>(`/opportunities/applications/${application.id}/offer-response/`, { decision });
+      setOffer(updated);
+      await onChanged();
+    } catch (e) { setError(e instanceof ApiError ? e.message : "Réponse à l’offre impossible."); }
+    finally { setBusy(false); }
+  }
+
+  if (!interviews.length && !offer) return null;
+  return <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
+    {interviews.length > 0 && <div className="rounded-xl bg-amber-50 p-3"><p className="flex items-center gap-2 text-xs font-bold text-amber-800"><CalendarClock size={14}/> Entretien</p>{interviews.map((row) => <div key={row.id} className="mt-2 text-xs leading-5 text-amber-900"><strong>{new Date(row.scheduled_at).toLocaleString("fr-FR")}</strong> · {row.duration_minutes} min · {row.mode}{row.location_or_url && <div className="break-all">{row.location_or_url}</div>}{row.candidate_message && <div className="mt-1">{row.candidate_message}</div>}</div>)}</div>}
+    {offer && <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-bold text-emerald-800">Offre d’embauche</p><p className="mt-1 text-sm font-semibold text-emerald-950">{offer.title}</p>{offer.message && <p className="mt-1 text-xs leading-5 text-emerald-900">{offer.message}</p>}{offer.salary_amount && <p className="mt-2 text-xs font-semibold text-emerald-900">{offer.salary_amount} {offer.salary_currency}</p>}</div><span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold uppercase text-emerald-700">{offer.status}</span></div>{offer.status === "pending" && <div className="mt-3 flex gap-2"><button disabled={busy} onClick={() => void respond("accepted")} className="btn-primary !py-1.5 !text-xs">Accepter</button><button disabled={busy} onClick={() => void respond("declined")} className="btn-outline !py-1.5 !text-xs">Refuser</button></div>}{error && <p className="mt-2 text-xs text-red-600">{error}</p>}</div>}
+  </div>;
 }
 
 function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) { return <label className={wide ? "md:col-span-2" : ""}><span className="mb-1 block text-xs font-semibold text-gray-600">{label}</span>{children}</label>; }

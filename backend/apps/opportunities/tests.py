@@ -1,6 +1,9 @@
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
+from django.utils import timezone
+from datetime import timedelta
 from rest_framework.test import APITestCase
 from .models import EmployerProfile, Opportunity, OpportunityApplication
 
@@ -39,14 +42,25 @@ class OpportunitySecurityTests(APITestCase):
         response = self.client.post("/api/opportunities/applications/", {"opportunity": self.job.id}, format="json")
         self.assertEqual(response.status_code, 403)
 
-    def test_talent_pool_requires_opt_in_and_approved_recruiter(self):
+    def test_talent_pool_requires_opt_in_and_paid_approved_recruiter(self):
         from .models import CandidateProfile
+        from apps.payments.models import Order
+        from apps.opportunities.services import activate_employer_entitlement
 
         CandidateProfile.objects.create(user=self.student, headline="Analyste", skills=["Excel"], is_searchable=False)
         self.client.force_authenticate(self.recruiter)
-        response = self.client.get("/api/opportunities/talents/")
-        self.assertEqual(response.status_code, 200)
-        rows = response.data.get("results", response.data) if isinstance(response.data, dict) else response.data
+        denied = self.client.get("/api/opportunities/talents/")
+        self.assertEqual(denied.status_code, 403, denied.data)
+
+        order = Order.objects.create(
+            user=self.recruiter, status=Order.Status.PAID, provider=Order.Provider.MANUAL,
+            provider_sandbox=True, base_total_amount="30.34", total_amount="30.34", currency="EUR",
+            paid_at=timezone.now(),
+        )
+        activate_employer_entitlement(order, kind="pro")
+        hidden = self.client.get("/api/opportunities/talents/")
+        self.assertEqual(hidden.status_code, 200, hidden.data)
+        rows = hidden.data.get("results", hidden.data) if isinstance(hidden.data, dict) else hidden.data
         self.assertEqual(len(rows), 0)
 
         profile = self.student.candidate_profile
@@ -159,6 +173,16 @@ class RecruiterWorkspaceV75Tests(APITestCase):
             remote_worldwide=True, status=Opportunity.Status.PUBLISHED,
         )
 
+    def activate_pro(self):
+        from apps.payments.models import Order
+        from apps.opportunities.services import activate_employer_entitlement
+        order = Order.objects.create(
+            user=self.recruiter, status=Order.Status.PAID, provider=Order.Provider.MANUAL,
+            provider_sandbox=True, base_total_amount="30.34", total_amount="30.34", currency="EUR",
+            paid_at=timezone.now(),
+        )
+        return activate_employer_entitlement(order, kind="pro")
+
     def test_branding_update_does_not_remove_approval(self):
         self.client.force_authenticate(self.recruiter)
         response = self.client.patch(
@@ -187,6 +211,7 @@ class RecruiterWorkspaceV75Tests(APITestCase):
         self.assertGreaterEqual(response.data["open_opportunities_count"], 1)
 
     def test_recruiter_can_bookmark_visible_talent(self):
+        self.activate_pro()
         self.client.force_authenticate(self.recruiter)
         created = self.client.post(
             "/api/opportunities/talent-bookmarks/",
@@ -264,3 +289,381 @@ class RecruiterWorkspaceV76RegressionTests(APITestCase):
         response = self.client.get(f"/api/opportunities/companies/{self.employer.slug}/")
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["open_opportunities_count"], 1)
+
+
+class RecruiterGovernanceV78Tests(APITestCase):
+    def setUp(self):
+        from apps.accounts.models import PlatformSettings
+        from apps.payments.models import Currency, Order
+        from .models import CandidateProfile
+
+        self.recruiter = User.objects.create_user(
+            username="v78-recruiter", email="v78-recruiter@example.com",
+            password="StrongPass123!", country="Sénégal", role="employer",
+        )
+        self.student = User.objects.create_user(
+            username="v78-student", email="v78-student@example.com",
+            password="StrongPass123!", country="Sénégal", role="student",
+            first_name="Awa", last_name="Test",
+        )
+        self.employer = EmployerProfile.objects.create(
+            user=self.recruiter, company_name="V78 Africa", country="Sénégal",
+            status=EmployerProfile.Status.APPROVED,
+        )
+        self.talent = CandidateProfile.objects.create(
+            user=self.student, headline="Analyste", skills=["Excel"], is_searchable=True,
+        )
+        Currency.objects.get_or_create(code="EUR", defaults={"name": "Euro", "symbol": "€", "exchange_rate": 1, "is_active": True})
+        config = PlatformSettings.load()
+        config.employer_free_active_jobs = 1
+        config.employer_pro_active_jobs = 5
+        config.employer_business_active_jobs = 20
+        config.save()
+        self.Order = Order
+
+    def activate(self, kind):
+        from apps.opportunities.services import activate_employer_entitlement
+        order = self.Order.objects.create(
+            user=self.recruiter, status=self.Order.Status.PAID,
+            provider=self.Order.Provider.MANUAL, provider_sandbox=True,
+            base_total_amount="30.34", total_amount="30.34", currency="EUR",
+            paid_at=timezone.now(),
+        )
+        entitlement = activate_employer_entitlement(order, kind=kind)
+        return order, entitlement
+
+    def test_starter_cannot_access_talent_pool_but_pro_can(self):
+        self.client.force_authenticate(self.recruiter)
+        denied = self.client.get("/api/opportunities/talents/")
+        self.assertEqual(denied.status_code, 403, denied.data)
+
+        self.activate("pro")
+        allowed = self.client.get("/api/opportunities/talents/")
+        self.assertEqual(allowed.status_code, 200, allowed.data)
+        rows = allowed.data.get("results", allowed.data) if isinstance(allowed.data, dict) else allowed.data
+        self.assertTrue(any(row["id"] == self.talent.id for row in rows))
+
+    def test_opt_out_revokes_existing_bookmark_and_hidden_talent_cannot_be_bookmarked(self):
+        from .models import TalentBookmark
+
+        self.activate("pro")
+        self.client.force_authenticate(self.recruiter)
+        created = self.client.post(
+            "/api/opportunities/talent-bookmarks/", {"talent": self.talent.id, "note": "prioritaire"}, format="json"
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertTrue(TalentBookmark.objects.filter(employer=self.employer, talent=self.talent).exists())
+
+        self.talent.is_searchable = False
+        self.talent.save(update_fields=["is_searchable", "updated_at"])
+        self.assertFalse(TalentBookmark.objects.filter(employer=self.employer, talent=self.talent).exists())
+
+        rejected = self.client.post(
+            "/api/opportunities/talent-bookmarks/", {"talent": self.talent.id}, format="json"
+        )
+        self.assertEqual(rejected.status_code, 400, rejected.data)
+
+    def test_share_portfolio_false_never_exposes_historical_proof_snapshots(self):
+        app = OpportunityApplication.objects.create(
+            opportunity=Opportunity.objects.create(
+                employer=self.employer, title="Analyste", description="Test", remote_worldwide=True,
+                status=Opportunity.Status.PUBLISHED,
+            ),
+            candidate=self.student,
+            candidate_name_snapshot="Awa Test",
+            candidate_email_snapshot=self.student.email,
+            share_portfolio=False,
+            portfolio_snapshot={"slug": "ancien-portfolio"},
+            certificates_snapshot=[{"number": "OLD", "verification_code": "legacy", "title": "Ancien cert"}],
+            verified_projects_snapshot=[{"title": "Ancien projet"}],
+        )
+        self.client.force_authenticate(self.recruiter)
+        response = self.client.get(f"/api/opportunities/applications/{app.id}/?recruiter=1")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["portfolio_snapshot"], {})
+        self.assertEqual(response.data["certificates_snapshot"], [])
+        self.assertEqual(response.data["verified_projects_snapshot"], [])
+
+    def test_candidate_can_consult_talent_access_journal(self):
+        from .models import TalentAccessLog
+
+        TalentAccessLog.objects.create(
+            candidate=self.talent, employer=self.employer, recruiter=self.recruiter,
+            access_type=TalentAccessLog.AccessType.PROFILE,
+        )
+        self.client.force_authenticate(self.student)
+        response = self.client.get("/api/opportunities/candidate-profile/talent-accesses/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data[0]["company_name"], "V78 Africa")
+        self.assertEqual(response.data[0]["access_type"], "profile")
+
+    def test_recruiter_detail_consultation_is_logged_for_candidate(self):
+        from .models import TalentAccessLog
+
+        application = OpportunityApplication.objects.create(
+            opportunity=Opportunity.objects.create(
+                employer=self.employer, title="Journal", description="Test", remote_worldwide=True,
+                status=Opportunity.Status.PUBLISHED,
+            ),
+            candidate=self.student,
+            candidate_name_snapshot="Awa Test",
+            candidate_email_snapshot=self.student.email,
+        )
+        self.client.force_authenticate(self.recruiter)
+        response = self.client.get(f"/api/opportunities/applications/{application.id}/?recruiter=1")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(TalentAccessLog.objects.filter(
+            candidate=self.talent, employer=self.employer, recruiter=self.recruiter,
+            access_type=TalentAccessLog.AccessType.APPLICATION,
+        ).exists())
+
+    def test_interview_and_offer_are_visible_to_candidate_and_offer_can_be_accepted(self):
+        from datetime import timedelta
+        from .models import EmploymentOffer
+
+        job = Opportunity.objects.create(
+            employer=self.employer, title="Data Analyst", description="Test", remote_worldwide=True,
+            status=Opportunity.Status.PUBLISHED,
+        )
+        app = OpportunityApplication.objects.create(
+            opportunity=job, candidate=self.student,
+            candidate_name_snapshot="Awa Test", candidate_email_snapshot=self.student.email,
+        )
+        self.client.force_authenticate(self.recruiter)
+        interview = self.client.post(
+            f"/api/opportunities/applications/{app.id}/interviews/",
+            {"scheduled_at": (timezone.now() + timedelta(days=2)).isoformat(), "duration_minutes": 45, "mode": "video"},
+            format="json",
+        )
+        self.assertEqual(interview.status_code, 201, interview.data)
+        offer = self.client.post(
+            f"/api/opportunities/applications/{app.id}/offer/",
+            {"title": "Proposition Data Analyst", "message": "Bienvenue", "salary_amount": "1200.00", "salary_currency": "EUR"},
+            format="json",
+        )
+        self.assertEqual(offer.status_code, 201, offer.data)
+
+        self.client.force_authenticate(self.student)
+        interviews = self.client.get(f"/api/opportunities/applications/{app.id}/interviews/")
+        self.assertEqual(interviews.status_code, 200, interviews.data)
+        self.assertEqual(len(interviews.data), 1)
+        visible_offer = self.client.get(f"/api/opportunities/applications/{app.id}/offer/")
+        self.assertEqual(visible_offer.status_code, 200, visible_offer.data)
+        accepted = self.client.post(
+            f"/api/opportunities/applications/{app.id}/offer-response/", {"decision": "accepted"}, format="json"
+        )
+        self.assertEqual(accepted.status_code, 200, accepted.data)
+        self.assertEqual(accepted.data["status"], EmploymentOffer.Status.ACCEPTED)
+        app.refresh_from_db()
+        self.assertEqual(app.status, OpportunityApplication.Status.HIRED)
+
+    def test_rejected_application_cannot_receive_offer(self):
+        application = OpportunityApplication.objects.create(
+            opportunity=Opportunity.objects.create(
+                employer=self.employer, title="Finale", description="Test", remote_worldwide=True,
+                status=Opportunity.Status.PUBLISHED,
+            ),
+            candidate=self.student,
+            candidate_name_snapshot="Awa Test",
+            candidate_email_snapshot=self.student.email,
+            status=OpportunityApplication.Status.REJECTED,
+        )
+        self.client.force_authenticate(self.recruiter)
+        response = self.client.post(
+            f"/api/opportunities/applications/{application.id}/offer/",
+            {"title": "Offre interdite", "salary_currency": "EUR"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 409, response.data)
+        application.refresh_from_db()
+        self.assertEqual(application.status, OpportunityApplication.Status.REJECTED)
+
+    def test_publication_quota_uses_paid_single_post_credit_and_caps_it_to_30_days(self):
+        from apps.opportunities.models import EmployerEntitlement
+        from apps.opportunities.services import activate_employer_entitlement
+        from datetime import timedelta
+
+        Opportunity.objects.create(
+            employer=self.employer, title="Offre gratuite", description="Test", remote_worldwide=True,
+            status=Opportunity.Status.PUBLISHED,
+        )
+        self.client.force_authenticate(self.recruiter)
+        blocked = self.client.post(
+            "/api/opportunities/listings/",
+            {"title": "Deuxième offre", "description": "Test", "remote_worldwide": True, "status": "published"},
+            format="json",
+        )
+        self.assertEqual(blocked.status_code, 400, blocked.data)
+
+        order = self.Order.objects.create(
+            user=self.recruiter, status=self.Order.Status.PAID, provider=self.Order.Provider.MANUAL,
+            provider_sandbox=True, base_total_amount="11.43", total_amount="11.43", currency="EUR", paid_at=timezone.now(),
+        )
+        entitlement = activate_employer_entitlement(order, kind=EmployerEntitlement.Kind.SINGLE_POST)
+        too_long = self.client.post(
+            "/api/opportunities/listings/",
+            {
+                "title": "Annonce trop longue", "description": "Test", "remote_worldwide": True,
+                "status": "published", "application_deadline": (timezone.now() + timedelta(days=31)).isoformat(),
+            }, format="json",
+        )
+        self.assertEqual(too_long.status_code, 400, too_long.data)
+        entitlement.refresh_from_db()
+        self.assertIsNone(entitlement.consumed_at)
+
+        created = self.client.post(
+            "/api/opportunities/listings/",
+            {"title": "Annonce payée", "description": "Test", "remote_worldwide": True, "status": "published"},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        entitlement.refresh_from_db()
+        self.assertIsNotNone(entitlement.consumed_at)
+        self.assertEqual(entitlement.consumed_by_id, created.data["id"])
+        self.assertLessEqual(entitlement.ends_at, entitlement.starts_at + timedelta(days=30, seconds=1))
+
+        extended = self.client.patch(
+            f"/api/opportunities/listings/{created.data['slug']}/",
+            {"application_deadline": (timezone.now() + timedelta(days=45)).isoformat()},
+            format="json",
+        )
+        self.assertEqual(extended.status_code, 400, extended.data)
+        cleared = self.client.patch(
+            f"/api/opportunities/listings/{created.data['slug']}/",
+            {"application_deadline": None},
+            format="json",
+        )
+        self.assertEqual(cleared.status_code, 200, cleared.data)
+        self.assertIsNotNone(cleared.data["application_deadline"])
+
+
+class EmployerEntitlementLifecycleV78Tests(APITestCase):
+    def setUp(self):
+        from apps.payments.models import Currency, Order
+        self.recruiter = User.objects.create_user(
+            username="v78-life", email="v78-life@example.com", password="StrongPass123!",
+            country="Côte d'Ivoire", role="employer",
+        )
+        self.employer = EmployerProfile.objects.create(
+            user=self.recruiter, company_name="Lifecycle SARL", country="Côte d'Ivoire",
+            status=EmployerProfile.Status.APPROVED,
+        )
+        Currency.objects.get_or_create(code="EUR", defaults={"name": "Euro", "symbol": "€", "exchange_rate": 1, "is_active": True})
+        self.Order = Order
+
+    def paid_order(self, amount="30.34"):
+        return self.Order.objects.create(
+            user=self.recruiter, status=self.Order.Status.PAID,
+            provider=self.Order.Provider.MANUAL, provider_sandbox=True,
+            base_total_amount=amount, total_amount=amount, currency="EUR", paid_at=timezone.now(),
+        )
+
+    def test_pro_renewals_chain_and_replay_is_idempotent(self):
+        from datetime import timedelta
+        from apps.opportunities.services import activate_employer_entitlement
+
+        first_order = self.paid_order()
+        first = activate_employer_entitlement(first_order, kind="pro")
+        first_end = first.ends_at
+        replay = activate_employer_entitlement(first_order, kind="pro")
+        self.assertEqual(replay.ends_at, first_end)
+
+        second = activate_employer_entitlement(self.paid_order(), kind="pro")
+        self.assertEqual(second.starts_at, first.ends_at)
+        self.assertEqual(second.ends_at - second.starts_at, timedelta(days=30))
+
+    def test_refunding_middle_period_shifts_future_renewal_forward_without_gap(self):
+        from apps.opportunities.services import activate_employer_entitlement, revoke_employer_entitlement
+
+        first = activate_employer_entitlement(self.paid_order(), kind="business")
+        middle_order = self.paid_order("76.07")
+        middle = activate_employer_entitlement(middle_order, kind="business")
+        last = activate_employer_entitlement(self.paid_order("76.07"), kind="business")
+        old_last_start = last.starts_at
+
+        middle_order.status = self.Order.Status.REFUNDED
+        middle_order.refunded_at = timezone.now()
+        middle_order.save(update_fields=["status", "refunded_at"])
+        self.assertTrue(revoke_employer_entitlement(middle_order, reason="Test remboursement"))
+
+        middle.refresh_from_db()
+        last.refresh_from_db()
+        self.assertIsNotNone(middle.revoked_at)
+        self.assertEqual(last.starts_at, middle.starts_at)
+        self.assertLess(last.starts_at, old_last_start)
+        self.assertEqual(first.ends_at, middle.starts_at)
+
+    def test_refunding_fully_elapsed_period_does_not_extend_following_period(self):
+        from apps.opportunities.services import activate_employer_entitlement, revoke_employer_entitlement
+
+        first_order = self.paid_order()
+        first = activate_employer_entitlement(first_order, kind="pro")
+        second = activate_employer_entitlement(self.paid_order(), kind="pro")
+        original_second_start = second.starts_at
+        original_second_end = second.ends_at
+
+        # Simule une période déjà consommée intégralement avant le remboursement tardif.
+        past_start = timezone.now() - timedelta(days=60)
+        past_end = timezone.now() - timedelta(days=30)
+        first.starts_at = past_start
+        first.ends_at = past_end
+        first.save(update_fields=["starts_at", "ends_at", "updated_at"])
+
+        first_order.status = self.Order.Status.REFUNDED
+        first_order.refunded_at = timezone.now()
+        first_order.save(update_fields=["status", "refunded_at"])
+        self.assertTrue(revoke_employer_entitlement(first_order, reason="Remboursement tardif"))
+
+        second.refresh_from_db()
+        self.assertEqual(second.starts_at, original_second_start)
+        self.assertEqual(second.ends_at, original_second_end)
+
+    def test_refunded_single_post_revokes_credit_and_closes_bound_listing(self):
+        from apps.opportunities.services import activate_employer_entitlement, revoke_employer_entitlement
+        from apps.opportunities.models import EmployerEntitlement
+
+        order = self.paid_order("11.43")
+        entitlement = activate_employer_entitlement(order, kind=EmployerEntitlement.Kind.SINGLE_POST)
+        job = Opportunity.objects.create(
+            employer=self.employer, title="Annonce remboursée", description="Test", remote_worldwide=True,
+            status=Opportunity.Status.PUBLISHED, publication_entitlement=entitlement,
+        )
+        entitlement.consumed_by = job
+        entitlement.consumed_at = timezone.now()
+        entitlement.starts_at = timezone.now()
+        entitlement.ends_at = timezone.now() + timedelta(days=30)
+        entitlement.save(update_fields=["consumed_by", "consumed_at", "starts_at", "ends_at", "updated_at"])
+
+        order.status = self.Order.Status.REFUNDED
+        order.refunded_at = timezone.now()
+        order.save(update_fields=["status", "refunded_at"])
+        self.assertTrue(revoke_employer_entitlement(order, reason="Remboursement annonce"))
+        entitlement.refresh_from_db()
+        job.refresh_from_db()
+        self.assertIsNotNone(entitlement.revoked_at)
+        self.assertEqual(job.status, Opportunity.Status.CLOSED)
+
+    @override_settings(TEST_PAYMENTS_ENABLED=True)
+    def test_employer_checkout_requires_and_reuses_real_idempotency_key(self):
+        from apps.opportunities.models import EmployerEntitlement
+
+        self.client.force_authenticate(self.recruiter)
+        no_key = self.client.post(
+            "/api/payments/checkout/",
+            {"employer_product": "pro", "provider": "manual", "currency": "EUR", "test_payment": True},
+            format="json",
+        )
+        self.assertEqual(no_key.status_code, 400, no_key.data)
+
+        payload = {"employer_product": "pro", "provider": "manual", "currency": "EUR", "test_payment": True}
+        first = self.client.post(
+            "/api/payments/checkout/", payload, format="json", HTTP_IDEMPOTENCY_KEY="v78-pro-checkout-001"
+        )
+        self.assertEqual(first.status_code, 201, first.data)
+        second = self.client.post(
+            "/api/payments/checkout/", payload, format="json", HTTP_IDEMPOTENCY_KEY="v78-pro-checkout-001"
+        )
+        self.assertEqual(second.status_code, 200, second.data)
+        self.assertEqual(first.data["order"]["id"], second.data["order"]["id"])
+        self.assertTrue(second.data.get("idempotent_replay"))
+        self.assertEqual(EmployerEntitlement.objects.filter(employer=self.employer, kind="pro").count(), 1)

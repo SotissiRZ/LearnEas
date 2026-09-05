@@ -1,5 +1,9 @@
 # KalanPro
 
+> **v78 — Gouvernance recruteur, monétisation et workflow d’embauche :** droits employeur payés `single_post` / `pro` / `business`, quotas d’offres réellement appliqués, vivier réservé Pro/Business, révocation au remboursement, renouvellements 30 jours chaînés, confidentialité renforcée des talents, journal d’accès candidat, entretiens et offres d’embauche avec réponse candidat, checkout recruteur idempotent et SEO `JobPosting`. Migrations additives uniquement : `payments.0013` puis `opportunities.0004`. Voir [`docs/VALIDATION_V78.md`](./docs/VALIDATION_V78.md).
+
+> **v77 — correctif identité entreprise :** suppression du chevauchement logo/bannière dans le profil employeur ; le logo possède désormais sa propre ligne responsive sous la bannière.
+
 > **v75 — Recruiter Workspace & marque employeur :** espace entreprise reconstruit avec logo/bannière modifiables après validation, visuels d’offres, page entreprise publique, ATS en pipeline, notes/tags/notation, prochaines étapes, filtres et favoris talents, analytics et questions de présélection. Voir [`docs/RECRUITER_WORKSPACE_V75.md`](./docs/RECRUITER_WORKSPACE_V75.md).
 
 > **v74 — documentation rôle Entreprise / Recruteur :** README aligné sur le rôle `employer` de premier niveau, compte démo recruteur, dashboard `/dashboard/employer`, validation entreprise et permissions.

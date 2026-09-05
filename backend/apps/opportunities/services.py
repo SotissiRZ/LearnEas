@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from datetime import timedelta
 import json
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 
@@ -129,9 +130,16 @@ def build_application_snapshot(user, opportunity, *, share_portfolio=True):
         profile = user.candidate_profile
     except Exception:
         profile = None
-    skills = candidate_skills_for(user, profile)
+    # `share_portfolio=False` doit empêcher toute fuite indirecte des preuves KalanPro.
+    # On conserve uniquement les compétences déclarées dans le profil candidat ; les
+    # compétences issues du portfolio/certificats ne sont agrégées que si le candidat
+    # a explicitement choisi de partager ces preuves avec cette candidature.
+    skills = candidate_skills_for(user, profile) if share_portfolio else clean_strings(
+        (profile.skills if profile else []), max_items=60, max_length=100
+    )
     portfolio_data = {}
     verified_projects = []
+    certificates = []
     if share_portfolio:
         try:
             portfolio = user.portfolio_profile
@@ -156,17 +164,17 @@ def build_application_snapshot(user, opportunity, *, share_portfolio=True):
         except Exception:
             pass
 
-    now = timezone.now()
-    cert_qs = Certificate.objects.filter(user=user, status=Certificate.Status.ACTIVE).filter(
-        models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=now)
-    ).order_by("-issued_at")[:20]
-    certificates = [{
-        "number": cert.certificate_number,
-        "verification_code": str(cert.verification_code),
-        "title": cert.content_title,
-        "skills": cert.skills_snapshot or [],
-        "issued_at": cert.issued_at.isoformat(),
-    } for cert in cert_qs]
+        now = timezone.now()
+        cert_qs = Certificate.objects.filter(user=user, status=Certificate.Status.ACTIVE).filter(
+            models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=now)
+        ).order_by("-issued_at")[:20]
+        certificates = [{
+            "number": cert.certificate_number,
+            "verification_code": str(cert.verification_code),
+            "title": cert.content_title,
+            "skills": cert.skills_snapshot or [],
+            "issued_at": cert.issued_at.isoformat(),
+        } for cert in cert_qs]
 
     return {
         "candidate_name_snapshot": user.get_full_name() or user.username,
@@ -180,3 +188,232 @@ def build_application_snapshot(user, opportunity, *, share_portfolio=True):
         "match_score": match_opportunity(opportunity, user, profile),
     }
 
+
+
+def _entitlement_now(now=None):
+    return now or timezone.now()
+
+
+def active_employer_entitlements(employer, *, now=None):
+    """Droits non révoqués, payés et dont la fenêtre courante/future existe encore."""
+    from .models import EmployerEntitlement
+    from apps.payments.models import Order
+
+    now = _entitlement_now(now)
+    return EmployerEntitlement.objects.select_related("order").filter(
+        employer=employer,
+        revoked_at__isnull=True,
+        order__status=Order.Status.PAID,
+    ).filter(models.Q(ends_at__isnull=True) | models.Q(ends_at__gt=now))
+
+
+def current_employer_plan(employer, *, now=None):
+    """Retourne `business`, `pro` ou `starter` pour l'instant courant."""
+    from .models import EmployerEntitlement
+
+    now = _entitlement_now(now)
+    current = active_employer_entitlements(employer, now=now).filter(
+        kind__in=[EmployerEntitlement.Kind.PRO, EmployerEntitlement.Kind.BUSINESS],
+        starts_at__lte=now,
+        ends_at__gt=now,
+    )
+    if current.filter(kind=EmployerEntitlement.Kind.BUSINESS).exists():
+        return EmployerEntitlement.Kind.BUSINESS
+    if current.filter(kind=EmployerEntitlement.Kind.PRO).exists():
+        return EmployerEntitlement.Kind.PRO
+    return "starter"
+
+
+def employer_active_job_limit(employer, *, now=None):
+    from apps.accounts.models import PlatformSettings
+    from .models import EmployerEntitlement
+
+    config = PlatformSettings.load()
+    plan = current_employer_plan(employer, now=now)
+    if plan == EmployerEntitlement.Kind.BUSINESS:
+        return int(config.employer_business_active_jobs)
+    if plan == EmployerEntitlement.Kind.PRO:
+        return int(config.employer_pro_active_jobs)
+    return int(config.employer_free_active_jobs)
+
+
+def employer_has_talent_pool_access(employer, *, now=None):
+    from .models import EmployerEntitlement
+    return current_employer_plan(employer, now=now) in {
+        EmployerEntitlement.Kind.PRO,
+        EmployerEntitlement.Kind.BUSINESS,
+    }
+
+
+def available_single_post_entitlement(employer):
+    """Crédit payé, non révoqué et encore inutilisé.
+
+    Le délai de 30 jours démarre à la consommation pour ne pas pénaliser un recruteur
+    qui achète le crédit avant d'avoir finalisé son annonce.
+    """
+    from .models import EmployerEntitlement
+    from apps.payments.models import Order
+
+    return EmployerEntitlement.objects.select_for_update().filter(
+        employer=employer,
+        kind=EmployerEntitlement.Kind.SINGLE_POST,
+        revoked_at__isnull=True,
+        consumed_at__isnull=True,
+        order__status=Order.Status.PAID,
+    ).order_by("created_at", "id").first()
+
+
+def claim_publication_right(employer, *, opportunity=None, requested_deadline=None, now=None):
+    """Vérifie le quota et consomme un crédit à l'unité si nécessaire.
+
+    Retourne `(entitlement, effective_deadline)`. `entitlement` vaut None quand
+    la publication entre dans le quota Starter/Pro/Business.
+    """
+    from .models import Opportunity
+
+    now = _entitlement_now(now)
+    active_qs = Opportunity.objects.filter(
+        employer=employer,
+        status=Opportunity.Status.PUBLISHED,
+    ).filter(models.Q(application_deadline__isnull=True) | models.Q(application_deadline__gt=now))
+    if opportunity and opportunity.pk:
+        active_qs = active_qs.exclude(pk=opportunity.pk)
+
+    if active_qs.count() < employer_active_job_limit(employer, now=now):
+        return None, requested_deadline
+
+    credit = available_single_post_entitlement(employer)
+    if not credit:
+        raise ValueError(
+            "Votre quota d'offres actives est atteint. Achetez une annonce à l'unité "
+            "ou activez un plan Pro/Business."
+        )
+
+    paid_until = now + timedelta(days=30)
+    if requested_deadline and requested_deadline > paid_until:
+        raise ValueError("Une annonce payée à l'unité ne peut pas être publiée pendant plus de 30 jours.")
+
+    credit.starts_at = now
+    credit.ends_at = paid_until
+    credit.consumed_at = now
+    credit.consumed_by = opportunity
+    credit.save(update_fields=["starts_at", "ends_at", "consumed_at", "consumed_by", "updated_at"])
+    return credit, (requested_deadline or paid_until)
+
+
+@transaction.atomic
+def activate_employer_entitlement(order, *, kind):
+    """Matérialise le droit associé à une commande employeur payée.
+
+    Les renouvellements Pro/Business sont chaînés sans chevauchement : un nouvel achat
+    commence à la fin de la dernière période non révoquée du même plan.
+    """
+    from .models import EmployerEntitlement, EmployerProfile
+
+    employer = EmployerProfile.objects.select_for_update().filter(user=order.user).first()
+    if not employer:
+        raise ValueError("Profil entreprise introuvable pour cette commande.")
+
+    entitlement, _ = EmployerEntitlement.objects.select_for_update().get_or_create(
+        order=order,
+        defaults={
+            "employer": employer,
+            "kind": kind,
+            "entitlement_key": f"employer:{kind}:order:{order.pk}",
+        },
+    )
+    if entitlement.revoked_at is not None:
+        raise ValueError("Le droit associé à cette commande a été révoqué.")
+    if entitlement.employer_id != employer.id or entitlement.kind != kind:
+        raise ValueError("La commande est déjà rattachée à un autre droit employeur.")
+
+    # Idempotence : un droit déjà activé ne doit jamais être allongé par un replay webhook.
+    if entitlement.starts_at is not None:
+        return entitlement
+
+    now = order.paid_at or timezone.now()
+    if kind == EmployerEntitlement.Kind.SINGLE_POST:
+        entitlement.starts_at = now
+        entitlement.ends_at = None  # la fenêtre de 30 jours démarre lors de la publication.
+    else:
+        latest_end = EmployerEntitlement.objects.filter(
+            employer=employer,
+            kind=kind,
+            revoked_at__isnull=True,
+            order__status="paid",
+            ends_at__isnull=False,
+        ).exclude(pk=entitlement.pk).aggregate(v=models.Max("ends_at"))["v"]
+        start = max(now, latest_end) if latest_end else now
+        entitlement.starts_at = start
+        entitlement.ends_at = start + timedelta(days=30)
+
+    entitlement.save(update_fields=["starts_at", "ends_at", "updated_at"])
+    return entitlement
+
+
+@transaction.atomic
+def revoke_employer_entitlement(order, *, reason="Commande remboursée"):
+    """Révoque le droit d'une commande et recale les renouvellements futurs."""
+    from .models import EmployerEntitlement, Opportunity
+
+    entitlement = EmployerEntitlement.objects.select_for_update().filter(order=order).first()
+    if not entitlement or entitlement.revoked_at is not None:
+        return False
+
+    now = timezone.now()
+    entitlement.revoked_at = now
+    entitlement.revocation_reason = str(reason or "Commande remboursée")[:500]
+    entitlement.save(update_fields=["revoked_at", "revocation_reason", "updated_at"])
+
+    if entitlement.kind == EmployerEntitlement.Kind.SINGLE_POST:
+        # Le remboursement rend le crédit invalide même s'il a déjà été utilisé.
+        if entitlement.consumed_by_id:
+            Opportunity.objects.filter(
+                pk=entitlement.consumed_by_id,
+                publication_entitlement=entitlement,
+                status=Opportunity.Status.PUBLISHED,
+            ).update(status=Opportunity.Status.CLOSED, updated_at=now)
+        return True
+
+    # Une période déjà entièrement écoulée n'a plus de temps non consommé à rendre :
+    # son remboursement tardif ne doit jamais étendre les périodes suivantes.
+    if entitlement.starts_at and entitlement.ends_at and entitlement.ends_at > now:
+        duration = entitlement.ends_at - entitlement.starts_at
+        future = list(EmployerEntitlement.objects.select_for_update().filter(
+            employer=entitlement.employer,
+            kind=entitlement.kind,
+            revoked_at__isnull=True,
+            starts_at__gte=entitlement.ends_at,
+            ends_at__isnull=False,
+            order__status="paid",
+        ).order_by("starts_at", "id"))
+        cursor = max(now, entitlement.starts_at)
+        # Si une période précédente non révoquée se termine après `cursor`, elle reste prioritaire.
+        previous_end = EmployerEntitlement.objects.filter(
+            employer=entitlement.employer,
+            kind=entitlement.kind,
+            revoked_at__isnull=True,
+            ends_at__lte=entitlement.ends_at,
+            ends_at__gt=cursor,
+            order__status="paid",
+        ).exclude(pk=entitlement.pk).aggregate(v=models.Max("ends_at"))["v"]
+        if previous_end:
+            cursor = max(cursor, previous_end)
+        for future_entitlement in future:
+            period = future_entitlement.ends_at - future_entitlement.starts_at
+            future_entitlement.starts_at = cursor
+            future_entitlement.ends_at = cursor + (period or duration)
+            future_entitlement.save(update_fields=["starts_at", "ends_at", "updated_at"])
+            cursor = future_entitlement.ends_at
+    return True
+
+
+def record_application_event(application, *, actor=None, event_type, label, metadata=None):
+    from .models import ApplicationHistoryEvent
+    return ApplicationHistoryEvent.objects.create(
+        application=application,
+        actor=actor,
+        event_type=str(event_type)[:64],
+        label=str(label)[:220],
+        metadata=metadata or {},
+    )

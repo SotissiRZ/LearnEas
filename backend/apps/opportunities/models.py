@@ -97,8 +97,87 @@ class CandidateProfile(models.Model):
         ordering = ["-updated_at"]
         indexes = [models.Index(fields=["is_searchable", "-updated_at"], name="opp_candidate_search_idx")]
 
+    def save(self, *args, **kwargs):
+        previously_searchable = False
+        if self.pk:
+            previously_searchable = bool(
+                CandidateProfile.objects.filter(pk=self.pk).values_list("is_searchable", flat=True).first()
+            )
+        super().save(*args, **kwargs)
+        if previously_searchable and not self.is_searchable:
+            # La sortie volontaire du vivier doit révoquer immédiatement les favoris
+            # recruteur persistants ; aucun bookmark ne doit contourner l'opt-out.
+            self.recruiter_bookmarks.all().delete()
+
     def __str__(self):
         return f"Candidat · {self.user}"
+
+
+class TalentAccessLog(models.Model):
+    class AccessType(models.TextChoices):
+        PROFILE = "profile", "Consultation du profil"
+        BOOKMARK = "bookmark", "Ajout aux favoris"
+        APPLICATION = "application", "Consultation via candidature"
+
+    candidate = models.ForeignKey(CandidateProfile, on_delete=models.CASCADE, related_name="access_logs")
+    employer = models.ForeignKey(EmployerProfile, on_delete=models.CASCADE, related_name="talent_access_logs")
+    recruiter = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="talent_access_logs",
+    )
+    access_type = models.CharField(max_length=32, choices=AccessType.choices, default=AccessType.PROFILE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["candidate", "-created_at"], name="opp_taccess_candidate_idx"),
+            models.Index(fields=["employer", "-created_at"], name="opp_taccess_employer_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.employer.company_name} → {self.candidate.user} ({self.access_type})"
+
+
+class EmployerEntitlement(models.Model):
+    class Kind(models.TextChoices):
+        SINGLE_POST = "single_post", "Annonce à l'unité"
+        PRO = "pro", "Pro recrutement"
+        BUSINESS = "business", "Business"
+
+    employer = models.ForeignKey(EmployerProfile, on_delete=models.CASCADE, related_name="entitlements")
+    order = models.OneToOneField(
+        "payments.Order", on_delete=models.PROTECT, related_name="employer_entitlement"
+    )
+    kind = models.CharField(max_length=32, choices=Kind.choices, db_index=True)
+    entitlement_key = models.CharField(
+        max_length=191, blank=True,
+        help_text="Identifiant métier extensible du droit payé ; dimensionné pour les futurs identifiants prestataire.",
+    )
+    starts_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    ends_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    revocation_reason = models.CharField(max_length=500, blank=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    consumed_by = models.OneToOneField(
+        "Opportunity", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="consumed_single_post_entitlement",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-starts_at", "-created_at"]
+        indexes = [
+            models.Index(fields=["employer", "kind", "revoked_at", "starts_at"], name="opp_entitlement_lookup_idx"),
+        ]
+
+    @property
+    def is_revoked(self):
+        return self.revoked_at is not None
+
+    def __str__(self):
+        return f"{self.employer.company_name} · {self.kind} · commande {self.order_id}"
 
 
 class Opportunity(models.Model):
@@ -174,6 +253,10 @@ class Opportunity(models.Model):
     external_application_url = models.URLField(blank=True)
     application_deadline = models.DateTimeField(null=True, blank=True, db_index=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT, db_index=True)
+    publication_entitlement = models.ForeignKey(
+        EmployerEntitlement, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="published_opportunities",
+    )
     featured = models.BooleanField(default=False, db_index=True)
     published_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -258,6 +341,88 @@ class OpportunityApplication(models.Model):
 
     def __str__(self):
         return f"{self.candidate} → {self.opportunity}"
+
+
+class ApplicationHistoryEvent(models.Model):
+    application = models.ForeignKey(OpportunityApplication, on_delete=models.CASCADE, related_name="history_events")
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="recruitment_history_events",
+    )
+    event_type = models.CharField(max_length=64, db_index=True)
+    label = models.CharField(max_length=220)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["application", "-created_at"], name="opp_app_history_idx")]
+
+    def __str__(self):
+        return f"{self.application_id} · {self.event_type}"
+
+
+class RecruitmentInterview(models.Model):
+    class Mode(models.TextChoices):
+        VIDEO = "video", "Visioconférence"
+        PHONE = "phone", "Téléphone"
+        ONSITE = "onsite", "Sur site"
+
+    class Status(models.TextChoices):
+        SCHEDULED = "scheduled", "Planifié"
+        COMPLETED = "completed", "Terminé"
+        CANCELLED = "cancelled", "Annulé"
+
+    application = models.ForeignKey(OpportunityApplication, on_delete=models.CASCADE, related_name="interviews")
+    scheduled_at = models.DateTimeField(db_index=True)
+    duration_minutes = models.PositiveSmallIntegerField(default=45)
+    mode = models.CharField(max_length=20, choices=Mode.choices, default=Mode.VIDEO)
+    location_or_url = models.CharField(max_length=500, blank=True)
+    candidate_message = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.SCHEDULED, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="created_recruitment_interviews",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["scheduled_at", "id"]
+        indexes = [models.Index(fields=["application", "status", "scheduled_at"], name="opp_interview_app_idx")]
+
+    def __str__(self):
+        return f"Entretien {self.application_id} · {self.scheduled_at}"
+
+
+class EmploymentOffer(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "En attente"
+        ACCEPTED = "accepted", "Acceptée"
+        DECLINED = "declined", "Refusée"
+        WITHDRAWN = "withdrawn", "Retirée"
+
+    application = models.OneToOneField(OpportunityApplication, on_delete=models.CASCADE, related_name="employment_offer")
+    title = models.CharField(max_length=220, default="Proposition d'embauche")
+    message = models.TextField(blank=True)
+    salary_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    salary_currency = models.CharField(max_length=3, default="EUR")
+    start_date = models.DateField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="created_employment_offers",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Offre {self.application_id} · {self.status}"
 
 
 class TalentBookmark(models.Model):

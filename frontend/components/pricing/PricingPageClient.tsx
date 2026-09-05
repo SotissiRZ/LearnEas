@@ -158,23 +158,23 @@ export default function PricingPageClient({ settings }: { settings: PublicPricin
               <Feature>Jusqu’à <strong>{settings.employer_free_active_jobs}</strong> offre active.</Feature>
               <Feature>Réception et suivi des candidatures KalanPro.</Feature>
             </PlanCard>
-            <PlanCard title="Annonce à l’unité" eyebrow="Besoin ponctuel" price={settings.employer_single_post_eur} suffix="/ annonce · 30 jours" cta="Contacter KalanPro" href="/contact?subject=Annonce%20emploi%20KalanPro">
+            <PlanCard title="Annonce à l’unité" eyebrow="Besoin ponctuel" price={settings.employer_single_post_eur} suffix="/ annonce · 30 jours" cta="Acheter l’annonce" href="/checkout?employer_product=single_post">
               <Feature>Une annonce professionnelle pendant 30 jours.</Feature>
               <Feature>Idéal si vous recrutez occasionnellement.</Feature>
               <Feature>Accès aux candidatures reçues pour cette annonce.</Feature>
             </PlanCard>
-            <PlanCard title="Pro recrutement" eyebrow="Équipe en croissance" price={settings.employer_pro_monthly_eur} suffix="/ mois" badge="Recommandé" featured cta="Demander Pro" href="/contact?subject=KalanPro%20Pro%20recruteur">
+            <PlanCard title="Pro recrutement" eyebrow="Équipe en croissance" price={settings.employer_pro_monthly_eur} suffix="/ mois" badge="Recommandé" featured cta="Activer Pro" href="/checkout?employer_product=pro">
               <Feature>Jusqu’à <strong>{settings.employer_pro_active_jobs}</strong> offres actives.</Feature>
               <Feature>Accès au vivier de profils ayant choisi d’être visibles.</Feature>
               <Feature>Suivi centralisé des candidatures et de leur statut.</Feature>
             </PlanCard>
-            <PlanCard title="Business" eyebrow="Recrutement régulier" price={settings.employer_business_monthly_eur} suffix="/ mois" cta="Parler à l’équipe" href="/contact?subject=KalanPro%20Business%20recruteur">
+            <PlanCard title="Business" eyebrow="Recrutement régulier" price={settings.employer_business_monthly_eur} suffix="/ mois" cta="Activer Business" href="/checkout?employer_product=business">
               <Feature>Jusqu’à <strong>{settings.employer_business_active_jobs}</strong> offres actives.</Feature>
               <Feature>Accompagnement commercial et support prioritaire.</Feature>
               <Feature>Options de visibilité renforcée selon les campagnes.</Feature>
             </PlanCard>
           </div>
-          <p className="mt-5 text-center text-xs leading-5 text-slate-500">Les formules Pro et Business sont des offres commerciales de lancement. Leur activation est réalisée avec l’équipe KalanPro tant que la facturation récurrente automatisée n’est pas encore activée.</p>
+          <p className="mt-5 text-center text-xs leading-5 text-slate-500">Les achats recruteur sont activés depuis le checkout KalanPro. Les périodes Pro et Business durent 30 jours et les renouvellements successifs sont chaînés sans chevauchement.</p>
         </div>
       </section>
 

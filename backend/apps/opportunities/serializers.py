@@ -12,7 +12,10 @@ from apps.common.countries import canonical_country_name
 from apps.common.fields import RelativeImageField
 from apps.common.media_metadata import validate_upload_limits
 from apps.payments.models import Currency
-from .models import EmployerProfile, CandidateProfile, Opportunity, OpportunityApplication, TalentBookmark
+from .models import (
+    EmployerProfile, CandidateProfile, Opportunity, OpportunityApplication, TalentBookmark,
+    TalentAccessLog, EmployerEntitlement, ApplicationHistoryEvent, RecruitmentInterview, EmploymentOffer,
+)
 from .services import clean_strings, match_opportunity, build_application_snapshot, candidate_skills_for
 
 
@@ -252,6 +255,7 @@ class CandidateProfileSerializer(serializers.ModelSerializer):
 class OpportunitySerializer(serializers.ModelSerializer):
     employer = EmployerPublicSerializer(read_only=True)
     cover_image = RelativeImageField(required=False, allow_null=True)
+    remove_cover_image = serializers.BooleanField(write_only=True, required=False, default=False)
     applications_count = serializers.IntegerField(read_only=True)
     match_score = serializers.SerializerMethodField()
     already_applied = serializers.SerializerMethodField()
@@ -261,7 +265,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
         model = Opportunity
         fields = [
             "id", "employer", "title", "slug", "kind", "contract_type", "work_mode", "experience_level", "description",
-            "department", "openings", "cover_image", "responsibilities", "requirements", "skills_required", "skills_optional",
+            "department", "openings", "cover_image", "remove_cover_image", "responsibilities", "requirements", "skills_required", "skills_optional",
             "screening_questions", "country", "city", "remote_worldwide",
             "salary_min", "salary_max", "salary_currency", "salary_period", "show_salary", "apply_mode", "external_application_url",
             "application_deadline", "status", "featured", "published_at", "created_at", "updated_at", "applications_count",
@@ -373,6 +377,21 @@ class OpportunitySerializer(serializers.ModelSerializer):
         if not Currency.objects.filter(code=code, is_active=True).exists():
             raise serializers.ValidationError("Sélectionnez une devise active dans KalanPro.")
         return code
+
+    def create(self, validated_data):
+        validated_data.pop("remove_cover_image", None)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        remove_cover = bool(validated_data.pop("remove_cover_image", False))
+        if remove_cover and instance.cover_image:
+            try:
+                instance.cover_image.delete(save=False)
+            except Exception:
+                instance.cover_image = None
+            else:
+                instance.cover_image = None
+        return super().update(instance, validated_data)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -516,6 +535,12 @@ class OpportunityApplicationSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
+        if not instance.share_portfolio:
+            # Défense en profondeur pour les candidatures historiques créées avant v78 :
+            # même si un ancien snapshot contient encore des preuves, l'API ne les expose pas.
+            data["portfolio_snapshot"] = {}
+            data["certificates_snapshot"] = []
+            data["verified_projects_snapshot"] = []
         request = self.context.get("request")
         is_owner_recruiter = bool(
             request and request.user.is_authenticated and (
@@ -583,3 +608,101 @@ class TalentBookmarkSerializer(serializers.ModelSerializer):
             return clean_strings(value, max_items=20, max_length=60)
         except ValueError as exc:
             raise serializers.ValidationError(str(exc))
+
+
+class TalentAccessLogSerializer(serializers.ModelSerializer):
+    company_name = serializers.CharField(source="employer.company_name", read_only=True)
+    company_slug = serializers.CharField(source="employer.slug", read_only=True)
+
+    class Meta:
+        model = TalentAccessLog
+        fields = ["id", "company_name", "company_slug", "access_type", "created_at"]
+
+
+class EmployerEntitlementSerializer(serializers.ModelSerializer):
+    current = serializers.SerializerMethodField()
+    consumed_opportunity = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EmployerEntitlement
+        fields = [
+            "id", "kind", "entitlement_key", "starts_at", "ends_at", "revoked_at",
+            "revocation_reason", "consumed_at", "consumed_opportunity", "current", "created_at",
+        ]
+
+    def get_current(self, obj):
+        now = timezone.now()
+        if obj.revoked_at is not None or obj.order.status != "paid":
+            return False
+        if obj.kind == EmployerEntitlement.Kind.SINGLE_POST:
+            return obj.consumed_at is None or (obj.ends_at is not None and obj.ends_at > now)
+        return bool(obj.starts_at and obj.ends_at and obj.starts_at <= now < obj.ends_at)
+
+    def get_consumed_opportunity(self, obj):
+        if not obj.consumed_by_id:
+            return None
+        return {
+            "id": obj.consumed_by_id,
+            "title": obj.consumed_by.title,
+            "slug": obj.consumed_by.slug,
+            "status": obj.consumed_by.status,
+        }
+
+
+class ApplicationHistoryEventSerializer(serializers.ModelSerializer):
+    actor_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ApplicationHistoryEvent
+        fields = ["id", "event_type", "label", "metadata", "actor_name", "created_at"]
+
+    def get_actor_name(self, obj):
+        if not obj.actor:
+            return ""
+        return obj.actor.get_full_name() or obj.actor.username
+
+
+class RecruitmentInterviewSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RecruitmentInterview
+        fields = [
+            "id", "application", "scheduled_at", "duration_minutes", "mode", "location_or_url",
+            "candidate_message", "status", "created_at", "updated_at",
+        ]
+        read_only_fields = ["application", "created_at", "updated_at"]
+
+    def validate_duration_minutes(self, value):
+        if not 10 <= int(value) <= 480:
+            raise serializers.ValidationError("La durée doit être comprise entre 10 et 480 minutes.")
+        return value
+
+    def validate_scheduled_at(self, value):
+        if value <= timezone.now():
+            raise serializers.ValidationError("L'entretien doit être planifié dans le futur.")
+        return value
+
+
+class EmploymentOfferSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmploymentOffer
+        fields = [
+            "id", "application", "title", "message", "salary_amount", "salary_currency",
+            "start_date", "expires_at", "status", "responded_at", "created_at", "updated_at",
+        ]
+        read_only_fields = ["application", "status", "responded_at", "created_at", "updated_at"]
+
+    def validate_salary_currency(self, value):
+        code = str(value or "").strip().upper()
+        if not Currency.objects.filter(code=code, is_active=True).exists():
+            raise serializers.ValidationError("Sélectionnez une devise active dans KalanPro.")
+        return code
+
+    def validate_salary_amount(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError("Le salaire proposé ne peut pas être négatif.")
+        return value
+
+    def validate_expires_at(self, value):
+        if value and value <= timezone.now():
+            raise serializers.ValidationError("La date d'expiration de l'offre doit être dans le futur.")
+        return value

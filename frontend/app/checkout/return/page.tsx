@@ -38,10 +38,13 @@ export default function CheckoutReturnPage() {
         setState("paid");
         setMessage("Paiement confirmé. Votre accès est activé.");
         const items = order.items || [];
+        const employerOnly = items.length > 0 && items.every((item) => item.item_type === "employer");
         const mentorshipOnly = items.length > 0 && items.every((item) => item.item_type === "mentoring");
-        const destination = mentorshipOnly
-          ? `/dashboard/student/mentorship?booked=1&order=${orderId}`
-          : `/dashboard/student?purchased=1&order=${orderId}`;
+        const destination = employerOnly
+          ? `/dashboard/employer?billing=updated&order=${orderId}`
+          : mentorshipOnly
+            ? `/dashboard/student/mentorship?booked=1&order=${orderId}`
+            : `/dashboard/student?purchased=1&order=${orderId}`;
         timer = setTimeout(() => router.replace(destination), 900);
       } catch (error) {
         if (cancelled) return;

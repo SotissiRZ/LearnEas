@@ -11,10 +11,19 @@ from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
-from .models import EmployerProfile, CandidateProfile, Opportunity, OpportunityApplication, TalentBookmark
+from .models import (
+    EmployerProfile, CandidateProfile, Opportunity, OpportunityApplication, TalentBookmark,
+    TalentAccessLog, EmployerEntitlement, ApplicationHistoryEvent, RecruitmentInterview, EmploymentOffer,
+)
 from .serializers import (
     EmployerPublicSerializer, EmployerProfileSerializer, CandidateProfileSerializer, OpportunitySerializer,
     OpportunityApplicationSerializer, ApplicationReviewSerializer, TalentSerializer, TalentBookmarkSerializer,
+    TalentAccessLogSerializer, EmployerEntitlementSerializer, ApplicationHistoryEventSerializer,
+    RecruitmentInterviewSerializer, EmploymentOfferSerializer,
+)
+from .services import (
+    employer_has_talent_pool_access, employer_active_job_limit, current_employer_plan,
+    active_employer_entitlements, claim_publication_right, record_application_event,
 )
 
 
@@ -139,6 +148,26 @@ class EmployerProfileViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(profile).data)
 
 
+    @action(detail=False, methods=["get"], url_path="commercial-access")
+    def commercial_access(self, request):
+        employer = approved_employer_for(request.user)
+        if not employer:
+            return Response({"detail": "Espace recruteur approuvé requis."}, status=403)
+        now = timezone.now()
+        entitlements = active_employer_entitlements(employer, now=now).select_related(
+            "order", "consumed_by"
+        ).order_by("starts_at", "created_at")
+        return Response({
+            "plan": current_employer_plan(employer, now=now),
+            "active_job_limit": employer_active_job_limit(employer, now=now),
+            "talent_pool": employer_has_talent_pool_access(employer, now=now),
+            "unused_single_post_credits": entitlements.filter(
+                kind=EmployerEntitlement.Kind.SINGLE_POST,
+                consumed_at__isnull=True,
+            ).count(),
+            "entitlements": EmployerEntitlementSerializer(entitlements, many=True).data,
+        })
+
     @action(detail=False, methods=["get"])
     def analytics(self, request):
         employer = approved_employer_for(request.user)
@@ -224,6 +253,14 @@ class CandidateProfileViewSet(viewsets.ViewSet):
         response["Cache-Control"] = "private, no-store"
         return response
 
+    @action(detail=False, methods=["get"], url_path="talent-accesses")
+    def talent_accesses(self, request):
+        if request.user.role == "employer":
+            return Response({"detail": "Un compte recruteur ne possède pas de journal candidat."}, status=403)
+        profile, _ = CandidateProfile.objects.get_or_create(user=request.user)
+        logs = profile.access_logs.select_related("employer").all()[:100]
+        return Response(TalentAccessLogSerializer(logs, many=True).data)
+
 
 class OpportunityViewSet(viewsets.ModelViewSet):
     serializer_class = OpportunitySerializer
@@ -264,6 +301,7 @@ class OpportunityViewSet(viewsets.ModelViewSet):
         employer = approved_employer_for(user)
         return qs.filter(employer=employer) if employer else qs.none()
 
+    @transaction.atomic
     def perform_create(self, serializer):
         employer = approved_employer_for(self.request.user)
         if not employer and self.request.user.role != "admin":
@@ -272,17 +310,106 @@ class OpportunityViewSet(viewsets.ModelViewSet):
         if self.request.user.role == "admin":
             employer_id = self.request.data.get("employer_id")
             employer = get_object_or_404(EmployerProfile, pk=employer_id, status=EmployerProfile.Status.APPROVED)
-        serializer.save(employer=employer)
 
+        target_status = serializer.validated_data.get("status", Opportunity.Status.DRAFT)
+        requested_deadline = serializer.validated_data.get("application_deadline")
+        if target_status != Opportunity.Status.PUBLISHED or self.request.user.role == "admin":
+            serializer.save(employer=employer)
+            return
+
+        # Créer d'abord en brouillon permet d'attacher atomiquement un éventuel crédit
+        # d'annonce à l'unité à la ligne concrète sans publier brièvement hors quota.
+        instance = serializer.save(employer=employer, status=Opportunity.Status.DRAFT)
+        try:
+            entitlement, effective_deadline = claim_publication_right(
+                employer, opportunity=instance, requested_deadline=requested_deadline
+            )
+        except ValueError as exc:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({"status": str(exc)})
+        instance.status = Opportunity.Status.PUBLISHED
+        instance.publication_entitlement = entitlement
+        if effective_deadline is not None:
+            instance.application_deadline = effective_deadline
+        instance.save(update_fields=[
+            "status", "publication_entitlement", "application_deadline", "published_at", "updated_at"
+        ])
+
+    @transaction.atomic
     def perform_update(self, serializer):
         instance = serializer.instance
         if self.request.user.role != "admin" and instance.employer.user_id != self.request.user.id:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("Accès refusé.")
-        if serializer.validated_data.get("status") == Opportunity.Status.PUBLISHED and instance.employer.status != EmployerProfile.Status.APPROVED:
+        target_status = serializer.validated_data.get("status", instance.status)
+        if target_status == Opportunity.Status.PUBLISHED and instance.employer.status != EmployerProfile.Status.APPROVED:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("Entreprise non approuvée.")
-        serializer.save()
+
+        if self.request.user.role == "admin" or target_status != Opportunity.Status.PUBLISHED:
+            serializer.save()
+            return
+
+        requested_deadline = serializer.validated_data.get("application_deadline", instance.application_deadline)
+        existing_credit = instance.publication_entitlement
+
+        # Le plafond de 30 jours doit rester vrai après CHAQUE modification d'une annonce
+        # à l'unité déjà publiée. Sans ce contrôle, vider ou repousser la date permettrait
+        # de contourner le droit payé après sa consommation.
+        if instance.status == Opportunity.Status.PUBLISHED:
+            if (
+                existing_credit
+                and existing_credit.kind == EmployerEntitlement.Kind.SINGLE_POST
+                and existing_credit.consumed_by_id == instance.id
+            ):
+                if existing_credit.revoked_at is not None or not existing_credit.ends_at or existing_credit.ends_at <= timezone.now():
+                    from rest_framework.exceptions import ValidationError
+                    raise ValidationError({"status": "Le crédit de publication de cette annonce n'est plus actif."})
+                if requested_deadline and requested_deadline > existing_credit.ends_at:
+                    from rest_framework.exceptions import ValidationError
+                    raise ValidationError({"application_deadline": "Cette annonce payée ne peut pas dépasser sa période de 30 jours."})
+                updated = serializer.save()
+                if updated.application_deadline is None:
+                    updated.application_deadline = existing_credit.ends_at
+                    updated.save(update_fields=["application_deadline", "updated_at"])
+                return
+            serializer.save()
+            return
+
+        # Une annonce à l'unité déjà consommée peut être republiée uniquement dans sa
+        # fenêtre payée restante ; elle ne consomme pas un second crédit.
+        if (
+            existing_credit
+            and existing_credit.kind == EmployerEntitlement.Kind.SINGLE_POST
+            and existing_credit.revoked_at is None
+            and existing_credit.ends_at
+            and existing_credit.ends_at > timezone.now()
+            and existing_credit.consumed_by_id == instance.id
+        ):
+            if requested_deadline and requested_deadline > existing_credit.ends_at:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError({"application_deadline": "Cette annonce payée ne peut pas dépasser sa période de 30 jours."})
+            updated = serializer.save(status=Opportunity.Status.PUBLISHED)
+            if updated.application_deadline is None:
+                updated.application_deadline = existing_credit.ends_at
+                updated.save(update_fields=["application_deadline", "updated_at"])
+            return
+
+        serializer.save(status=Opportunity.Status.DRAFT)
+        try:
+            entitlement, effective_deadline = claim_publication_right(
+                instance.employer, opportunity=instance, requested_deadline=requested_deadline
+            )
+        except ValueError as exc:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({"status": str(exc)})
+        instance.status = Opportunity.Status.PUBLISHED
+        instance.publication_entitlement = entitlement
+        if effective_deadline is not None:
+            instance.application_deadline = effective_deadline
+        instance.save(update_fields=[
+            "status", "publication_entitlement", "application_deadline", "published_at", "updated_at"
+        ])
 
     def destroy(self, request, *args, **kwargs):
         opportunity = self.get_object()
@@ -311,7 +438,7 @@ class ApplicationViewSet(viewsets.ModelViewSet):
     search_fields = ["candidate_name_snapshot", "candidate_email_snapshot", "headline_snapshot", "skills_snapshot", "opportunity__title"]
     ordering_fields = ["applied_at", "match_score", "updated_at"]
     ordering = ["-applied_at"]
-    http_method_names = ["get", "post", "head", "options"]
+    http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
         user = self.request.user
@@ -319,11 +446,25 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         if user.role == "admin":
             return qs
         employer = approved_employer_for(user)
-        if employer and (self.request.query_params.get("recruiter") == "1" or self.action == "review"):
+        recruiter_actions = {"review", "history", "interviews", "offer"}
+        if employer and (self.request.query_params.get("recruiter") == "1" or self.action in recruiter_actions):
             return qs.filter(opportunity__employer=employer)
         if employer and self.action == "resume":
             return qs.filter(Q(candidate=user) | Q(opportunity__employer=employer))
         return qs.filter(candidate=user)
+
+    def retrieve(self, request, *args, **kwargs):
+        application = self.get_object()
+        response = super().retrieve(request, *args, **kwargs)
+        employer = approved_employer_for(request.user)
+        if employer and application.opportunity.employer_id == employer.id and response.status_code == 200:
+            candidate_profile = CandidateProfile.objects.filter(user_id=application.candidate_id).first()
+            if candidate_profile:
+                TalentAccessLog.objects.create(
+                    candidate=candidate_profile, employer=employer, recruiter=request.user,
+                    access_type=TalentAccessLog.AccessType.APPLICATION,
+                )
+        return response
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -343,6 +484,10 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
         application = serializer.save()
+        record_application_event(
+            application, actor=request.user, event_type="submitted",
+            label="Candidature envoyée",
+        )
         return Response(self.get_serializer(application).data, status=201)
 
     @action(detail=True, methods=["post"])
@@ -354,6 +499,10 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Cette candidature ne peut plus être retirée."}, status=409)
         application.status = OpportunityApplication.Status.WITHDRAWN
         application.save(update_fields=["status", "updated_at"])
+        record_application_event(
+            application, actor=request.user, event_type="withdrawn",
+            label="Candidature retirée par le candidat",
+        )
         return Response(self.get_serializer(application).data)
 
     @action(detail=True, methods=["post"])
@@ -372,6 +521,7 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             and target_status != application.status
         ):
             return Response({"detail": "Cette candidature est dans un état final et ne peut plus changer d'étape."}, status=409)
+        previous_status = application.status
         application.status = target_status
         update_fields = ["status", "updated_at"]
         for field in ("recruiter_note", "recruiter_rating", "recruiter_tags", "next_step_at"):
@@ -379,7 +529,129 @@ class ApplicationViewSet(viewsets.ModelViewSet):
                 setattr(application, field, serializer.validated_data[field])
                 update_fields.append(field)
         application.save(update_fields=update_fields)
+        if previous_status != target_status:
+            record_application_event(
+                application, actor=request.user, event_type="status_changed",
+                label=f"Étape ATS : {application.get_status_display()}",
+                metadata={"from": previous_status, "to": target_status},
+            )
         return Response(self.get_serializer(application).data)
+
+    @action(detail=True, methods=["get"])
+    def history(self, request, pk=None):
+        application = self.get_object()
+        recruiter = request.user.role == "admin" or application.opportunity.employer.user_id == request.user.id
+        if not recruiter:
+            return Response({"detail": "Accès recruteur requis."}, status=403)
+        events = application.history_events.select_related("actor").all()[:100]
+        return Response(ApplicationHistoryEventSerializer(events, many=True).data)
+
+    @action(detail=True, methods=["get", "post"])
+    @transaction.atomic
+    def interviews(self, request, pk=None):
+        application = self.get_object()
+        recruiter = request.user.role == "admin" or application.opportunity.employer.user_id == request.user.id
+        candidate = application.candidate_id == request.user.id
+        if request.method == "GET":
+            if not (recruiter or candidate):
+                return Response({"detail": "Accès refusé."}, status=403)
+            rows = application.interviews.all()
+            return Response(RecruitmentInterviewSerializer(rows, many=True).data)
+        if not recruiter:
+            return Response({"detail": "Accès recruteur requis."}, status=403)
+        if application.status in {
+            OpportunityApplication.Status.WITHDRAWN,
+            OpportunityApplication.Status.HIRED,
+            OpportunityApplication.Status.REJECTED,
+        }:
+            return Response({"detail": "Impossible de planifier un entretien sur une candidature clôturée."}, status=409)
+        serializer = RecruitmentInterviewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        interview = serializer.save(application=application, created_by=request.user)
+        previous = application.status
+        application.status = OpportunityApplication.Status.INTERVIEW
+        application.next_step_at = interview.scheduled_at
+        application.save(update_fields=["status", "next_step_at", "updated_at"])
+        record_application_event(
+            application, actor=request.user, event_type="interview_scheduled",
+            label="Entretien planifié",
+            metadata={"interview_id": interview.id, "scheduled_at": interview.scheduled_at.isoformat(), "previous_status": previous},
+        )
+        return Response(RecruitmentInterviewSerializer(interview).data, status=201)
+
+    @action(detail=True, methods=["get", "post", "patch"])
+    @transaction.atomic
+    def offer(self, request, pk=None):
+        application = self.get_object()
+        recruiter = request.user.role == "admin" or application.opportunity.employer.user_id == request.user.id
+        candidate = application.candidate_id == request.user.id
+        existing = EmploymentOffer.objects.filter(application=application).first()
+
+        if request.method == "GET":
+            if not (recruiter or candidate):
+                return Response({"detail": "Accès refusé."}, status=403)
+            if not existing:
+                return Response({"detail": "Aucune offre d'embauche."}, status=404)
+            return Response(EmploymentOfferSerializer(existing).data)
+
+        if not recruiter:
+            return Response({"detail": "Accès recruteur requis."}, status=403)
+        if application.status in {
+            OpportunityApplication.Status.WITHDRAWN,
+            OpportunityApplication.Status.HIRED,
+            OpportunityApplication.Status.REJECTED,
+        }:
+            return Response({"detail": "Cette candidature ne peut plus recevoir une nouvelle offre."}, status=409)
+        if existing and existing.status in {EmploymentOffer.Status.ACCEPTED, EmploymentOffer.Status.DECLINED}:
+            return Response({"detail": "Cette offre a déjà reçu une réponse et ne peut plus être modifiée."}, status=409)
+
+        serializer = EmploymentOfferSerializer(
+            existing, data=request.data, partial=(request.method == "PATCH" or existing is not None)
+        )
+        serializer.is_valid(raise_exception=True)
+        offer = serializer.save(application=application, created_by=existing.created_by if existing else request.user)
+        if application.status != OpportunityApplication.Status.OFFER:
+            application.status = OpportunityApplication.Status.OFFER
+            application.save(update_fields=["status", "updated_at"])
+        record_application_event(
+            application, actor=request.user,
+            event_type="offer_updated" if existing else "offer_created",
+            label="Proposition d'embauche mise à jour" if existing else "Proposition d'embauche envoyée",
+            metadata={"offer_id": offer.id},
+        )
+        return Response(EmploymentOfferSerializer(offer).data, status=200 if existing else 201)
+
+    @action(detail=True, methods=["post"], url_path="offer-response")
+    @transaction.atomic
+    def offer_response(self, request, pk=None):
+        application = self.get_object()
+        if application.candidate_id != request.user.id:
+            return Response({"detail": "Seul le candidat peut répondre à cette offre."}, status=403)
+        offer = EmploymentOffer.objects.select_for_update().filter(application=application).first()
+        if not offer:
+            return Response({"detail": "Aucune offre d'embauche."}, status=404)
+        if offer.status != EmploymentOffer.Status.PENDING:
+            return Response({"detail": "Une réponse a déjà été enregistrée pour cette offre."}, status=409)
+        if offer.expires_at and offer.expires_at <= timezone.now():
+            return Response({"detail": "Cette offre d'embauche a expiré."}, status=409)
+        decision = str(request.data.get("decision") or "").strip().lower()
+        if decision not in {EmploymentOffer.Status.ACCEPTED, EmploymentOffer.Status.DECLINED}:
+            return Response({"decision": ["Choisissez accepted ou declined."]}, status=400)
+        offer.status = decision
+        offer.responded_at = timezone.now()
+        offer.save(update_fields=["status", "responded_at", "updated_at"])
+        application.status = (
+            OpportunityApplication.Status.HIRED
+            if decision == EmploymentOffer.Status.ACCEPTED
+            else OpportunityApplication.Status.REJECTED
+        )
+        application.save(update_fields=["status", "updated_at"])
+        record_application_event(
+            application, actor=request.user, event_type=f"offer_{decision}",
+            label="Offre acceptée par le candidat" if decision == EmploymentOffer.Status.ACCEPTED else "Offre refusée par le candidat",
+            metadata={"offer_id": offer.id},
+        )
+        return Response(EmploymentOfferSerializer(offer).data)
 
     @action(detail=True, methods=["get"])
     def resume(self, request, pk=None):
@@ -405,8 +677,38 @@ class TalentViewSet(viewsets.ReadOnlyModelViewSet):
     ordering_fields = ["updated_at", "years_experience"]
     ordering = ["-updated_at"]
 
+    def _paid_employer(self):
+        employer = approved_employer_for(self.request.user)
+        if not employer or not employer_has_talent_pool_access(employer):
+            return None
+        return employer
+
+    def list(self, request, *args, **kwargs):
+        if request.user.role != "admin" and not self._paid_employer():
+            return Response({"detail": "Le vivier de talents est réservé aux plans recruteur Pro et Business."}, status=403)
+        return super().list(request, *args, **kwargs)
+
+    def retrieve(self, request, *args, **kwargs):
+        employer = None
+        if request.user.role != "admin":
+            employer = self._paid_employer()
+            if not employer:
+                return Response({"detail": "Le vivier de talents est réservé aux plans recruteur Pro et Business."}, status=403)
+        response = super().retrieve(request, *args, **kwargs)
+        if employer and response.status_code == 200:
+            talent = self.get_object()
+            TalentAccessLog.objects.create(
+                candidate=talent, employer=employer, recruiter=request.user,
+                access_type=TalentAccessLog.AccessType.PROFILE,
+            )
+        return response
+
     def get_queryset(self):
-        if not (self.request.user.role == "admin" or approved_employer_for(self.request.user)):
+        if self.request.user.role == "admin":
+            allowed = True
+        else:
+            allowed = bool(self._paid_employer())
+        if not allowed:
             return CandidateProfile.objects.none()
         qs = CandidateProfile.objects.select_related("user").filter(is_searchable=True)
         country = str(self.request.query_params.get("country") or "").strip()
@@ -428,15 +730,23 @@ class TalentBookmarkViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         employer = approved_employer_for(self.request.user)
-        if not employer:
+        if not employer or not employer_has_talent_pool_access(employer):
             return TalentBookmark.objects.none()
-        return TalentBookmark.objects.select_related("talent", "talent__user").filter(employer=employer)
+        return TalentBookmark.objects.select_related("talent", "talent__user").filter(
+            employer=employer, talent__is_searchable=True
+        )
+
+    def list(self, request, *args, **kwargs):
+        employer = approved_employer_for(request.user)
+        if not employer or not employer_has_talent_pool_access(employer):
+            return Response({"detail": "Les favoris talents sont réservés aux plans recruteur Pro et Business."}, status=403)
+        return super().list(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         employer = approved_employer_for(self.request.user)
-        if not employer:
+        if not employer or not employer_has_talent_pool_access(employer):
             from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("Espace recruteur approuvé requis.")
+            raise PermissionDenied("Un plan recruteur Pro ou Business est requis.")
         talent = serializer.validated_data["talent"]
         if not talent.is_searchable:
             from rest_framework.exceptions import ValidationError
@@ -447,3 +757,21 @@ class TalentBookmarkViewSet(viewsets.ModelViewSet):
             serializer.save(employer=employer, talent=talent)
             return
         serializer.save(employer=employer)
+        TalentAccessLog.objects.create(
+            candidate=talent, employer=employer, recruiter=self.request.user,
+            access_type=TalentAccessLog.AccessType.BOOKMARK,
+        )
+
+    def perform_update(self, serializer):
+        employer = approved_employer_for(self.request.user)
+        if not employer or not employer_has_talent_pool_access(employer):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Un plan recruteur Pro ou Business est requis.")
+        talent = serializer.validated_data.get("talent", serializer.instance.talent)
+        if not talent.is_searchable:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({"talent": "Ce talent n'est plus visible aux recruteurs."})
+        if TalentBookmark.objects.filter(employer=employer, talent=talent).exclude(pk=serializer.instance.pk).exists():
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({"talent": "Ce talent est déjà présent dans vos favoris."})
+        serializer.save(employer=employer, talent=talent)

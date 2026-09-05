@@ -1,3 +1,22 @@
+# KalanPro v78 — Gouvernance recruteur, droits payés et embauche
+
+- Le vivier de talents est désormais strictement réservé aux employeurs approuvés disposant d’un droit Pro ou Business payé et actif.
+- La sortie d’un candidat du vivier révoque immédiatement ses favoris recruteur ; un favori ne peut plus être retargeté vers un profil masqué.
+- `share_portfolio=false` masque aussi les snapshots historiques de portfolio, certificats et projets vérifiés.
+- Nouveau journal candidat des consultations recruteur (profil, favoris et consultation de candidature).
+- Nouveaux droits employeur `single_post`, `pro` et `business`, rattachés univoquement à une commande et conditionnés au statut payé.
+- Les quotas Starter/Pro/Business contrôlent réellement le nombre d’offres publiées ; un crédit à l’unité permet une annonce supplémentaire limitée à 30 jours.
+- Le remboursement d’un crédit annonce le révoque et clôt l’annonce liée ; le remboursement Pro/Business recale les périodes futures sans supprimer l’historique.
+- Les renouvellements Pro/Business sont chaînés en périodes de 30 jours et les replays webhook/checkout ne prolongent pas deux fois un droit.
+- Checkout recruteur self-service avec `Idempotency-Key` obligatoire et prix recalculé côté serveur ; grille `/pricing` reliée à ce checkout.
+- Checkout recruteur : les quotas Pro/Business affichés proviennent désormais des paramètres administrateur ; payload entretien aligné sur le serializer.
+- ATS enrichi : historique séparé, planification d’entretien, proposition d’embauche, réponse candidat Accepter/Refuser et erreurs affichées sans mélange de ressources.
+- Le visuel d’une opportunité peut être supprimé explicitement.
+- SEO emploi : métadonnées dynamiques, canonical/OpenGraph et JSON-LD Schema.org `JobPosting`.
+- Validation finale v78 : une candidature déjà rejetée ne peut plus être rouverte par création d’offre ; un remboursement tardif d’une période déjà entièrement consommée ne décale plus les périodes suivantes ; mapping SEO corrigé pour les vrais contrats `fixed_term`/`permanent`.
+- Le journal candidat est déclenché lors de l’ouverture réelle du dossier ATS ; le dashboard candidat évite le N+1 réseau entretien/offre sur les candidatures qui n’ont pas encore atteint ces étapes.
+- Migrations additives : `payments.0013_employer_entitlement_code` et `opportunities.0004_employer_governance`. Aucune suppression de table ou de donnée.
+
 # v75 — Recruiter Workspace, ATS & marque employeur
 
 - Refonte complète de `/dashboard/employer` en workspace à onglets : vue d'ensemble, offres, candidatures, talents et profil entreprise.
@@ -1118,6 +1137,12 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Positionnement du widget durci avec prise en compte des safe areas et z-index explicite.
 - `Échap` ferme le panneau ; un changement de route le replie automatiquement.
 - Le composant reste volontairement masqué dans la salle live et sur la page `/assistant` afin d'éviter deux assistants simultanés.
+
+## v77 — Correctif layout marque employeur (2026-09-05)
+- Supprime le `-mt-10` qui faisait chevaucher le logo et la bannière dans **Profil entreprise**.
+- Place le logo dans une ligne dédiée sous la bannière, avec disposition mobile/desktop responsive.
+- Ajoute un bouton de changement de logo plus explicite et un test statique de non-régression du layout.
+- Aucun changement de modèle, migration ou donnée.
 
 ## v76 — Correctif dashboard recruteur (2026-09-05)
 - Corrige un `FieldError` v75 : les requêtes utilisaient encore `deadline` au lieu de `application_deadline` dans le serializer entreprise et l'annuaire entreprises.

@@ -10,7 +10,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrderItem
         fields = [
-            "id", "item_type", "course", "pdf_product", "formation", "mentorship_booking", "unit_price", "title",
+            "id", "item_type", "course", "pdf_product", "formation", "mentorship_booking", "entitlement_code", "unit_price", "title",
             "instructor", "instructor_name", "platform_fee_amount", "instructor_earning_amount",
         ]
 
@@ -23,6 +23,13 @@ class OrderItemSerializer(serializers.ModelSerializer):
             return obj.formation.title
         if obj.mentorship_booking:
             return f"Mentorat · {obj.mentorship_booking.offering.title}"
+        employer_titles = {
+            "single_post": "Annonce recruteur · 30 jours",
+            "pro": "KalanPro Pro recrutement · 30 jours",
+            "business": "KalanPro Business · 30 jours",
+        }
+        if obj.item_type == OrderItem.ItemType.EMPLOYER:
+            return employer_titles.get(obj.entitlement_code, "Droit recruteur KalanPro")
         return ""
 
     def get_instructor_name(self, obj):
@@ -53,6 +60,9 @@ class CheckoutSerializer(serializers.Serializer):
     pdf_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, default=list)
     formation_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, default=list)
     mentorship_booking_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, default=list)
+    employer_product = serializers.ChoiceField(
+        choices=["single_post", "pro", "business"], required=False, allow_blank=True, default=""
+    )
     provider = serializers.CharField(max_length=30, default=Order.Provider.STRIPE)
     currency = serializers.CharField(max_length=3, default="EUR")
     test_payment = serializers.BooleanField(required=False, default=False)
@@ -62,6 +72,12 @@ class CheckoutSerializer(serializers.Serializer):
         attrs["currency"] = attrs["currency"].strip().upper()
         for field in ("course_ids", "pdf_ids", "formation_ids", "mentorship_booking_ids"):
             attrs[field] = list(dict.fromkeys(attrs[field]))
+        if attrs.get("employer_product") and any(
+            attrs[field] for field in ("course_ids", "pdf_ids", "formation_ids", "mentorship_booking_ids")
+        ):
+            raise serializers.ValidationError(
+                {"employer_product": "Un droit recruteur doit être acheté dans une commande dédiée."}
+            )
         return attrs
 
 

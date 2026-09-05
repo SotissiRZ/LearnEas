@@ -168,3 +168,70 @@ export type EmployerAnalytics = {
   average_match: number;
   bookmarked_talents: number;
 };
+
+export type TalentAccessLog = {
+  id: number;
+  access_type: "profile" | "bookmark" | "application";
+  company_name: string;
+  company_slug?: string;
+  created_at: string;
+};
+
+export type EmployerEntitlement = {
+  id: number;
+  kind: "single_post" | "pro" | "business";
+  entitlement_key: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  revoked_at: string | null;
+  consumed_at: string | null;
+  consumed_opportunity: { id: number; title: string; slug: string; status: string } | null;
+  current?: boolean;
+  revocation_reason?: string;
+  created_at: string;
+};
+
+export type EmployerCommercialAccess = {
+  plan: "starter" | "pro" | "business";
+  active_job_limit: number;
+  talent_pool: boolean;
+  unused_single_post_credits: number;
+  entitlements: EmployerEntitlement[];
+};
+
+export type ApplicationHistoryEvent = {
+  id: number;
+  event_type: string;
+  label: string;
+  metadata: Record<string, unknown>;
+  actor_name?: string;
+  created_at: string;
+};
+
+export type RecruitmentInterview = {
+  id: number;
+  application: number;
+  scheduled_at: string;
+  duration_minutes: number;
+  mode: string;
+  location_or_url: string;
+  candidate_message: string;
+  status: "scheduled" | "completed" | "cancelled";
+  created_at: string;
+  updated_at: string;
+};
+
+export type EmploymentOffer = {
+  id: number;
+  application: number;
+  title: string;
+  message: string;
+  salary_amount: string | null;
+  salary_currency: string;
+  start_date: string | null;
+  expires_at: string | null;
+  status: "pending" | "accepted" | "declined" | "withdrawn";
+  responded_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
