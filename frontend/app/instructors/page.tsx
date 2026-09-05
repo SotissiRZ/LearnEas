@@ -49,13 +49,13 @@ export default async function InstructorsPage() {
       {instructors.length === 0 ? (
         <p className="text-gray-500">Aucun instructeur pour le moment.</p>
       ) : (
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <div className="catalog-grid">
           {instructors.map(({ instructor, courses, students }) => {
             const firstName = instructor.full_name.split(" ")[0] || instructor.full_name;
             return (
               <article
                 key={instructor.id}
-                className="card flex h-full min-h-[270px] flex-col p-5 transition hover:-translate-y-0.5 hover:border-brand-100 hover:shadow-soft"
+                className="card catalog-card flex h-full min-h-[270px] flex-col p-5 transition hover:-translate-y-0.5 hover:border-brand-100 hover:shadow-soft"
               >
                 <div className="flex items-start gap-4">
                   <div className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-brand-100 text-2xl font-extrabold text-brand-700">

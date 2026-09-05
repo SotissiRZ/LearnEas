@@ -1,9 +1,11 @@
 from django.contrib.auth import get_user_model
 from django.urls import reverse
-from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.files.uploadedfile import SimpleUploadedFile, TemporaryUploadedFile
 from django.test import override_settings
 from django.utils import timezone
 from datetime import timedelta
+import base64
+import tempfile
 from rest_framework.test import APITestCase
 from .models import EmployerProfile, Opportunity, OpportunityApplication
 
@@ -35,7 +37,9 @@ class OpportunitySecurityTests(APITestCase):
         stranger = User.objects.create_user(username="x", email="x@example.com", password="StrongPass123!", country="Sénégal")
         self.client.force_authenticate(stranger)
         response = self.client.post(f"/api/opportunities/applications/{app.id}/review/", {"status": "shortlisted"}, format="json")
-        self.assertEqual(response.status_code, 403)
+        # Le queryset masque les candidatures d'autrui : 404 évite de révéler
+        # l'existence d'une candidature à un utilisateur non autorisé.
+        self.assertEqual(response.status_code, 404)
 
     def test_recruiter_cannot_apply_to_own_listing(self):
         self.client.force_authenticate(self.recruiter)
@@ -110,6 +114,44 @@ class OpportunitySecurityTests(APITestCase):
         )
         self.assertEqual(response.status_code, 400, response.data)
         self.assertIn("resume", response.data)
+
+    def test_employer_logo_and_banner_accept_temporary_multipart_files(self):
+        # Reproduit le chemin réel des gros uploads Django : TemporaryUploadedFile
+        # repose sur un flux BufferedRandom qui ne peut pas être deep-copié/picklé.
+        # PNG 2×2 réellement valide (le fixture précédent avait un checksum IDAT
+        # corrompu et était donc correctement rejeté par ImageField/Pillow).
+        png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg=="
+        )
+
+        def uploaded(name):
+            value = TemporaryUploadedFile(name, "image/png", len(png), None)
+            value.write(png)
+            value.seek(0)
+            return value
+
+        self.client.force_authenticate(self.recruiter)
+        with tempfile.TemporaryDirectory() as media_root, self.settings(MEDIA_ROOT=media_root):
+            response = self.client.patch(
+                f"/api/opportunities/employer-profile/{self.employer.id}/",
+                {
+                    "tagline": "Entreprise panafricaine",
+                    "values": '["Impact", "Confiance"]',
+                    "benefits": '["Télétravail", "Formation"]',
+                    "hiring_regions": '["Sénégal", "Côte d’Ivoire"]',
+                    "logo": uploaded("logo.png"),
+                    "banner": uploaded("banner.png"),
+                },
+                format="multipart",
+            )
+            self.assertEqual(response.status_code, 200, response.data)
+            self.employer.refresh_from_db()
+            self.assertTrue(bool(self.employer.logo))
+            self.assertTrue(bool(self.employer.banner))
+            self.assertEqual(self.employer.values, ["Impact", "Confiance"])
+            self.assertEqual(self.employer.benefits, ["Télétravail", "Formation"])
+            self.assertEqual(self.employer.hiring_regions, ["Sénégal", "Côte d’Ivoire"])
+            self.assertEqual(self.employer.status, EmployerProfile.Status.APPROVED)
 
     def test_hidden_salary_is_not_exposed_publicly(self):
         self.job.salary_min = 100000

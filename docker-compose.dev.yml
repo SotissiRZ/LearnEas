@@ -115,6 +115,9 @@ services:
     volumes:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules
+      # Isole les artefacts Next du bind-mount Windows. Le build de validation utilise
+      # un autre distDir et ne peut donc plus corrompre le serveur `next dev`.
+      - frontend_next_dev:/app/.next
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
@@ -132,3 +135,4 @@ volumes:
   static_data_dev:
   media_data_dev:
   frontend_node_modules:
+  frontend_next_dev:

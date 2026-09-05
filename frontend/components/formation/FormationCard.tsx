@@ -9,12 +9,12 @@ export default function FormationCard({ formation }: { formation: InteractiveFor
   return (
     <Link
       href={`/formations/${formation.slug}`}
-      className="card group flex flex-col overflow-hidden transition hover:-translate-y-1 hover:shadow-soft"
+      className="card catalog-card group flex flex-col overflow-hidden transition hover:-translate-y-1 hover:shadow-soft"
     >
-      <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden bg-gradient-to-br from-violet-100 to-brand-50">
+      <div className="relative flex aspect-[16/10] w-full items-center justify-center overflow-hidden bg-gradient-to-br from-violet-100 to-brand-50">
         {formation.thumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img loading="lazy" decoding="async" src={formation.thumbnail} alt={formation.title} className="h-full w-full object-cover" />
+          <img loading="lazy" decoding="async" src={formation.thumbnail} alt={formation.title} className="h-full w-full object-cover object-center transition duration-300 group-hover:scale-[1.02]" />
         ) : (
           <Video size={44} className="text-violet-300" />
         )}
@@ -24,7 +24,7 @@ export default function FormationCard({ formation }: { formation: InteractiveFor
         )}
       </div>
 
-      <div className="flex flex-1 flex-col gap-2 p-4">
+      <div className="flex flex-1 flex-col gap-1.5 p-3.5 sm:p-4">
         <div className="flex items-center gap-2">
           <LevelBadge level={formation.level} />
           {formation.category && <span className="text-xs font-medium text-gray-400">{formation.category.name}</span>}

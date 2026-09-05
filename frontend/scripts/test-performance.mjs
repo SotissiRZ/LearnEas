@@ -56,3 +56,38 @@ test("workflow candidat ne charge pas entretiens et offre pour chaque candidatur
   assert.match(page, /const needsOffer = \["offer", "hired", "rejected"\]/);
   assert.match(page, /Promise\.resolve\(\[\] as RecruitmentInterview\[\]\)/);
 });
+
+test("docker dev isole les artefacts Next du build de validation", () => {
+  const compose = read("../docker-compose.dev.yml");
+  const pkg = JSON.parse(read("package.json"));
+  const nextConfig = read("next.config.js");
+  const buildCheck = read("scripts/build-check.mjs");
+  assert.match(compose, /frontend_next_dev:\/app\/.next|frontend_next_dev:\s*\/app\/.next/);
+  assert.equal(pkg.scripts["build:check"], "node scripts/build-check.mjs");
+  assert.match(nextConfig, /process\.env\.NEXT_DIST_DIR/);
+  assert.match(buildCheck, /\.next-build-check/);
+  assert.match(buildCheck, /NEXT_DIST_DIR: distDir/);
+});
+
+test("cartes catalogue recadrent les apercus et la fiche opportunite affiche le visuel complet", () => {
+  const opportunity = read("components/opportunities/OpportunityCard.tsx");
+  const opportunityDetail = read("app/opportunities/[slug]/page.tsx");
+  const course = read("components/course/CourseCard.tsx");
+  const formation = read("components/formation/FormationCard.tsx");
+  const pdf = read("components/pdf/PdfCard.tsx");
+  const css = read("app/globals.css");
+  assert.match(css, /\.catalog-card\s*\{[^}]*max-width:\s*20rem/);
+  assert.match(opportunity, /aspect-\[16\/10\]/);
+  assert.match(opportunity, /object-cover/);
+  assert.match(opportunity, /Voir le visuel complet/);
+  assert.match(course, /aspect-\[16\/10\]/);
+  assert.match(course, /object-cover/);
+  assert.match(formation, /aspect-\[16\/10\]/);
+  assert.match(formation, /object-cover/);
+  assert.match(pdf, /aspect-\[4\/3\]/);
+  assert.match(pdf, /object-cover/);
+  assert.match(opportunityDetail, /max-h-\[78vh\]/);
+  assert.match(opportunityDetail, /object-contain/);
+  assert.match(opportunityDetail, /Ouvrir le visuel original/);
+  assert.doesNotMatch(css, /catalog-media-natural/);
+});

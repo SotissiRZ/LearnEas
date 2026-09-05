@@ -29,6 +29,28 @@ def validate_country(value, *, allow_blank=True):
         raise serializers.ValidationError(str(exc))
 
 
+def _shallow_mutable_input(data):
+    """Clone superficiellement les données DRF multipart sans copier les fichiers.
+
+    ``QueryDict.copy()`` fait un ``deepcopy`` et casse sur
+    ``TemporaryUploadedFile`` (flux ``BufferedRandom`` non picklable). En plus,
+    conserver un ``MultiValueDict`` après avoir converti nos champs JSON en
+    listes Python fait que DRF continue de les traiter comme des valeurs HTML et
+    tente de les décoder une seconde fois comme JSON.
+
+    Une ``dict`` Python ordinaire résout les deux problèmes : les objets fichiers
+    sont conservés par référence et les listes JSON déjà décodées sont transmises
+    directement aux ``JSONField``. Comme ``QueryDict.get()``/``items()`` utilisent
+    la dernière valeur pour une clé, cette conversion garde la sémantique des
+    formulaires KalanPro, qui envoient un seul champ par clé.
+    """
+    if hasattr(data, "items"):
+        return {key: value for key, value in data.items()}
+    if isinstance(data, dict):
+        return dict(data)
+    return data
+
+
 class EmployerPublicSerializer(serializers.ModelSerializer):
     logo = RelativeImageField(read_only=True)
     banner = RelativeImageField(read_only=True)
@@ -71,8 +93,7 @@ class EmployerProfileSerializer(serializers.ModelSerializer):
         read_only_fields = ["slug", "status", "review_note", "reviewed_by_name", "reviewed_at", "created_at", "updated_at"]
 
     def to_internal_value(self, data):
-        if hasattr(data, "copy"):
-            data = data.copy()
+        data = _shallow_mutable_input(data)
         for field in ("values", "benefits", "hiring_regions"):
             try:
                 value = data.get(field)
@@ -163,8 +184,7 @@ class CandidateProfileSerializer(serializers.ModelSerializer):
         extra_kwargs = {"resume": {"write_only": True, "required": False, "allow_null": True}}
 
     def to_internal_value(self, data):
-        if hasattr(data, "copy"):
-            data = data.copy()
+        data = _shallow_mutable_input(data)
         try:
             if data.get("minimum_salary") == "":
                 data["minimum_salary"] = None
@@ -274,8 +294,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
         read_only_fields = ["employer", "slug", "featured", "published_at", "created_at", "updated_at", "applications_count"]
 
     def to_internal_value(self, data):
-        if hasattr(data, "copy"):
-            data = data.copy()
+        data = _shallow_mutable_input(data)
         for field in ("responsibilities", "requirements", "skills_required", "skills_optional", "screening_questions"):
             try:
                 value = data.get(field)
@@ -461,8 +480,7 @@ class OpportunityApplicationSerializer(serializers.ModelSerializer):
         extra_kwargs = {"resume_file": {"write_only": True, "required": False, "allow_null": True}}
 
     def to_internal_value(self, data):
-        if hasattr(data, "copy"):
-            data = data.copy()
+        data = _shallow_mutable_input(data)
         try:
             value = data.get("screening_answers")
         except Exception:

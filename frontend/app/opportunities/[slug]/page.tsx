@@ -74,7 +74,7 @@ export default function OpportunityDetailPage() {
       <Link href="/opportunities" className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-brand-700"><ArrowLeft size={15} /> Retour aux opportunités</Link>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <main className="card overflow-hidden">
-          {item.cover_image && <div className="aspect-[16/6] w-full overflow-hidden bg-slate-100"><img loading="lazy" decoding="async" src={item.cover_image} alt="" className="h-full w-full object-cover" /></div>}
+          {item.cover_image && <div className="border-b border-slate-100 bg-slate-50 p-3 sm:p-5"><a href={item.cover_image} target="_blank" rel="noreferrer" className="group/image mx-auto flex max-h-[78vh] min-h-[16rem] w-full items-center justify-center overflow-hidden rounded-2xl bg-white shadow-inner" title="Ouvrir le visuel original"><img loading="lazy" decoding="async" src={item.cover_image} alt={item.title} className="block max-h-[78vh] max-w-full object-contain transition group-hover/image:opacity-95" /></a><p className="mt-2 text-center text-[11px] text-slate-400">Visuel complet · cliquez sur l’image pour l’ouvrir à sa taille originale</p></div>}
           <div className="p-6 sm:p-8">
           <div className="flex items-start gap-4">
             <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-brand-50 text-brand-700">{item.employer.logo ? <img loading="lazy" decoding="async" src={item.employer.logo} alt="" className="h-full w-full object-contain p-0.5" /> : <BriefcaseBusiness size={25} />}</div>

@@ -78,7 +78,7 @@ export default async function FormationsPage({ searchParams }: Props) {
                 : "Le catalogue n'a pas pu être chargé."}
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="catalog-grid">
               {formations.map((formation) => <FormationCard key={formation.id} formation={formation} />)}
             </div>
           )}

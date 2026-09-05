@@ -11,12 +11,12 @@ export default function CourseCard({ course }: { course: Course }) {
   return (
     <Link
       href={`/courses/${course.slug}`}
-      className="card group flex flex-col overflow-hidden transition hover:-translate-y-1 hover:shadow-soft"
+      className="card catalog-card group flex flex-col overflow-hidden transition hover:-translate-y-1 hover:shadow-soft"
     >
-      <div className="relative aspect-video w-full overflow-hidden bg-gradient-to-br from-brand-100 to-brand-50">
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-gradient-to-br from-brand-100 to-brand-50">
         {course.thumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img loading="lazy" decoding="async" src={course.thumbnail} alt={course.title} className="h-full w-full object-cover" />
+          <img loading="lazy" decoding="async" src={course.thumbnail} alt={course.title} className="h-full w-full object-cover object-center transition duration-300 group-hover:scale-[1.02]" />
         ) : (
           <div className="grid h-full place-items-center text-brand-300">
             <PlayCircle size={48} />
@@ -30,7 +30,7 @@ export default function CourseCard({ course }: { course: Course }) {
         )}
       </div>
 
-      <div className="flex flex-1 flex-col gap-2 p-4">
+      <div className="flex flex-1 flex-col gap-1.5 p-3.5 sm:p-4">
         <div className="flex items-center gap-2">
           <LevelBadge level={course.level} />
           {course.category && (

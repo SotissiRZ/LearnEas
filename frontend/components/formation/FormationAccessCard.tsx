@@ -13,7 +13,7 @@ export default function FormationAccessCard({ initialFormation }: { initialForma
       <div className="flex aspect-video w-full items-center justify-center bg-gradient-to-br from-violet-100 to-brand-50">
         {formation.thumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img loading="lazy" decoding="async" src={formation.thumbnail} alt={formation.title} className="h-full w-full object-cover" />
+          <img loading="lazy" decoding="async" src={formation.thumbnail} alt={formation.title} className="h-full w-full object-contain bg-slate-50" />
         ) : (
           <Video size={48} className="text-violet-300" />
         )}

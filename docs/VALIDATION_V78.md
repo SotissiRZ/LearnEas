@@ -16,6 +16,13 @@ La v78 termine le lot Recruiter Workspace commencé en v75–v77 : confidentiali
    - historique ATS ;
    - entretiens ;
    - offre d’embauche.
+3. `formations.0011_rename_..._and_more`
+   - synchronise les noms d’index calculés par Django ;
+   - synchronise le `help_text` historique de `FormationSession.meeting_link` ;
+   - aucune transformation de donnée métier.
+4. `opportunities.0005_alter_opportunity_apply_mode`
+   - synchronise le libellé du choix `internal` vers « Candidature KalanPro » ;
+   - aucune transformation de donnée métier.
 
 Aucune opération `DeleteModel`, `RemoveField` ou suppression de données n’est introduite par ces migrations.
 
@@ -39,14 +46,23 @@ Aucune opération `DeleteModel`, `RemoveField` ou suppression de données n’es
 
 - `python -m compileall -q backend`
 - parsing AST de 187 fonctions de tests backend
-- graphe de 63 migrations : aucun préfixe dupliqué, dépendance projet manquante ou cycle
+- graphe de 65 migrations : aucun préfixe dupliqué, dépendance projet manquante ou cycle
 - `node --test scripts/test-performance.mjs scripts/test-security.mjs scripts/test-employer-role.mjs`
   - résultat : **22/22 tests passés**
 - `node scripts/audit-mobile.mjs`
   - résultat : **123 fichiers inspectés, aucune alerte bloquante**
 - parsing TypeScript/TSX syntaxique des fichiers modifiés avec TypeScript 5.8
 
-L’environnement de fabrication de l’archive ne contient ni Django ni les `node_modules` du frontend. Les tests Django et le type-check Next complet doivent donc être rejoués dans les conteneurs du projet avant tout déploiement public. Le CI du dépôt contient déjà ces étapes.
+Le premier passage Docker réel a ensuite détecté et permis de corriger :
+
+- le verrou PostgreSQL du mentorat sur une relation nullable (`FOR UPDATE` + `slot__session`) ;
+- une barrière admin de paiement qui regardait `base_total_amount` au lieu du montant réellement facturé `total_amount` pour certaines commandes historiques ;
+- deux fixtures de tests devenues obsolètes (cohorte publiée encore en `draft`, gateways déjà précréées par migration) ;
+- l’attente sécurité d’une candidature étrangère, désormais volontairement masquée en `404` ;
+- une erreur TypeScript `unknown` → `ReactNode` dans `assistant/drafts` ;
+- les deux migrations de state Django `formations.0011` et `opportunities.0005`.
+
+L’environnement de fabrication de l’archive ne contient toujours ni Django ni les `node_modules` complets du frontend. Le **second passage** des tests Django et du build Next doit donc être rejoué dans les conteneurs du projet avant de qualifier v78 de stable.
 
 ## Commandes de validation Docker
 
@@ -61,3 +77,15 @@ docker compose -f docker-compose.dev.yml exec frontend npm run build
 
 Ne pas utiliser `docker compose ... down -v` pour cette mise à jour : aucune remise à zéro de PostgreSQL n’est requise.
 
+
+
+## Validation Docker frontend sans collision
+
+Quand `next dev` tourne dans le service `frontend`, utiliser `npm run build:check` et non `npm run build`. Le script construit dans `.next-build-check`, tandis que le serveur dev utilise `/app/.next` monté dans un volume Docker dédié.
+
+## Correctif runtime multipart — profil entreprise
+
+- Les serializers opportunities n'utilisent plus `QueryDict.copy()` sur les requêtes multipart : cette méthode effectue un `deepcopy` incompatible avec `TemporaryUploadedFile` (`BufferedRandom`).
+- Une copie superficielle `MultiValueDict` conserve les fichiers uploadés sans tentative de pickle.
+- Le correctif couvre profil entreprise (logo/bannière), profil candidat (CV), offre (cover image) et candidature (CV).
+- Test de régression ajouté avec deux vrais `TemporaryUploadedFile` PNG sur le profil entreprise.

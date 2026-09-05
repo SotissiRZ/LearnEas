@@ -157,7 +157,10 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"detail": "Transition de statut invalide."}, status=409)
 
         if new_status == Order.Status.PAID:
-            if order.base_total_amount > 0 and order.provider != Order.Provider.MANUAL and not settings.DEBUG:
+            # total_amount est la vérité du montant réellement présenté au prestataire.
+            # Des commandes historiques/tests peuvent avoir base_total_amount=0 tout en
+            # étant payantes : elles ne doivent pas contourner cette barrière de sécurité.
+            if order.total_amount > 0 and order.provider != Order.Provider.MANUAL and not settings.DEBUG:
                 return Response({"detail": "Seuls le webhook/contrôle du prestataire peuvent confirmer une commande externe."}, status=403)
             try:
                 CheckoutView()._fulfill(order)

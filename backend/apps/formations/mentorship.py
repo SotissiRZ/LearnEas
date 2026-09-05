@@ -120,8 +120,12 @@ def reserve_booking(*, user, slot: MentorshipSlot, learner_note="") -> Mentorshi
 
 @transaction.atomic
 def confirm_booking(booking: MentorshipBooking) -> MentorshipBooking:
+    # Ne pas joindre slot__session ici : MentorshipSlot.session est nullable et
+    # PostgreSQL refuse FOR UPDATE sur le côté nullable d'un OUTER JOIN.
+    # Le verrou porte sur la réservation ; session_id suffit pour les contrôles et
+    # la session sera chargée normalement uniquement si nécessaire.
     booking = MentorshipBooking.objects.select_for_update().select_related(
-        "user", "offering", "slot", "slot__session"
+        "user", "offering", "slot"
     ).get(pk=booking.pk)
     if booking.status == MentorshipBooking.Status.CONFIRMED:
         return booking

@@ -10,12 +10,12 @@ export default function PdfCard({ pdf }: { pdf: PDFProduct }) {
   return (
     <Link
       href={`/pdfs/${pdf.slug}`}
-      className="card group flex flex-col overflow-hidden transition hover:-translate-y-1 hover:shadow-soft"
+      className="card catalog-card group flex flex-col overflow-hidden transition hover:-translate-y-1 hover:shadow-soft"
     >
       <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden bg-gradient-to-br from-amber-50 to-orange-50">
         {pdf.cover_image ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img loading="lazy" decoding="async" src={pdf.cover_image} alt={pdf.title} className="h-full w-full object-cover" />
+          <img loading="lazy" decoding="async" src={pdf.cover_image} alt={pdf.title} className="h-full w-full object-cover object-center transition duration-300 group-hover:scale-[1.02]" />
         ) : (
           <FileText size={48} className="text-amber-300" />
         )}
@@ -23,7 +23,7 @@ export default function PdfCard({ pdf }: { pdf: PDFProduct }) {
         <span className="badge absolute right-3 top-3 bg-white/95 text-amber-700 shadow">PDF</span>
       </div>
 
-      <div className="flex flex-1 flex-col gap-2 p-4">
+      <div className="flex flex-1 flex-col gap-1.5 p-3.5 sm:p-4">
         <div className="flex items-center gap-2">
           <LevelBadge level={pdf.level} />
           {pdf.category && <span className="text-xs font-medium text-gray-400">{pdf.category.name}</span>}

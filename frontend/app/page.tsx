@@ -152,7 +152,7 @@ export default async function HomePage() {
             <Link href="/courses" className="flex items-center gap-1 text-sm font-bold text-brand-600">Voir tout <ArrowRight size={16} /></Link>
           </div>
           {featuredCourses.length === 0 ? <p className="text-slate-500">Aucun cours disponible pour le moment.</p> : (
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">{featuredCourses.map((c) => <CourseCard key={c.id} course={c} />)}</div>
+            <div className="grid grid-cols-1 justify-items-center gap-5 sm:grid-cols-2 lg:grid-cols-4">{featuredCourses.map((c) => <CourseCard key={c.id} course={c} />)}</div>
           )}
         </div>
       </section>
@@ -163,7 +163,7 @@ export default async function HomePage() {
           <Link href="/pdfs" className="flex items-center gap-1 text-sm font-bold text-brand-600">Voir tout <ArrowRight size={16} /></Link>
         </div>
         {pdfs.results.length === 0 ? <p className="text-slate-500">Aucun PDF disponible pour le moment.</p> : (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">{pdfs.results.slice(0, 8).map((p) => <PdfCard key={p.id} pdf={p} />)}</div>
+          <div className="grid grid-cols-1 justify-items-center gap-5 sm:grid-cols-2 lg:grid-cols-4">{pdfs.results.slice(0, 8).map((p) => <PdfCard key={p.id} pdf={p} />)}</div>
         )}
       </section>
 

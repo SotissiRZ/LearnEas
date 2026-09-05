@@ -75,7 +75,7 @@ export default async function PdfsPage({ searchParams }: Props) {
               {hasError ? "Le catalogue n'a pas pu être chargé." : "Aucun PDF ne correspond à votre recherche."}
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="catalog-grid">
               {data.results.map((p) => <PdfCard key={p.id} pdf={p} />)}
             </div>
           )}

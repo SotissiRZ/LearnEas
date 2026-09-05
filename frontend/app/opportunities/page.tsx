@@ -64,7 +64,7 @@ export default function OpportunitiesPage() {
 
       <div className="mb-4 flex items-center justify-between gap-3"><p className="text-sm text-gray-500">{loading ? "Recherche..." : `${items.length} opportunité${items.length > 1 ? "s" : ""}`}</p><span className="flex items-center gap-1 text-xs text-gray-400"><SlidersHorizontal size={13} /> Filtres adaptés au marché local</span></div>
       {error && <div className="mb-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</div>}
-      {!loading && items.length === 0 ? <div className="card p-10 text-center text-gray-500">Aucune opportunité ne correspond actuellement à ces critères.</div> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{items.map((item) => <OpportunityCard key={item.id} opportunity={item} />)}</div>}
+      {!loading && items.length === 0 ? <div className="card p-10 text-center text-gray-500">Aucune opportunité ne correspond actuellement à ces critères.</div> : <div className="catalog-grid">{items.map((item) => <OpportunityCard key={item.id} opportunity={item} />)}</div>}
     </div>
   );
 }

@@ -255,7 +255,7 @@ class PaymentAccessRegressionTests(APITestCase):
         create_checkout_mock.return_value = ("https://checkout.stripe.test/live", "cs_live_1")
         formation = InteractiveFormation.objects.create(
             instructor=self.instructor, category=self.course.category, title="Live limité",
-            description="Test", price=Decimal("50.00"), max_students=1, published=True,
+            description="Test", price=Decimal("50.00"), max_students=1, published=True, status="scheduled",
         )
         response = self.client.post(
             "/api/payments/checkout/",
@@ -332,15 +332,18 @@ class PaymentConfigurationTests(APITestCase):
             defaults={"name": "Dirham marocain", "symbol": "MAD", "exchange_rate": Decimal("10.87"), "decimal_places": 2, "is_active": True, "is_default": False},
         )
 
-    def test_admin_can_add_and_remove_unused_supported_gateway(self):
+    def test_admin_can_remove_and_readd_unused_supported_gateway(self):
+        # Les drivers supportés sont précréés par migration. L'admin peut supprimer
+        # un driver inutilisé puis le recréer, mais ne doit jamais créer un doublon.
+        existing = PaymentGateway.objects.get(code="youcanpay")
+        deleted = self.client.delete(f"/api/payments/admin/gateways/{existing.id}/")
+        self.assertEqual(deleted.status_code, status.HTTP_204_NO_CONTENT)
         created = self.client.post(
             "/api/payments/admin/gateways/",
             {"code": "youcanpay", "name": "YouCan Pay", "description": "Maroc", "is_active": False, "sandbox": True, "supported_currencies": ["MAD"], "sort_order": 10},
             format="json",
         )
         self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
-        deleted = self.client.delete(f"/api/payments/admin/gateways/{created.data['id']}/")
-        self.assertEqual(deleted.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_gateway_rejects_unknown_currency(self):
         response = self.client.post(
@@ -369,9 +372,11 @@ class PaymentConfigurationTests(APITestCase):
 
     @patch("apps.payments.views.test_provider")
     def test_admin_can_run_gateway_diagnostic(self, test_provider_mock):
-        gateway = PaymentGateway.objects.create(
-            code="youcanpay", name="YouCan Pay", is_active=False, sandbox=True, supported_currencies=["MAD"]
-        )
+        gateway = PaymentGateway.objects.get(code="youcanpay")
+        gateway.is_active = False
+        gateway.sandbox = True
+        gateway.supported_currencies = ["MAD"]
+        gateway.save(update_fields=["is_active", "sandbox", "supported_currencies"])
         test_provider_mock.return_value = {"ok": True, "detail": "Connexion valide."}
         response = self.client.post(f"/api/payments/admin/gateways/{gateway.id}/test/", {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)

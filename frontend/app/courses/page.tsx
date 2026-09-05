@@ -77,7 +77,7 @@ export default async function CoursesPage({ searchParams }: Props) {
                 : "Aucun cours ne correspond à votre recherche pour le moment."}
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="catalog-grid">
               {data.results.map((c) => <CourseCard key={c.id} course={c} />)}
             </div>
           )}

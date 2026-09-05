@@ -16,7 +16,7 @@ export default function PdfAccessCard({ initialPdf }: { initialPdf: PDFProduct }
       <div className="flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br from-amber-50 to-orange-50">
         {pdf.cover_image ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img loading="lazy" decoding="async" src={pdf.cover_image} alt={pdf.title} className="h-full w-full object-cover" />
+          <img loading="lazy" decoding="async" src={pdf.cover_image} alt={pdf.title} className="h-full w-full object-contain bg-slate-50" />
         ) : (
           <FileText size={56} className="text-amber-300" />
         )}

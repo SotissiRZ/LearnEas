@@ -24,6 +24,18 @@ body { @apply bg-slate-50 text-ink antialiased; }
 .btn-dark { @apply btn border border-white/20 bg-white/5 text-white hover:border-brand-400/60 hover:bg-white/10; }
 
 .card { @apply rounded-xl2 border border-slate-200/80 bg-white shadow-card; }
+/* Cartes catalogue : largeur compacte, aperçus recadrés de façon homogène. */
+.catalog-card { width: 100%; max-width: 20rem; justify-self: center; }
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 20rem));
+  justify-content: center;
+  align-items: start;
+  gap: 1.25rem;
+}
+.catalog-media { @apply relative w-full overflow-hidden bg-slate-100; }
+.catalog-media-backdrop { @apply absolute inset-0 h-full w-full scale-110 object-cover opacity-20 blur-2xl; }
+.catalog-media-foreground { @apply relative z-[1] h-full w-full object-contain; }
 .kalan-panel { @apply rounded-2xl border border-white/10 bg-navy-900/75 shadow-soft backdrop-blur; }
 .kalan-section-title { @apply text-2xl font-black tracking-tight text-navy-950 sm:text-3xl; }
 .kalan-eyebrow { @apply text-xs font-extrabold uppercase tracking-[0.16em] text-brand-600; }

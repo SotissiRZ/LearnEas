@@ -11,8 +11,10 @@ function proxyTarget(value) {
 }
 
 const apiProxyTarget = proxyTarget(process.env.API_PROXY_TARGET);
+const distDir = process.env.NEXT_DIST_DIR || ".next";
 
 const nextConfig = {
+  distDir,
   output: "standalone",
   images: { formats: ["image/avif", "image/webp"] },
   async rewrites() {

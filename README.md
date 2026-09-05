@@ -1,6 +1,6 @@
 # KalanPro
 
-> **v78 — Gouvernance recruteur, monétisation et workflow d’embauche :** droits employeur payés `single_post` / `pro` / `business`, quotas d’offres réellement appliqués, vivier réservé Pro/Business, révocation au remboursement, renouvellements 30 jours chaînés, confidentialité renforcée des talents, journal d’accès candidat, entretiens et offres d’embauche avec réponse candidat, checkout recruteur idempotent et SEO `JobPosting`. Migrations additives uniquement : `payments.0013` puis `opportunities.0004`. Voir [`docs/VALIDATION_V78.md`](./docs/VALIDATION_V78.md).
+> **v78 — Gouvernance recruteur, monétisation et workflow d’embauche :** droits employeur payés `single_post` / `pro` / `business`, quotas d’offres réellement appliqués, vivier réservé Pro/Business, révocation au remboursement, renouvellements 30 jours chaînés, confidentialité renforcée des talents, journal d’accès candidat, entretiens et offres d’embauche avec réponse candidat, checkout recruteur idempotent et SEO `JobPosting`. Migrations additives uniquement : `payments.0013`, `opportunities.0004`, puis les migrations de synchronisation `formations.0011` et `opportunities.0005`. Voir [`docs/VALIDATION_V78.md`](./docs/VALIDATION_V78.md).
 
 > **v77 — correctif identité entreprise :** suppression du chevauchement logo/bannière dans le profil employeur ; le logo possède désormais sa propre ligne responsive sous la bannière.
 
@@ -605,3 +605,20 @@ Entreprise : Demo Digital Africa
 ```
 
 Voir également `docs/EMPLOYER_ROLE_V73.md` et `docs/EMPLOI_MISSIONS.md`.
+
+
+### Validation du frontend pendant que le serveur dev tourne
+
+Ne lancez pas `npm run build` dans le même conteneur que `next dev` : les deux commandes utilisent `.next` et peuvent supprimer les manifests l’une de l’autre. Utilisez :
+
+```bash
+docker compose -f docker-compose.dev.yml exec frontend npm run build:check
+```
+
+Le cache `.next` du serveur de développement est isolé dans un volume Docker et `build:check` utilise un répertoire de build séparé.
+
+### Ajustement visuels cartes / détails (v78)
+- Les cartes catalogue reviennent à un aperçu recadré uniforme (`object-cover`) pour préserver une grille compacte et lisible.
+- Les cartes restent limitées à 20rem de large.
+- Sur les opportunités, le clic mène à la fiche détail où le visuel est affiché intégralement (`object-contain`, hauteur max 78vh), avec accès à l’image originale.
+- Cours, formations, PDF et projets portfolio conservent également des aperçus recadrés dans les listes.

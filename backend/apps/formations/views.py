@@ -1012,8 +1012,10 @@ class MentorshipBookingViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def cancel(self, request, pk=None):
         visible = self.get_object()
+        # slot.session est nullable : l'inclure dans select_related() avec FOR UPDATE
+        # provoque une erreur PostgreSQL (verrou sur le côté nullable d'un OUTER JOIN).
         booking = MentorshipBooking.objects.select_for_update().select_related(
-            "user", "offering", "slot", "slot__session"
+            "user", "offering", "slot"
         ).get(pk=visible.pk)
         can_manage = request.user.role == "admin" or booking.user_id == request.user.id or booking.offering.instructor_id == request.user.id
         if not can_manage:

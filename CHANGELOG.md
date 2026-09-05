@@ -15,7 +15,7 @@
 - SEO emploi : métadonnées dynamiques, canonical/OpenGraph et JSON-LD Schema.org `JobPosting`.
 - Validation finale v78 : une candidature déjà rejetée ne peut plus être rouverte par création d’offre ; un remboursement tardif d’une période déjà entièrement consommée ne décale plus les périodes suivantes ; mapping SEO corrigé pour les vrais contrats `fixed_term`/`permanent`.
 - Le journal candidat est déclenché lors de l’ouverture réelle du dossier ATS ; le dashboard candidat évite le N+1 réseau entretien/offre sur les candidatures qui n’ont pas encore atteint ces étapes.
-- Migrations additives : `payments.0013_employer_entitlement_code` et `opportunities.0004_employer_governance`. Aucune suppression de table ou de donnée.
+- Migrations additives : `payments.0013_employer_entitlement_code`, `opportunities.0004_employer_governance`, `formations.0011` et `opportunities.0005`. Aucune suppression de table ou de donnée.
 
 # v75 — Recruiter Workspace, ATS & marque employeur
 
@@ -1150,3 +1150,52 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Ajoute un cache du nombre d'offres ouvertes dans le serializer entreprise afin d'éviter un N+1 SQL sur les listes d'offres.
 - Le dashboard recruteur charge désormais ses modules avec `Promise.allSettled` : une panne d'un module secondaire n'efface plus toutes les statistiques et listes déjà disponibles.
 - Ajoute des tests de régression dédiés aux listes recruteur et au compteur d'offres publiques.
+
+### Correctifs de validation Docker v78
+- Correction PostgreSQL du mentorat : aucun `FOR UPDATE` n'est appliqué à la relation nullable `slot.session`.
+- Renforcement sécurité : une commande externe payante ne peut plus être forcée à `paid` en production lorsque `base_total_amount` historique vaut zéro.
+- Tests paiement alignés sur les gateways précréées et sur l'état `scheduled` requis pour une cohorte publiée.
+- Test opportunités aligné sur le masquage 404 des candidatures d'un tiers.
+- Ajout des migrations `formations/0011` et `opportunities/0005` détectées par `makemigrations --check`.
+- Correction TypeScript de `assistant/drafts` (`unknown` n'est plus rendu comme `ReactNode`).
+
+- Docker dev : isolation de `/app/.next` dans un volume dédié et ajout de `npm run build:check` avec un `distDir` séparé, afin qu’un build de validation lancé pendant `next dev` ne puisse plus supprimer `middleware-manifest.json` ou `_buildManifest.js`.
+
+### v78 — correctif runtime multipart entreprise
+- Correction du `500` lors de l'envoi du logo ou de la bannière entreprise : les `TemporaryUploadedFile` ne sont plus deep-copiés par `QueryDict.copy()`.
+- Généralisation du correctif aux CV candidat, visuels d'offres et CV de candidature.
+- Ajout d'un test multipart avec fichiers temporaires réels pour reproduire le flux Django de production.
+
+### Correctif v78 — multipart JSON profil entreprise
+- Corrige la validation `values`, `benefits` et `hiring_regions` lors d’un PATCH multipart logo/bannière : les données sont converties en `dict` Python superficiel avant décodage JSON, évitant à la fois le `deepcopy` des fichiers et le double décodage JSON de DRF.
+- Le correctif multipart-safe s’applique aussi aux CV candidat, visuels d’offres et CV de candidature via le helper commun.
+- Le test de régression utilise désormais un PNG valide et vérifie simultanément logo, bannière et les trois champs JSON du profil entreprise.
+- Aucune migration ni modification destructive de données.
+
+### Correctif v78 — proportions des cartes catalogue
+- Réduit la largeur maximale des cartes catalogue à `22rem` et centre automatiquement les cartes disponibles, y compris lorsqu'une ligne n'est pas complète.
+- Remplace les grilles fixes par une grille `auto-fit` sur Cours, Formations, PDF, Opportunités, Mentorat, Instructeurs, Portfolio et recommandations candidat.
+- Augmente la présence visuelle des cartes Opportunités, Cours et Formations avec un ratio `16/10`; les PDF conservent leur ratio `4/3` adapté aux couvertures de documents.
+- Les opportunités sans visuel affichent désormais un fallback de marque propre au lieu de supprimer entièrement la zone média.
+- Réduit l'espace blanc inutile sous les informations d'une opportunité et sépare clairement la rémunération par une bordure légère.
+- Le visuel de la page détail d'une opportunité est moins panoramique afin de préserver davantage de l'image source.
+- Aucun changement backend, migration ou donnée.
+
+### v78 — Cartes catalogue : visuels non recadrés
+- Les images des opportunités, cours, formations, PDF et projets portfolio sont désormais affichées intégralement avec `object-contain` et un fond flouté discret, au lieu d'être coupées par `object-cover`.
+- Les cartes catalogue passent de 22rem à 20rem de largeur maximale et conservent une grille auto-fit centrée.
+- Les cartes opportunité ont été réorganisées : entreprise + type en tête, titre pleine largeur, métadonnées compactes en grille, 3 compétences visibles + compteur, rémunération en pied de carte.
+- Le visuel de détail d'une opportunité n'est plus recadré.
+
+### v78 — Ajustement final des visuels catalogue
+- Suppression du rendu `object-contain` dans un cadre 16:9 qui réduisait les affiches verticales.
+- Les visuels d’opportunités, cours, formations, PDF et portfolio sont désormais affichés à largeur complète avec leur ratio naturel (`height:auto`) et sans recadrage.
+- Suppression du fond flouté derrière les visuels de cartes.
+- Bloc texte des opportunités légèrement compacté pour donner davantage de place au média.
+- Aucun changement backend ni migration.
+
+### Ajustement visuels cartes / détails (v78)
+- Les cartes catalogue reviennent à un aperçu recadré uniforme (`object-cover`) pour préserver une grille compacte et lisible.
+- Les cartes restent limitées à 20rem de large.
+- Sur les opportunités, le clic mène à la fiche détail où le visuel est affiché intégralement (`object-contain`, hauteur max 78vh), avec accès à l’image originale.
+- Cours, formations, PDF et projets portfolio conservent également des aperçus recadrés dans les listes.

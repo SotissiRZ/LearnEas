@@ -136,7 +136,9 @@ def revoke_order_entitlements(order: Order, *, actor=None, reason: str = "Comman
                 revoked["formations"] += 1
 
         if item.mentorship_booking_id:
-            booking = MentorshipBooking.objects.select_for_update().select_related("slot__session").filter(
+            # slot.session est nullable : ne pas l'inclure dans la requête FOR UPDATE
+            # PostgreSQL, sinon le LEFT OUTER JOIN rend le verrou invalide.
+            booking = MentorshipBooking.objects.select_for_update().select_related("slot", "user").filter(
                 pk=item.mentorship_booking_id,
                 status=MentorshipBooking.Status.CONFIRMED,
             ).first()

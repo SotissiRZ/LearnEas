@@ -10,7 +10,8 @@
     "audit:mobile": "node scripts/audit-mobile.mjs",
     "test:security": "node --test scripts/test-security.mjs",
     "test:performance": "node --test scripts/test-performance.mjs",
-    "test:roles": "node --test scripts/test-employer-role.mjs"
+    "test:roles": "node --test scripts/test-employer-role.mjs",
+    "build:check": "node scripts/build-check.mjs"
   },
   "dependencies": {
     "next": "15.5.21",
