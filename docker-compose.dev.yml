@@ -40,6 +40,8 @@ services:
     environment:
       SECRET_KEY: dev-secret-key
       DEBUG: "True"
+      LOG_FORMAT: ${LOG_FORMAT:-console}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TEST_PAYMENTS_ENABLED: "True"
       ANON_THROTTLE_RATE: "10000/hour"
       USER_THROTTLE_RATE: "30000/hour"
@@ -75,10 +77,15 @@ services:
       DB_WAIT_MAX_ATTEMPTS: ${DB_WAIT_MAX_ATTEMPTS:-30}
       DB_WAIT_DELAY_SECONDS: ${DB_WAIT_DELAY_SECONDS:-2}
       DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-3}
+      MAX_IMAGE_UPLOAD_MB: ${MAX_IMAGE_UPLOAD_MB:-15}
+      MAX_IMAGE_DIMENSION: ${MAX_IMAGE_DIMENSION:-12000}
+      MAX_IMAGE_PIXELS: ${MAX_IMAGE_PIXELS:-60000000}
+      CLIENT_TELEMETRY_THROTTLE_RATE: ${CLIENT_TELEMETRY_THROTTLE_RATE:-60/hour}
     volumes:
       - ./backend:/app
       - static_data_dev:/app/staticfiles
       - media_data_dev:/app/media
+      - backup_data_dev:/app/backups
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
@@ -87,7 +94,7 @@ services:
       redis:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health/ || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health/ready/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -108,6 +115,9 @@ services:
       NEXT_PUBLIC_API_URL: /api
       API_PROXY_TARGET: http://backend:8000
       NEXT_PUBLIC_API_TIMEOUT_MS: ${NEXT_PUBLIC_API_TIMEOUT_MS:-15000}
+      NEXT_PUBLIC_UPLOAD_TIMEOUT_MS: ${NEXT_PUBLIC_UPLOAD_TIMEOUT_MS:-600000}
+      NEXT_PUBLIC_UPLOAD_PART_TIMEOUT_MS: ${NEXT_PUBLIC_UPLOAD_PART_TIMEOUT_MS:-300000}
+      PUBLIC_API_TIMEOUT_MS: ${PUBLIC_API_TIMEOUT_MS:-8000}
       NEXT_PUBLIC_WS_URL: ws://localhost:${BACKEND_PORT:-8000}/ws
       # Comme en production : côté serveur (SSR), "localhost" désignerait ce conteneur
       # lui-même. On utilise le nom du service Docker pour joindre le backend en interne.
@@ -136,3 +146,4 @@ volumes:
   media_data_dev:
   frontend_node_modules:
   frontend_next_dev:
+  backup_data_dev:

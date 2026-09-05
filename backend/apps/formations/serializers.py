@@ -1,7 +1,9 @@
+from django.conf import settings
 from rest_framework import serializers
 from apps.accounts.serializers import UserPublicCompactSerializer
 from apps.catalog.serializers import CategoryCompactSerializer
 from apps.common.fields import RelativeImageField
+from apps.common.media_metadata import validate_upload_limits
 from .models import (
     InteractiveFormation, FormationSession, FormationEnrollment, FormationAttendance, FormationSessionInvite,
     MentorshipOffering, MentorshipSlot, MentorshipBooking,
@@ -179,6 +181,14 @@ class InteractiveFormationWriteSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
+        thumbnail = attrs.get("thumbnail")
+        if thumbnail:
+            validate_upload_limits(
+                thumbnail,
+                max_bytes=settings.MAX_IMAGE_UPLOAD_MB * 1024 * 1024,
+                extensions={".jpg", ".jpeg", ".png", ".webp", ".avif"},
+                field="thumbnail",
+            )
         start = attrs.get("start_date", getattr(self.instance, "start_date", None))
         end = attrs.get("end_date", getattr(self.instance, "end_date", None))
         if start and end and end < start:

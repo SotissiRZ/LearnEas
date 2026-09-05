@@ -12,18 +12,36 @@ admin.site.site_header = "KalanPro · Administration"
 admin.site.site_title = "KalanPro Admin"
 admin.site.index_title = "Centre de contrôle KalanPro"
 
-def health(request):
+def health_live(request):
+    # Liveness : ne dépend d'aucun service externe. Un orchestrateur ne doit pas
+    # redémarrer Django simplement parce que PostgreSQL/Redis est momentanément indisponible.
+    return JsonResponse({"status": "ok"})
+
+
+def health_ready(request):
+    checks = {"database": "error", "cache": "error"}
     try:
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
+            cursor.fetchone()
+        checks["database"] = "ok"
         cache.set("healthcheck", "ok", 5)
-        if cache.get("healthcheck") != "ok": raise RuntimeError("cache")
-        return JsonResponse({"status": "ok"})
+        if cache.get("healthcheck") != "ok":
+            raise RuntimeError("cache")
+        checks["cache"] = "ok"
     except Exception:
-        return JsonResponse({"status": "error"}, status=503)
+        return JsonResponse({"status": "error", "checks": checks}, status=503)
+    return JsonResponse({"status": "ok", "checks": checks})
+
+
+def health(request):
+    # Alias historique conservé pour Docker/Railway.
+    return health_ready(request)
 
 urlpatterns = [
     path("api/health/", health),
+    path("api/health/live/", health_live),
+    path("api/health/ready/", health_ready),
     path("admin/", admin.site.urls),
 
     path("api/", include("apps.common.urls")),

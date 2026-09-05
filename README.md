@@ -622,3 +622,35 @@ Le cache `.next` du serveur de développement est isolé dans un volume Docker e
 - Les cartes restent limitées à 20rem de large.
 - Sur les opportunités, le clic mène à la fiche détail où le visuel est affiché intégralement (`object-contain`, hauteur max 78vh), avec accès à l’image originale.
 - Cours, formations, PDF et projets portfolio conservent également des aperçus recadrés dans les listes.
+
+## Fondation production côté code (v79)
+
+La v79 ajoute des garde-fous techniques sans changer les règles métier ni le schéma de données : CI complète, healthchecks liveness/readiness, `X-Request-ID`, logs JSON, résilience du refresh JWT aux pannes temporaires, timeouts réseau, limites de dimensions d'images, error boundaries frontend, scan interne de secrets et commandes de sauvegarde PostgreSQL.
+
+Sondes :
+
+```text
+/api/health/live/   # processus Django uniquement
+/api/health/ready/  # PostgreSQL + Redis/cache
+/api/health/        # alias historique de ready
+```
+
+Sauvegarde locale Docker :
+
+```bash
+docker compose -f docker-compose.dev.yml exec backend python manage.py backup_database
+```
+
+Ne restaurez jamais un dump de test directement dans la base de travail. Une restauration doit d'abord être validée sur une base séparée/non-production.
+
+Release gate v79 :
+
+```bash
+docker compose -f docker-compose.dev.yml exec backend python manage.py check
+docker compose -f docker-compose.dev.yml exec backend python manage.py makemigrations --check --dry-run
+docker compose -f docker-compose.dev.yml exec backend python manage.py test
+docker compose -f docker-compose.dev.yml exec frontend npm run test:ci
+docker compose -f docker-compose.dev.yml exec frontend npm run build:check
+```
+
+La configuration et les détails sont documentés dans `docs/V79_CODE_FOUNDATION.md`.

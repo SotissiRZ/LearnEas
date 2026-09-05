@@ -23,3 +23,6 @@ class AdminTestRateThrottle(UserRateThrottle):
 
 class WebhookRateThrottle(AnonRateThrottle):
     scope = "webhook"
+
+class ClientTelemetryRateThrottle(AnonRateThrottle):
+    scope = "client_telemetry"

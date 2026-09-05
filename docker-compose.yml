@@ -3,6 +3,8 @@ x-backend-env: &backend-env
   # définir explicitement DEBUG=False et une SECRET_KEY forte dans les variables d’environnement.
   SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-me}
   DEBUG: ${DEBUG:-True}
+  LOG_FORMAT: ${LOG_FORMAT:-console}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
   TEST_PAYMENTS_ENABLED: ${TEST_PAYMENTS_ENABLED:-True}
   ANON_THROTTLE_RATE: ${ANON_THROTTLE_RATE:-10000/hour}
   USER_THROTTLE_RATE: ${USER_THROTTLE_RATE:-30000/hour}
@@ -68,6 +70,9 @@ x-backend-env: &backend-env
   MAX_VIDEO_UPLOAD_MB: ${MAX_VIDEO_UPLOAD_MB:-2048}
   MAX_PDF_UPLOAD_MB: ${MAX_PDF_UPLOAD_MB:-100}
   MAX_IMAGE_UPLOAD_MB: ${MAX_IMAGE_UPLOAD_MB:-15}
+  MAX_IMAGE_DIMENSION: ${MAX_IMAGE_DIMENSION:-12000}
+  MAX_IMAGE_PIXELS: ${MAX_IMAGE_PIXELS:-60000000}
+  CLIENT_TELEMETRY_THROTTLE_RATE: ${CLIENT_TELEMETRY_THROTTLE_RATE:-60/hour}
   PRIVATE_MEDIA_TOKEN_MAX_AGE: ${PRIVATE_MEDIA_TOKEN_MAX_AGE:-900}
   HLS_MEDIA_TOKEN_MAX_AGE: ${HLS_MEDIA_TOKEN_MAX_AGE:-21600}
   MALWARE_SCAN_ENABLED: ${MALWARE_SCAN_ENABLED:-False}
@@ -166,6 +171,7 @@ services:
     volumes:
       - static_data:/app/staticfiles
       - media_data:/app/media
+      - backup_data:/app/backups
     depends_on:
       db:
         condition: service_healthy
@@ -176,7 +182,7 @@ services:
     expose:
       - "8000"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health/ || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health/ready/ || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -242,23 +248,25 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # URL relative par défaut : le navigateur appelle toujours l'API sur SA PROPRE origine
-        # (que le site soit ouvert via http://localhost ou http://127.0.0.1), nginx la route en
-        # interne vers le backend. Ne mettez une valeur absolue ici que pour un déploiement avec
-        # un domaine public dédié différent du domaine du frontend.
+        # Les NEXT_PUBLIC_* sont figées dans le bundle navigateur au build.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+        NEXT_PUBLIC_API_TIMEOUT_MS: ${NEXT_PUBLIC_API_TIMEOUT_MS:-15000}
+        NEXT_PUBLIC_UPLOAD_TIMEOUT_MS: ${NEXT_PUBLIC_UPLOAD_TIMEOUT_MS:-600000}
+        NEXT_PUBLIC_UPLOAD_PART_TIMEOUT_MS: ${NEXT_PUBLIC_UPLOAD_PART_TIMEOUT_MS:-300000}
         NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-}
         NEXT_PUBLIC_MAX_VIDEO_UPLOAD_MB: ${MAX_VIDEO_UPLOAD_MB:-2048}
         NEXT_PUBLIC_MEDIA_ORIGIN: ${NEXT_PUBLIC_MEDIA_ORIGIN:-}
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+      NEXT_PUBLIC_API_TIMEOUT_MS: ${NEXT_PUBLIC_API_TIMEOUT_MS:-15000}
+      NEXT_PUBLIC_UPLOAD_TIMEOUT_MS: ${NEXT_PUBLIC_UPLOAD_TIMEOUT_MS:-600000}
+      NEXT_PUBLIC_UPLOAD_PART_TIMEOUT_MS: ${NEXT_PUBLIC_UPLOAD_PART_TIMEOUT_MS:-300000}
+      PUBLIC_API_TIMEOUT_MS: ${PUBLIC_API_TIMEOUT_MS:-8000}
       NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-}
       NEXT_PUBLIC_MAX_VIDEO_UPLOAD_MB: ${MAX_VIDEO_UPLOAD_MB:-2048}
       NEXT_PUBLIC_MEDIA_ORIGIN: ${NEXT_PUBLIC_MEDIA_ORIGIN:-}
-      # URL interne au réseau Docker, utilisée UNIQUEMENT côté serveur (rendu SSR des pages
-      # catalogue/détail) — "backend" est le nom du service ci-dessous, résolu par le DNS interne
-      # de Docker. Ne pas mettre "localhost" ici : depuis CE conteneur, localhost = lui-même.
+      # URL interne au réseau Docker, utilisée uniquement côté SSR.
       INTERNAL_API_URL: http://backend:8000/api
     depends_on:
       backend:
@@ -268,8 +276,6 @@ services:
     expose:
       - "3000"
     healthcheck:
-      # Ne jamais sonder `/` : la page d'accueil est un Server Component qui charge
-      # catégories/cours/PDF et consommerait le quota DRF à chaque healthcheck.
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s
       timeout: 5s
@@ -302,3 +308,4 @@ volumes:
   redis_data:
   static_data:
   media_data:
+  backup_data:

@@ -91,3 +91,31 @@ test("cartes catalogue recadrent les apercus et la fiche opportunite affiche le 
   assert.match(opportunityDetail, /Ouvrir le visuel original/);
   assert.doesNotMatch(css, /catalog-media-natural/);
 });
+
+
+test("v79 refresh JWT distingue expiration et indisponibilite temporaire", () => {
+  const api = read("lib/api.ts");
+  const auth = read("hooks/useAuth.ts");
+  assert.match(api, /response\.status === 401 \|\| response\.status === 403/);
+  assert.match(api, /lastRefreshFailure = "invalid"/);
+  assert.match(api, /lastRefreshFailure = "unavailable"/);
+  assert.match(auth, /session\.reason !== "unavailable"/);
+});
+
+test("v79 uploads et telechargements critiques sont bornes", () => {
+  const api = read("lib/api.ts");
+  const multipart = read("lib/directMultipartUpload.ts");
+  assert.match(api, /NEXT_PUBLIC_UPLOAD_TIMEOUT_MS/);
+  assert.match(api, /xhr\.timeout = UPLOAD_TIMEOUT_MS/);
+  assert.match(api, /xhr\.ontimeout/);
+  assert.match(api, /fetchWithTimeout\(`\$\{API_URL\}\$\{path\}`/);
+  assert.match(multipart, /NEXT_PUBLIC_UPLOAD_PART_TIMEOUT_MS/);
+  assert.match(multipart, /xhr\.timeout = UPLOAD_PART_TIMEOUT_MS/);
+});
+
+test("v79 erreurs serveur exposent une reference de correlation", () => {
+  const api = read("lib/api.ts");
+  assert.match(api, /X-Request-ID/);
+  assert.match(api, /Référence/);
+  assert.match(api, /requestId/);
+});

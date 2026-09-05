@@ -25,6 +25,13 @@ type CompletedPart = {
   ETag: string;
 };
 
+function readUploadPartTimeoutMs(): number {
+  const parsed = Number(process.env.NEXT_PUBLIC_UPLOAD_PART_TIMEOUT_MS);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.max(60000, Math.floor(parsed)) : 300000;
+}
+
+const UPLOAD_PART_TIMEOUT_MS = readUploadPartTimeoutMs();
+
 function uploadPart(
   url: string,
   blob: Blob,
@@ -33,6 +40,7 @@ function uploadPart(
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url, true);
+    xhr.timeout = UPLOAD_PART_TIMEOUT_MS;
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(event.loaded);
     };
@@ -51,6 +59,7 @@ function uploadPart(
       resolve(etag);
     };
     xhr.onerror = () => reject(new ApiError("Connexion interrompue pendant l'envoi d'un bloc vidéo."));
+    xhr.ontimeout = () => reject(new ApiError("L'envoi d'un bloc vidéo a expiré ; KalanPro va réessayer automatiquement."));
     xhr.onabort = () => reject(new ApiError("Upload vidéo annulé."));
     xhr.send(blob);
   });

@@ -23,12 +23,14 @@ from typing import Any
 from django.conf import settings
 from django.core.files.uploadedfile import TemporaryUploadedFile
 from pypdf import PdfReader
+from PIL import Image, UnidentifiedImageError
 from rest_framework import serializers
 
 
 BROWSER_SAFE_VIDEO_CODEC = "h264"
 BROWSER_SAFE_AUDIO_CODECS = {None, "aac"}
 BROWSER_SAFE_PIXEL_FORMATS = {"yuv420p", "yuvj420p"}
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".avif"}
 
 
 def _reset_stream(file_obj, position: int | None) -> None:
@@ -396,6 +398,39 @@ def validate_upload_signature(file_obj, *, suffix: str, field: str, max_bytes: i
         scan_upload(file_obj, field=field)
 
 
+
+def validate_image_dimensions(file_obj, *, field: str = "file") -> None:
+    """Bloque les images démesurées / decompression bombs sans décoder tout le bitmap."""
+    if not file_obj:
+        return
+    position = None
+    try:
+        position = file_obj.tell()
+    except (AttributeError, OSError):
+        pass
+    try:
+        file_obj.seek(0)
+        with Image.open(file_obj) as image:
+            width, height = map(int, image.size)
+        max_dimension = int(getattr(settings, "MAX_IMAGE_DIMENSION", 12000))
+        max_pixels = int(getattr(settings, "MAX_IMAGE_PIXELS", 60_000_000))
+        if width <= 0 or height <= 0:
+            raise serializers.ValidationError({field: "Dimensions d'image invalides."})
+        if width > max_dimension or height > max_dimension:
+            raise serializers.ValidationError({
+                field: f"Image trop grande : dimension maximale {max_dimension} px."
+            })
+        if width * height > max_pixels:
+            raise serializers.ValidationError({
+                field: f"Image trop grande : maximum {max_pixels:,} pixels.".replace(",", " ")
+            })
+    except serializers.ValidationError:
+        raise
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise serializers.ValidationError({field: "Image invalide ou corrompue."}) from exc
+    finally:
+        _reset_stream(file_obj, position)
+
 def validate_upload_limits(file_obj, *, max_bytes: int, extensions: set[str], field: str = "file") -> None:
     """Validation serveur minimale commune : taille + extension normalisée.
 
@@ -413,3 +448,5 @@ def validate_upload_limits(file_obj, *, max_bytes: int, extensions: set[str], fi
         allowed = ", ".join(sorted(extensions))
         raise serializers.ValidationError({field: f"Format non autorisé. Formats acceptés : {allowed}."})
     validate_upload_signature(file_obj, suffix=suffix, field=field, max_bytes=max_bytes)
+    if suffix in _IMAGE_EXTENSIONS:
+        validate_image_dimensions(file_obj, field=field)

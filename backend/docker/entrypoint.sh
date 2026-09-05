@@ -3,6 +3,16 @@ set -euo pipefail
 
 echo "== KalanPro backend entrypoint =="
 
+# Garde-fou indépendant de Django : aucune donnée de démonstration en production.
+case "${DEBUG:-True}" in
+  False|false|0|no|NO)
+    case "${SEED_DEMO:-false}" in
+      True|true|1|yes|YES) echo "SEED_DEMO=true interdit avec DEBUG=false." >&2; exit 1 ;;
+    esac
+  ;;
+esac
+
+
 if [ "${SKIP_BOOTSTRAP:-false}" != "true" ]; then
   # --- Attente de la base de données (PostgreSQL) ---
   # Le test est volontairement effectué directement avec psycopg2 plutôt qu'après

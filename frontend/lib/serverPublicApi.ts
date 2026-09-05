@@ -2,7 +2,10 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 
 const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://backend:8000/api";
-const PUBLIC_API_TIMEOUT_MS = Math.max(2000, Number(process.env.PUBLIC_API_TIMEOUT_MS || 8000));
+const parsedPublicTimeout = Number(process.env.PUBLIC_API_TIMEOUT_MS);
+const PUBLIC_API_TIMEOUT_MS = Number.isFinite(parsedPublicTimeout) && parsedPublicTimeout > 0
+  ? Math.max(2000, Math.floor(parsedPublicTimeout))
+  : 8000;
 
 type CachedResult<T> = { data: T; ok: boolean; error?: string };
 type CacheTtl = 15 | 30 | 60 | 300;

@@ -34,7 +34,9 @@ export const useAuth = create<AuthState>((set, get) => ({
     try {
       const session = await restoreAccessToken<AuthUser>();
       if (!session.restored || !session.user) {
-        persistPublicUser(null);
+        // Une indisponibilité temporaire de l'API n'est pas une révocation de session.
+        // On garde le profil public en cache pour permettre une restauration au prochain reload.
+        if (session.reason !== "unavailable") persistPublicUser(null);
         set({ user: null, hydrated: true });
         return;
       }

@@ -1199,3 +1199,16 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Les cartes restent limitées à 20rem de large.
 - Sur les opportunités, le clic mène à la fiche détail où le visuel est affiché intégralement (`object-contain`, hauteur max 78vh), avec accès à l’image originale.
 - Cours, formations, PDF et projets portfolio conservent également des aperçus recadrés dans les listes.
+
+## v79 — Fondation production côté code (2026-09-05)
+- CI GitHub Actions complète : scan de secrets, Compose/entrypoint, `pip check`, Django check/migrations/tests, `check --deploy`, tests/typecheck/audit mobile et build Next.
+- Healthchecks séparés `/api/health/live/` et `/api/health/ready/`; Docker sonde la readiness PostgreSQL + Redis/cache.
+- `X-Request-ID` de bout en bout, logs corrélés avec durée/statut et format JSON en production; les 5xx frontend affichent une référence exploitable.
+- Le refresh JWT ne déconnecte plus artificiellement l'utilisateur lors d'un timeout, d'une coupure réseau ou d'un `5xx`; seuls `401/403` invalident la session.
+- Timeouts configurables pour appels API, uploads XHR, blocs multipart directs et téléchargements privés.
+- Uploads image durcis par limites de dimension et de pixels, y compris avatar/miniatures, avec rejet des images invalides ou démesurées.
+- Error boundaries Next + endpoint de télémétrie client minimal et throttlé, sans message libre ni stack trace.
+- Garde-fous production renforcés (`SEED_DEMO`, CORS/realtime explicites, HTTPS, cookies, paiements de test) et refus de seed démo dès l'entrypoint.
+- Sauvegarde/restauration PostgreSQL via commandes Django et `postgresql-client`, avec volumes dédiés aux dumps.
+- `.gitignore` racine, nettoyage systématique de `.next-build-check` et validation interne de secrets à haute confiance.
+- Aucun changement métier ni migration de données.

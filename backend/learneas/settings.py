@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     "channels",
 
     # local apps
+    "apps.common",
     "apps.accounts",
     "apps.catalog",
     "apps.enrollments",
@@ -47,6 +48,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "apps.common.middleware.request_id_middleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -130,6 +132,8 @@ MEDIA_ROOT = BASE_DIR / "media"
 MAX_VIDEO_UPLOAD_MB = config("MAX_VIDEO_UPLOAD_MB", default=2048, cast=int)
 MAX_PDF_UPLOAD_MB = config("MAX_PDF_UPLOAD_MB", default=100, cast=int)
 MAX_IMAGE_UPLOAD_MB = config("MAX_IMAGE_UPLOAD_MB", default=15, cast=int)
+MAX_IMAGE_DIMENSION = config("MAX_IMAGE_DIMENSION", default=12000, cast=int)
+MAX_IMAGE_PIXELS = config("MAX_IMAGE_PIXELS", default=60_000_000, cast=int)
 MAX_PROJECT_UPLOAD_MB = config("MAX_PROJECT_UPLOAD_MB", default=50, cast=int)
 FILE_UPLOAD_MAX_MEMORY_SIZE = config("FILE_UPLOAD_MAX_MEMORY_SIZE", default=2 * 1024 * 1024, cast=int)
 
@@ -247,6 +251,7 @@ REST_FRAMEWORK = {
         "admin_test": "30/hour",
         "webhook": "3000/hour",
         "certificate_verify": config("CERTIFICATE_VERIFY_THROTTLE_RATE", default="300/hour"),
+        "client_telemetry": config("CLIENT_TELEMETRY_THROTTLE_RATE", default="60/hour"),
         "ai": config("AI_THROTTLE_RATE", default="60/min" if DEBUG else "30/min"),
     },
 }
@@ -451,6 +456,44 @@ CELERY_BEAT_SCHEDULE = {
 }
 
 
+
+
+# ---------------------------------------------------------------------------
+# Logs / observabilité
+# ---------------------------------------------------------------------------
+LOG_LEVEL = config("LOG_LEVEL", default="INFO").upper()
+LOG_FORMAT = config("LOG_FORMAT", default="console" if DEBUG else "json").lower()
+if LOG_FORMAT not in {"console", "json"}:
+    raise RuntimeError("LOG_FORMAT doit valoir 'console' ou 'json'.")
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "request_context": {"()": "apps.common.logging.RequestContextFilter"},
+    },
+    "formatters": {
+        "console": {
+            "format": "%(asctime)s %(levelname)s %(name)s [request_id=%(request_id)s] %(message)s",
+        },
+        "json": {"()": "apps.common.logging.JsonFormatter"},
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "filters": ["request_context"],
+            "formatter": LOG_FORMAT,
+        },
+    },
+    "root": {"handlers": ["console"], "level": LOG_LEVEL},
+    "loggers": {
+        "django.server": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
+        "django.request": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
+        "kalanpro.request": {"handlers": ["console"], "level": "INFO", "propagate": False},
+    },
+}
+
+
 # ---------------------------------------------------------------------------
 # Sécurité production — activée uniquement si DEBUG=False.
 # IMPORTANT : les cookies "Secure" (SESSION_COOKIE_SECURE / CSRF_COOKIE_SECURE) ne doivent être
@@ -488,6 +531,21 @@ if not DEBUG:
         raise RuntimeError("AUTH_REFRESH_COOKIE_SECURE=False est interdit en production.")
     if TEST_PAYMENTS_ENABLED:
         raise RuntimeError("TEST_PAYMENTS_ENABLED=True est interdit en production.")
+    if config("SEED_DEMO", default=False, cast=bool):
+        raise RuntimeError("SEED_DEMO=True est interdit en production.")
+    if not CORS_ALLOWED_ORIGINS or any(str(origin).strip() == "*" for origin in CORS_ALLOWED_ORIGINS):
+        raise RuntimeError("CORS_ALLOWED_ORIGINS doit contenir uniquement des origines explicites en production.")
+    if USE_HTTPS:
+        for label, value in (("FRONTEND_URL", FRONTEND_URL), ("BACKEND_PUBLIC_URL", BACKEND_PUBLIC_URL)):
+            if not str(value).lower().startswith("https://"):
+                raise RuntimeError(f"{label} doit utiliser https:// lorsque USE_HTTPS=True.")
+        for label, origins in (
+            ("CORS_ALLOWED_ORIGINS", CORS_ALLOWED_ORIGINS),
+            ("REALTIME_ALLOWED_ORIGINS", REALTIME_ALLOWED_ORIGINS),
+            ("CSRF_TRUSTED_ORIGINS", CSRF_TRUSTED_ORIGINS),
+        ):
+            if any(not str(origin).lower().startswith("https://") for origin in origins):
+                raise RuntimeError(f"{label} doit contenir uniquement des origines https:// lorsque USE_HTTPS=True.")
     if not REALTIME_ALLOWED_ORIGINS or any(
         str(origin).strip() in {"*", "http://*", "https://*"} for origin in REALTIME_ALLOWED_ORIGINS
     ):

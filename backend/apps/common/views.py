@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 import mimetypes
 from django.conf import settings
 from django.core import signing
@@ -12,9 +13,33 @@ from urllib.parse import quote, urlparse
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from apps.common.throttles import MediaRateThrottle
+from apps.common.throttles import MediaRateThrottle, ClientTelemetryRateThrottle
 from apps.common.hls_media import rewrite_hls_playlist, unsign_hls_token
 
+
+logger = logging.getLogger(__name__)
+
+
+class ClientErrorTelemetryView(APIView):
+    """Journal minimal d'un crash frontend, volontairement sans stack/payload arbitraire."""
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ClientTelemetryRateThrottle]
+
+    def post(self, request):
+        data = request.data if isinstance(request.data, dict) else {}
+        digest = str(data.get("digest") or "")[:120]
+        pathname = str(data.get("pathname") or "")[:500]
+        error_name = str(data.get("name") or "Error")[:80]
+        # Aucun message/stack n'est accepté : ils peuvent contenir des données personnelles.
+        logger.warning(
+            "frontend_error name=%s digest=%s pathname=%s",
+            error_name,
+            digest or "-",
+            pathname or "-",
+            extra={"path": pathname or "-"},
+        )
+        return Response(status=204)
 
 @method_decorator(xframe_options_exempt, name="dispatch")
 class PrivateMediaView(APIView):

@@ -35,9 +35,16 @@ const API_URL =
 let accessToken: string | null = null;
 let refreshPromise: Promise<string | null> | null = null;
 let lastRefreshUser: unknown = null;
+let lastRefreshFailure: "invalid" | "unavailable" | null = null;
 let authGeneration = 0;
 
-const API_TIMEOUT_MS = Math.max(3000, Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || 15000));
+function readTimeoutMs(value: string | undefined, fallback: number, minimum: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.max(minimum, Math.floor(parsed)) : fallback;
+}
+
+const API_TIMEOUT_MS = readTimeoutMs(process.env.NEXT_PUBLIC_API_TIMEOUT_MS, 15000, 3000);
+const UPLOAD_TIMEOUT_MS = readTimeoutMs(process.env.NEXT_PUBLIC_UPLOAD_TIMEOUT_MS, 600000, 60000);
 const inFlightGets = new Map<string, Promise<unknown>>();
 
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = API_TIMEOUT_MS): Promise<Response> {
@@ -88,10 +95,29 @@ async function refreshAccessToken(): Promise<string | null> {
         credentials: "include",
         cache: "no-store",
       });
-      if (!response.ok) throw new Error("Refresh JWT refusé");
+
+      // Seuls 401/403 prouvent que le refresh n'est plus valable. Un timeout, une coupure
+      // réseau ou un 5xx ne doit jamais produire une fausse déconnexion.
+      if (response.status === 401 || response.status === 403) {
+        lastRefreshUser = null;
+        lastRefreshFailure = "invalid";
+        if (generationAtStart === authGeneration) clearClientSession();
+        return null;
+      }
+      if (!response.ok) {
+        lastRefreshUser = null;
+        lastRefreshFailure = "unavailable";
+        return null;
+      }
+
       const data = await response.json() as { access?: string; user?: unknown };
-      if (!data.access) throw new Error("Nouveau jeton absent");
+      if (!data.access) {
+        lastRefreshUser = null;
+        lastRefreshFailure = "unavailable";
+        return null;
+      }
       lastRefreshUser = data.user ?? null;
+      lastRefreshFailure = null;
       // Si un login/logout a eu lieu pendant ce refresh lent, sa décision est plus récente :
       // l'ancienne requête ne doit jamais écraser la nouvelle session.
       if (generationAtStart !== authGeneration) return accessToken;
@@ -99,7 +125,7 @@ async function refreshAccessToken(): Promise<string | null> {
       return data.access;
     } catch {
       lastRefreshUser = null;
-      if (generationAtStart === authGeneration) clearClientSession();
+      lastRefreshFailure = "unavailable";
       return null;
     } finally {
       refreshPromise = null;
@@ -109,11 +135,17 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
-export async function restoreAccessToken<T = unknown>(): Promise<{ restored: boolean; user: T | null }> {
+export async function restoreAccessToken<T = unknown>(): Promise<{
+  restored: boolean;
+  user: T | null;
+  reason: "restored" | "invalid" | "unavailable";
+}> {
   const restored = Boolean(await refreshAccessToken());
   const user = restored ? (lastRefreshUser as T | null) : null;
+  const reason = restored ? "restored" : (lastRefreshFailure ?? "unavailable");
   lastRefreshUser = null;
-  return { restored, user };
+  lastRefreshFailure = null;
+  return { restored, user, reason };
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -132,25 +164,27 @@ const FIELD_LABELS: Record<string, string> = {
  * en un message clair, lisible par un humain, sans JSON brut. */
 export class ApiError extends Error {
   fieldErrors: Record<string, string[]>;
-  constructor(message: string, fieldErrors: Record<string, string[]> = {}) {
+  requestId?: string;
+  constructor(message: string, fieldErrors: Record<string, string[]> = {}, requestId?: string | null) {
     super(message);
     this.fieldErrors = fieldErrors;
+    this.requestId = requestId || undefined;
   }
 }
 
-function buildErrorMessage(status: number, data: unknown): ApiError {
+function buildErrorMessage(status: number, data: unknown, requestId?: string | null): ApiError {
   // Un 429 prouve que le serveur EST joignable : ne jamais le présenter comme une panne
   // réseau. DRF peut renvoyer un détail localisé avec un temps d'attente très long ; on
   // garde un message stable et compréhensible côté interface.
   if (status === 429) {
-    return new ApiError("Trop de requêtes ont été envoyées. Patientez un instant puis réessayez.");
+    return new ApiError("Trop de requêtes ont été envoyées. Patientez un instant puis réessayez.", {}, requestId);
   }
 
   if (data && typeof data === "object") {
     const obj = data as Record<string, unknown>;
 
     if (typeof obj.detail === "string") {
-      return new ApiError(obj.detail);
+      return new ApiError(obj.detail, {}, requestId);
     }
 
     const fieldErrors: Record<string, string[]> = {};
@@ -164,15 +198,15 @@ function buildErrorMessage(status: number, data: unknown): ApiError {
       }
     }
     if (messages.length > 0) {
-      return new ApiError(messages.join(" · "), fieldErrors);
+      return new ApiError(messages.join(" · "), fieldErrors, requestId);
     }
   }
-  if (status === 401) return new ApiError("Identifiants invalides ou session expirée.");
-  if (status === 403) return new ApiError("Vous n'avez pas les droits nécessaires pour cette action.");
-  if (status === 404) return new ApiError("Ressource introuvable.");
-  if (status === 413) return new ApiError("Le fichier est trop volumineux pour le serveur. La limite du proxy KalanPro est actuellement d’environ 2 Go.");
-  if (status >= 500) return new ApiError("Erreur serveur, veuillez réessayer dans quelques instants.");
-  return new ApiError(`Une erreur est survenue (${status}).`);
+  if (status === 401) return new ApiError("Identifiants invalides ou session expirée.", {}, requestId);
+  if (status === 403) return new ApiError("Vous n'avez pas les droits nécessaires pour cette action.", {}, requestId);
+  if (status === 404) return new ApiError("Ressource introuvable.", {}, requestId);
+  if (status === 413) return new ApiError("Le fichier est trop volumineux pour le serveur. La limite du proxy KalanPro est actuellement d’environ 2 Go.", {}, requestId);
+  if (status >= 500) return new ApiError(`Erreur serveur, veuillez réessayer dans quelques instants.${requestId ? ` Référence : ${requestId}` : ""}`, {}, requestId);
+  return new ApiError(`Une erreur est survenue (${status}).`, {}, requestId);
 }
 
 export async function apiFetch<T>(
@@ -222,7 +256,7 @@ export async function apiFetch<T>(
     } catch {
       /* corps vide ou non-JSON */
     }
-    throw buildErrorMessage(res.status, data);
+    throw buildErrorMessage(res.status, data, res.headers.get("x-request-id"));
   }
   if (res.status === 204) return undefined as unknown as T;
   try {
@@ -267,10 +301,11 @@ export async function apiUploadWithProgress<T>(
   onProgress?: (percent: number) => void,
   method: "POST" | "PATCH" = "POST"
 ): Promise<T> {
-  const attempt = (token: string | null) => new Promise<{ status: number; data: unknown }>((resolve, reject) => {
+  const attempt = (token: string | null) => new Promise<{ status: number; data: unknown; requestId: string | null }>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open(method, `${API_URL}${path}`);
     xhr.withCredentials = true;
+    xhr.timeout = UPLOAD_TIMEOUT_MS;
     if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && onProgress) onProgress(Math.round((event.loaded / event.total) * 100));
@@ -278,9 +313,11 @@ export async function apiUploadWithProgress<T>(
     xhr.onload = () => {
       let data: unknown = null;
       try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { /* réponse non JSON */ }
-      resolve({ status: xhr.status, data });
+      resolve({ status: xhr.status, data, requestId: xhr.getResponseHeader("X-Request-ID") });
     };
     xhr.onerror = () => reject(new ApiError("Impossible de contacter le serveur. Vérifiez votre connexion ou réessayez plus tard."));
+    xhr.ontimeout = () => reject(new ApiError("L'envoi du fichier a expiré. Vérifiez votre connexion puis réessayez."));
+    xhr.onabort = () => reject(new ApiError("L'envoi du fichier a été annulé."));
     xhr.send(formData);
   });
 
@@ -289,13 +326,13 @@ export async function apiUploadWithProgress<T>(
     const renewed = await refreshAccessToken();
     if (renewed) result = await attempt(renewed);
   }
-  if (result.status < 200 || result.status >= 300) throw buildErrorMessage(result.status, result.data);
+  if (result.status < 200 || result.status >= 300) throw buildErrorMessage(result.status, result.data, result.requestId);
   return result.data as T;
 }
 
 /** Télécharge un fichier privé en réutilisant le jeton d'accès mémoire et le refresh HttpOnly. */
 export async function apiDownload(path: string, filename = "download"): Promise<void> {
-  const attempt = async (token: string | null) => fetch(`${API_URL}${path}`, {
+  const attempt = async (token: string | null) => fetchWithTimeout(`${API_URL}${path}`, {
     method: "GET",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     credentials: "include",
@@ -308,13 +345,16 @@ export async function apiDownload(path: string, filename = "download"): Promise<
       const renewed = await refreshAccessToken();
       if (renewed) res = await attempt(renewed);
     }
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError("Le serveur met trop de temps à préparer le téléchargement.");
+    }
     throw new ApiError("Impossible de télécharger le fichier. Vérifiez votre connexion.");
   }
   if (!res.ok) {
     let data: unknown = null;
     try { data = await res.json(); } catch { /* non JSON */ }
-    throw buildErrorMessage(res.status, data);
+    throw buildErrorMessage(res.status, data, res.headers.get("x-request-id"));
   }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);

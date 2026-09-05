@@ -1,29 +1,44 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+frontend/.env.local
+backend/.env
+
 # Python
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
 venv/
-env/
-*.egg-info/
 
-# Django
-db.sqlite3
-media/
-staticfiles/
-.env
+# Django runtime
+backend/db.sqlite3
+backend/media/
+backend/staticfiles/
+backups/
+*.dump
+*.sql.gz
 
-# Node
-node_modules/
-.next/
-out/
-.env.local
-npm-debug.log*
-
-# OS
-.DS_Store
-
-# Docker
-.env
-
-# Next.js
+# Node / Next
+frontend/node_modules/
 frontend/.next/
 frontend/.next-build-check/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+frontend/tsconfig.tsbuildinfo
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+*.tmp
+*.swp

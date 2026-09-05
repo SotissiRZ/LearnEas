@@ -1,9 +1,11 @@
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 from rest_framework import serializers
 from apps.common.fields import RelativeImageField
 from apps.common.countries import canonical_country_name
+from apps.common.media_metadata import validate_upload_limits
 from .models import PlatformSettings, InstructorApplication
 
 User = get_user_model()
@@ -53,6 +55,16 @@ class UserSerializer(serializers.ModelSerializer):
         # L'administration Django expose des données beaucoup plus sensibles que le back-office
         # applicatif. Elle reste donc réservée aux comptes techniques explicitement superuser.
         return bool(obj.role == User.Role.ADMIN and obj.is_staff and obj.is_superuser)
+
+    def validate_avatar(self, value):
+        if value:
+            validate_upload_limits(
+                value,
+                max_bytes=settings.MAX_IMAGE_UPLOAD_MB * 1024 * 1024,
+                extensions={".jpg", ".jpeg", ".png", ".webp", ".avif"},
+                field="avatar",
+            )
+        return value
 
     def validate_country(self, value):
         if not str(value or "").strip():

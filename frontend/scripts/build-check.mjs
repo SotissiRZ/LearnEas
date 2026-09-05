@@ -27,7 +27,5 @@ const code = await new Promise((resolve, reject) => {
   });
 });
 
-if (code === 0) {
-  await rm(path.join(root, distDir), { recursive: true, force: true });
-}
+await rm(path.join(root, distDir), { recursive: true, force: true });
 process.exit(code);
