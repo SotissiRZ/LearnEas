@@ -435,11 +435,17 @@ AI_VISION_ENABLED = config("AI_VISION_ENABLED", default=False, cast=bool)
 
 PAYMENT_RECONCILIATION_MIN_AGE_SECONDS = config("PAYMENT_RECONCILIATION_MIN_AGE_SECONDS", default=120, cast=int)
 PAYMENT_RECONCILIATION_BATCH_SIZE = config("PAYMENT_RECONCILIATION_BATCH_SIZE", default=100, cast=int)
+PAYMENT_ORDER_EXPIRY_HOURS = config("PAYMENT_ORDER_EXPIRY_HOURS", default=24, cast=int)
+PAYMENT_STALE_BATCH_SIZE = config("PAYMENT_STALE_BATCH_SIZE", default=200, cast=int)
 
 CELERY_BEAT_SCHEDULE = {
     "payment-reconciliation-every-5-minutes": {
         "task": "apps.payments.tasks.reconcile_pending_payments",
         "schedule": 300.0,
+    },
+    "payment-stale-review-hourly": {
+        "task": "apps.payments.tasks.flag_stale_pending_payments",
+        "schedule": 3600.0,
     },
     "whatsapp-live-reminders-every-5-minutes": {
         "task": "apps.notifications.tasks.dispatch_whatsapp_live_reminders",

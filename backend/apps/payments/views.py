@@ -3,14 +3,14 @@ import logging
 import hashlib
 import hmac
 import json
+import csv
 import time
 from datetime import timedelta
 from django.conf import settings
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.core.cache import cache
-from django.http import HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect
 from django.db import transaction
 from django.db.models import Sum, Count, Q
 from django.db.models.functions import TruncMonth
@@ -25,23 +25,35 @@ from apps.accounts.models import User, PlatformSettings, InstructorApplication
 from apps.catalog.models import Course, PDFProduct
 from apps.enrollments.models import CourseEnrollment, PDFPurchase
 from apps.formations.models import InteractiveFormation, FormationEnrollment, FormationSession, FormationAttendance, MentorshipBooking, FormationKind
-from .models import Order, OrderItem, PayoutProfile, InstructorPayout, FormationSeatReservation, Currency, PaymentGateway, InstructorLedgerEntry
+from .models import (
+    Order, OrderItem, PayoutProfile, InstructorPayout, FormationSeatReservation, Currency,
+    PaymentGateway, InstructorLedgerEntry, PaymentAttempt, PaymentEvent, PaymentIssue,
+)
 import stripe
 from apps.common.throttles import CheckoutRateThrottle, AdminTestRateThrottle, WebhookRateThrottle
 
 from .serializers import (
     OrderSerializer, CheckoutSerializer, PayoutProfileSerializer, InstructorPayoutSerializer,
-    CurrencySerializer, PaymentGatewaySerializer,
+    CurrencySerializer, PaymentGatewaySerializer, PaymentAttemptSerializer, PaymentEventSerializer,
+    PaymentIssueSerializer,
 )
 from .providers import (
     ProviderError, create_checkout, test_provider, verify_payment, is_configured,
     _from_minor_units, normalize_provider_amount, _cinetpay_config,
 )
 from .services import record_payout_ledger, record_sale_ledger, revoke_order_entitlements
+from .lifecycle import (
+    classify_verification, create_attempt, mark_attempt_failed, mark_attempt_paid, mark_attempt_redirected,
+    open_issue, payload_hash, record_event, register_provider_error, resolve_order_issues,
+)
 
 logger = logging.getLogger(__name__)
 
 MONEY = Decimal("0.01")
+
+
+def _request_id(request) -> str:
+    return str(getattr(request, "request_id", "") or "")[:100]
 
 
 class IsAdminRole(permissions.BasePermission):
@@ -130,10 +142,102 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Order.objects.select_related("user").prefetch_related("items__instructor", "items__course", "items__pdf_product", "items__formation", "items__mentorship_booking__offering")
+        qs = (
+            Order.objects.select_related("user")
+            .prefetch_related("items__instructor", "items__course", "items__pdf_product", "items__formation", "items__mentorship_booking__offering")
+            .annotate(
+                open_payment_issue_count=Count(
+                    "payment_issues", filter=Q(payment_issues__status=PaymentIssue.Status.OPEN), distinct=True
+                )
+            )
+        )
         if user.role == "admin":
+            if str(self.request.query_params.get("has_payment_issue") or "") == "1":
+                qs = qs.filter(payment_issues__status=PaymentIssue.Status.OPEN).distinct()
             return qs
         return qs.filter(user=user)
+
+    @action(detail=True, methods=["get"], permission_classes=[IsAdminRole], url_path="payment-audit")
+    def payment_audit(self, request, pk=None):
+        order = self.get_object()
+        attempts = order.payment_attempts.all()[:20]
+        events = order.payment_events.all()[:100]
+        issues = order.payment_issues.all()[:50]
+        return Response({
+            "order": OrderSerializer(order).data,
+            "attempts": PaymentAttemptSerializer(attempts, many=True).data,
+            "events": PaymentEventSerializer(events, many=True).data,
+            "issues": PaymentIssueSerializer(issues, many=True).data,
+        })
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAdminRole], url_path="resolve-payment-issue")
+    @transaction.atomic
+    def resolve_payment_issue(self, request, pk=None):
+        order = self.get_object()
+        issue_id = request.data.get("issue_id")
+        issue = PaymentIssue.objects.select_for_update().filter(
+            pk=issue_id, order=order, status=PaymentIssue.Status.OPEN
+        ).first()
+        if not issue:
+            return Response({"detail": "Anomalie ouverte introuvable."}, status=404)
+        note = str(request.data.get("note") or "Résolution administrative")[:500]
+        issue.resolve(note)
+        record_event(
+            order=order, source=PaymentEvent.Source.ADMIN, event_type="issue.resolved",
+            outcome=PaymentEvent.Outcome.ACCEPTED, request_id=_request_id(request),
+            payload={"issue_id": issue.id, "issue_type": issue.issue_type}, message=note,
+        )
+        return Response(PaymentIssueSerializer(issue).data)
+
+    @action(detail=False, methods=["get"], permission_classes=[IsAdminRole], url_path="export")
+    def export_csv(self, request):
+        qs = self.get_queryset().order_by("-created_at")
+        status_filter = str(request.query_params.get("status") or "").strip()
+        provider_filter = str(request.query_params.get("provider") or "").strip()
+        if status_filter in Order.Status.values:
+            qs = qs.filter(status=status_filter)
+        if provider_filter in Order.Provider.values:
+            qs = qs.filter(provider=provider_filter)
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="kalanpro-payments-{timezone.now().date().isoformat()}.csv"'
+        response.write("\ufeff")
+        writer = csv.writer(response)
+        writer.writerow([
+            "invoice_number", "customer_email", "provider", "sandbox", "status", "provider_status",
+            "payment_method", "base_total_amount", "total_amount", "currency", "created_at", "paid_at",
+            "refunded_at", "last_provider_check_at",
+        ])
+        for order in qs.iterator(chunk_size=500):
+            writer.writerow([
+                order.invoice_number, order.user.email, order.provider, order.provider_sandbox, order.status,
+                order.provider_status, order.payment_method, order.base_total_amount, order.total_amount, order.currency,
+                order.created_at.isoformat() if order.created_at else "",
+                order.paid_at.isoformat() if order.paid_at else "",
+                order.refunded_at.isoformat() if order.refunded_at else "",
+                order.last_provider_check_at.isoformat() if order.last_provider_check_at else "",
+            ])
+        return response
+
+    @action(detail=False, methods=["get"], permission_classes=[IsAdminRole], url_path="open-payment-issues")
+    def open_payment_issues(self, request):
+        qs = PaymentIssue.objects.filter(status=PaymentIssue.Status.OPEN).select_related("order", "order__user")
+        severity = str(request.query_params.get("severity") or "").strip()
+        if severity in PaymentIssue.Severity.values:
+            qs = qs.filter(severity=severity)
+        rows = list(qs.order_by("-created_at")[:100])
+        return Response({
+            "count": qs.count(),
+            "results": [
+                {
+                    **PaymentIssueSerializer(issue).data,
+                    "order_id": issue.order_id,
+                    "invoice_number": issue.order.invoice_number,
+                    "provider": issue.order.provider,
+                    "customer_email": issue.order.user.email,
+                }
+                for issue in rows
+            ],
+        })
 
     @action(detail=True, methods=["post"], permission_classes=[IsAdminRole])
     @transaction.atomic
@@ -153,6 +257,7 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
         }
         if new_status == order.status:
             return Response(self.get_serializer(order).data)
+        previous_status = order.status
         if new_status not in allowed.get(order.status, set()):
             return Response({"detail": "Transition de statut invalide."}, status=409)
 
@@ -164,6 +269,7 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
                 return Response({"detail": "Seuls le webhook/contrôle du prestataire peuvent confirmer une commande externe."}, status=403)
             try:
                 CheckoutView()._fulfill(order)
+                mark_attempt_paid(order)
             except ValueError as exc:
                 return Response({"detail": str(exc)}, status=409)
 
@@ -185,13 +291,24 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
             order.refund_reason = refund_reason
             order.save(update_fields=["status", "refunded_at", "refund_reference", "refund_reason"])
             revoke_order_entitlements(order, actor=request.user, reason=refund_reason)
+            resolve_order_issues(order, tuple(PaymentIssue.IssueType.values), "Commande remboursée.")
 
         else:
             order.status = new_status
             order.save(update_fields=["status"])
             if new_status == Order.Status.FAILED:
+                mark_attempt_failed(order, provider_status="ADMIN_FAILED", message="Commande marquée échouée par un administrateur.")
                 _release_failed_order_reservations(order)
+                resolve_order_issues(
+                    order, (PaymentIssue.IssueType.STALE_PENDING, PaymentIssue.IssueType.PROVIDER_ERROR),
+                    "Commande clôturée comme échouée par un administrateur.",
+                )
 
+        record_event(
+            order=order, source=PaymentEvent.Source.ADMIN, event_type="order.status_changed",
+            outcome=PaymentEvent.Outcome.ACCEPTED, request_id=_request_id(request),
+            payload={"from": previous_status, "to": new_status},
+        )
         order.refresh_from_db()
         return Response(self.get_serializer(order).data)
 
@@ -342,6 +459,11 @@ class CheckoutView(APIView):
         # devient la source de vérité de la commande avant tout appel externe.
         payment_total = normalize_provider_amount(provider_code, payment_total, currency.code)
 
+        order_expiry = None
+        if base_total > 0:
+            expiry_hours = min(max(int(getattr(settings, "PAYMENT_ORDER_EXPIRY_HOURS", 24)), 1), 168)
+            order_expiry = timezone.now() + timedelta(hours=expiry_hours)
+
         order_defaults = {
             "provider": provider_code,
             "provider_sandbox": bool(test_payment or (gateway.sandbox if base_total > 0 and gateway else False)),
@@ -349,6 +471,7 @@ class CheckoutView(APIView):
             "total_amount": payment_total,
             "currency": currency.code,
             "request_fingerprint": request_fingerprint,
+            "expires_at": order_expiry,
         }
         if idempotency_key:
             order, created = Order.objects.get_or_create(
@@ -367,6 +490,17 @@ class CheckoutView(APIView):
                 }, status=200)
         else:
             order = Order.objects.create(user=user, **order_defaults)
+
+        attempt = create_attempt(order)
+        record_event(
+            order=order, source=PaymentEvent.Source.CHECKOUT, event_type="checkout.created",
+            outcome=PaymentEvent.Outcome.ACCEPTED, request_id=_request_id(request),
+            payload={
+                "provider": order.provider, "sandbox": order.provider_sandbox,
+                "amount": str(order.total_amount), "currency": order.currency,
+                "expires_at": order.expires_at.isoformat() if order.expires_at else None,
+            },
+        )
         for course in courses:
             price = Decimal("0") if course.is_free else (course.discount_price if course.discount_price is not None else course.price)
             fee, earning = _split_revenue(price)
@@ -411,8 +545,21 @@ class CheckoutView(APIView):
 
         if base_total == 0 or test_payment:
             self._fulfill(order)
+            mark_attempt_paid(order)
+            record_event(
+                order=order, source=PaymentEvent.Source.CHECKOUT, event_type="checkout.fulfilled_internal",
+                outcome=PaymentEvent.Outcome.ACCEPTED, request_id=_request_id(request),
+                payload={"test_payment": test_payment, "free": base_total == 0},
+            )
             checkout_url = None
         elif provider_code == Order.Provider.MANUAL:
+            PaymentAttempt.objects.filter(pk=attempt.pk).update(status=PaymentAttempt.Status.PENDING)
+            Order.objects.filter(pk=order.pk).update(provider_status="MANUAL_REVIEW")
+            order.provider_status = "MANUAL_REVIEW"
+            record_event(
+                order=order, source=PaymentEvent.Source.CHECKOUT, event_type="checkout.manual_pending",
+                outcome=PaymentEvent.Outcome.ACCEPTED, request_id=_request_id(request),
+            )
             checkout_url = None
         else:
             try:
@@ -421,8 +568,15 @@ class CheckoutView(APIView):
                 transaction.set_rollback(True)
                 return Response({"provider": [str(exc)]}, status=502)
             order.provider_reference = reference
+            order.provider_status = "REDIRECTED"
             order.checkout_url = checkout_url or ""
-            order.save(update_fields=["provider_reference", "checkout_url"])
+            order.save(update_fields=["provider_reference", "provider_status", "checkout_url"])
+            mark_attempt_redirected(order, reference=reference)
+            record_event(
+                order=order, source=PaymentEvent.Source.CHECKOUT, event_type="checkout.redirect_created",
+                outcome=PaymentEvent.Outcome.ACCEPTED, request_id=_request_id(request),
+                payload={"reference": reference},
+            )
 
         return Response({
             "order": OrderSerializer(order).data,
@@ -524,6 +678,19 @@ class CheckoutView(APIView):
         # d'exécution annule donc simultanément statut, droits et écritures financières.
         record_sale_ledger(order)
         FormationSeatReservation.objects.filter(order=order).delete()
+        if not order.provider_status:
+            order.provider_status = "PAID"
+            order.save(update_fields=["provider_status"])
+        mark_attempt_paid(order)
+        resolve_order_issues(
+            order,
+            (
+                PaymentIssue.IssueType.STALE_PENDING, PaymentIssue.IssueType.PROVIDER_ERROR,
+                PaymentIssue.IssueType.AMOUNT_MISMATCH, PaymentIssue.IssueType.CURRENCY_MISMATCH,
+                PaymentIssue.IssueType.REFERENCE_MISMATCH,
+            ),
+            "Commande confirmée et droits attribués.",
+        )
 
         if newly_paid:
             # Notification après COMMIT : jamais de rollback financier à cause d'un canal externe.
@@ -541,36 +708,74 @@ class ConfirmPaymentView(APIView):
 
     @transaction.atomic
     def post(self, request, order_id):
+        request_id = _request_id(request)
         order = Order.objects.select_for_update().filter(id=order_id, user=request.user).first()
         if not order:
             return Response({"detail": "Commande introuvable."}, status=404)
         if order.status == Order.Status.PAID:
             # Une commande payée peut avoir subi une panne entre le paiement et la
-            # création des droits. Rejouer _fulfill est volontairement idempotent et
-            # répare les inscriptions/ledger manquants sans renotifier le client.
+            # création des droits. Rejouer _fulfill est volontairement idempotent.
             try:
                 CheckoutView()._fulfill(order)
             except ValueError as exc:
                 return Response({"detail": str(exc)}, status=409)
+            record_event(
+                order=order, source=PaymentEvent.Source.CONFIRM, event_type="confirm.paid_replay",
+                outcome=PaymentEvent.Outcome.ACCEPTED, request_id=request_id,
+            )
             order.refresh_from_db()
             return Response(OrderSerializer(order).data)
         if order.status == Order.Status.REFUNDED:
+            record_event(
+                order=order, source=PaymentEvent.Source.CONFIRM, event_type="confirm.refunded",
+                outcome=PaymentEvent.Outcome.IGNORED, request_id=request_id,
+            )
             return Response({"detail": "Cette commande a été remboursée et ses droits ont été révoqués."}, status=409)
         if order.status == Order.Status.FAILED:
+            record_event(
+                order=order, source=PaymentEvent.Source.CONFIRM, event_type="confirm.failed",
+                outcome=PaymentEvent.Outcome.IGNORED, request_id=request_id,
+            )
             return Response({"detail": "Cette commande a déjà échoué. Relancez un nouveau paiement."}, status=402)
         if order.base_total_amount == 0:
             CheckoutView()._fulfill(order)
+            record_event(
+                order=order, source=PaymentEvent.Source.CONFIRM, event_type="confirm.free",
+                outcome=PaymentEvent.Outcome.ACCEPTED, request_id=request_id,
+            )
         elif order.provider == Order.Provider.MANUAL:
+            record_event(
+                order=order, source=PaymentEvent.Source.CONFIRM, event_type="confirm.manual_pending",
+                outcome=PaymentEvent.Outcome.IGNORED, request_id=request_id,
+            )
             return Response({"detail": "Le paiement manuel doit être validé par un administrateur."}, status=409)
         elif settings.DEBUG and request.data.get("dev_force") is True:
             CheckoutView()._fulfill(order)
+            record_event(
+                order=order, source=PaymentEvent.Source.CONFIRM, event_type="confirm.dev_force",
+                outcome=PaymentEvent.Outcome.ACCEPTED, request_id=request_id,
+            )
         else:
             try:
                 verification = verify_payment(order)
             except ProviderError as exc:
+                register_provider_error(order, str(exc), source=PaymentEvent.Source.CONFIRM, request_id=request_id)
                 return Response({"detail": str(exc)}, status=502)
-            expected = Decimal(order.total_amount)
-            if not verification["paid"]:
+
+            classification = classify_verification(order, verification)
+            record_event(
+                order=order, source=PaymentEvent.Source.CONFIRM, event_type="confirm.provider_checked",
+                outcome=PaymentEvent.Outcome.ACCEPTED if classification in {"paid", "pending"} else PaymentEvent.Outcome.REJECTED,
+                request_id=request_id,
+                payload={
+                    "status": verification.get("status"), "paid": bool(verification.get("paid")),
+                    "amount": verification.get("amount"), "currency": verification.get("currency"),
+                    "payment_method": verification.get("payment_method"), "classification": classification,
+                },
+            )
+            if classification in {"amount_mismatch", "currency_mismatch"}:
+                return Response({"detail": "Le montant ou la devise confirmée par le prestataire ne correspond pas à la commande."}, status=409)
+            if classification == "pending":
                 provider_status = str(verification.get("status") or "").upper()
                 terminal_failures = {"CANCELLED", "CANCELED", "FAILED"}
                 # CinetPay peut faire transiter certains wallets par REFUSED avant un autre
@@ -580,12 +785,22 @@ class ConfirmPaymentView(APIView):
                 if provider_status in terminal_failures:
                     order.status = Order.Status.FAILED
                     order.save(update_fields=["status"])
+                    mark_attempt_failed(order, provider_status=provider_status, message="Paiement refusé ou annulé par le prestataire.")
                     _release_failed_order_reservations(order)
+                    record_event(
+                        order=order, source=PaymentEvent.Source.CONFIRM, event_type="confirm.provider_failed",
+                        outcome=PaymentEvent.Outcome.ACCEPTED, request_id=request_id,
+                        payload={"provider_status": provider_status},
+                    )
                     return Response({"detail": "Le paiement a été refusé ou annulé par le prestataire."}, status=402)
                 return Response({"detail": "Le paiement est encore en attente de confirmation par le prestataire."}, status=409)
-            if verification["currency"] != order.currency or abs(Decimal(verification["amount"]) - expected) > Decimal("0.01"):
-                return Response({"detail": "Le montant ou la devise confirmée par le prestataire ne correspond pas à la commande."}, status=409)
+
             CheckoutView()._fulfill(order)
+            record_event(
+                order=order, source=PaymentEvent.Source.CONFIRM, event_type="confirm.paid",
+                outcome=PaymentEvent.Outcome.ACCEPTED, request_id=request_id,
+                payload={"payment_method": verification.get("payment_method"), "provider_status": verification.get("status")},
+            )
         order.refresh_from_db()
         return Response(OrderSerializer(order).data)
 
@@ -780,6 +995,12 @@ class AdminOverviewView(APIView):
             "formations": InteractiveFormation.objects.count(),
             "orders": Order.objects.count(),
             "paid_orders": paid_orders.count(),
+            "pending_orders": Order.objects.filter(status=Order.Status.PENDING).count(),
+            "failed_orders": Order.objects.filter(status=Order.Status.FAILED).count(),
+            "refunded_orders": Order.objects.filter(status=Order.Status.REFUNDED).count(),
+            "open_payment_issues": PaymentIssue.objects.filter(status=PaymentIssue.Status.OPEN).count(),
+            "critical_payment_issues": PaymentIssue.objects.filter(status=PaymentIssue.Status.OPEN, severity=PaymentIssue.Severity.CRITICAL).count(),
+            "stale_payment_issues": PaymentIssue.objects.filter(status=PaymentIssue.Status.OPEN, issue_type=PaymentIssue.IssueType.STALE_PENDING).count(),
             "total_revenue": str(total_revenue),
             "platform_fees": str(platform_fees),
             "instructor_earnings": str(instructor_earnings),
@@ -935,12 +1156,7 @@ class CinetPayReturnView(APIView):
 
 
 class CinetPayWebhookView(APIView):
-    """Notification serveur CinetPay.
-
-    La notification est authentifiée par X-TOKEN/HMAC puis la transaction est
-    systématiquement relue via l'API CinetPay avant de délivrer le contenu.
-    CinetPay peut appeler plusieurs fois cette URL : le traitement est idempotent.
-    """
+    """Notification serveur CinetPay authentifiée et persistamment idempotente."""
     authentication_classes = []
     permission_classes = [permissions.AllowAny]
     throttle_classes = [WebhookRateThrottle]
@@ -953,7 +1169,6 @@ class CinetPayWebhookView(APIView):
     )
 
     def get(self, request):
-        # CinetPay ping l'URL en GET lors de certains diagnostics.
         return Response({"received": True})
 
     def _valid_hmac(self, request, secret_key: str) -> bool:
@@ -965,12 +1180,12 @@ class CinetPayWebhookView(APIView):
         return hmac.compare_digest(expected.lower(), str(received).lower())
 
     def post(self, request):
+        request_id = _request_id(request)
         transaction_id = str(request.data.get("cpm_trans_id") or "").strip()
         site_id = str(request.data.get("cpm_site_id") or "").strip()
         if not transaction_id or not site_id:
             return Response({"detail": "Notification CinetPay incomplète."}, status=400)
 
-        # Déterminer l'environnement uniquement à partir du site_id attendu + HMAC.
         environment = None
         configured_any = False
         for sandbox in (True, False):
@@ -990,33 +1205,63 @@ class CinetPayWebhookView(APIView):
             provider_reference=transaction_id,
             provider_sandbox=environment,
         ).first()
+        external_id = f"{transaction_id}:{payload_hash(request.data)[:32]}"
+        _event, created = record_event(
+            order=order, provider=Order.Provider.CINETPAY, provider_sandbox=environment,
+            source=PaymentEvent.Source.WEBHOOK, event_type="cinetpay.notification",
+            external_id=external_id, outcome=PaymentEvent.Outcome.RECEIVED,
+            payload=request.data, request_id=request_id,
+        )
+        if not created:
+            return Response({"received": True, "duplicate": True})
         if not order:
-            # Réponse 200 pour une notification authentique mais inconnue : CinetPay ne doit
-            # pas boucler indéfiniment sur une ancienne transaction d'un autre environnement.
+            record_event(
+                order=None, provider=Order.Provider.CINETPAY, provider_sandbox=environment,
+                source=PaymentEvent.Source.WEBHOOK, event_type="cinetpay.unmatched",
+                outcome=PaymentEvent.Outcome.IGNORED, request_id=request_id,
+                payload={"transaction_id_hash": hashlib.sha256(transaction_id.encode()).hexdigest()},
+            )
             return Response({"received": True, "matched": False})
         if order.status == Order.Status.PAID:
+            record_event(
+                order=order, source=PaymentEvent.Source.WEBHOOK, event_type="cinetpay.already_paid",
+                outcome=PaymentEvent.Outcome.IGNORED, request_id=request_id,
+            )
             return Response({"received": True, "paid": True, "duplicate": True})
 
         try:
             verification = verify_payment(order)
-        except ProviderError:
+        except ProviderError as exc:
+            register_provider_error(order, str(exc), source=PaymentEvent.Source.WEBHOOK, request_id=request_id)
             logger.exception("Échec de vérification CinetPay pour la commande %s", order.id)
             return Response({"detail": "Vérification CinetPay temporairement indisponible."}, status=502)
 
-        if verification.get("paid"):
-            amount_ok = abs(Decimal(verification.get("amount", 0)) - Decimal(order.total_amount)) <= Decimal("0.01")
-            currency_ok = str(verification.get("currency") or "").upper() == order.currency
-            if amount_ok and currency_ok:
-                with transaction.atomic():
-                    locked = Order.objects.select_for_update().get(pk=order.pk)
-                    if locked.status != Order.Status.PAID:
-                        CheckoutView()._fulfill(locked)
-                return Response({"received": True, "paid": True})
-            logger.warning("CinetPay mismatch order=%s amount_ok=%s currency_ok=%s", order.id, amount_ok, currency_ok)
+        classification = classify_verification(order, verification)
+        if classification == "paid":
+            with transaction.atomic():
+                locked = Order.objects.select_for_update().get(pk=order.pk)
+                if locked.status != Order.Status.PAID:
+                    CheckoutView()._fulfill(locked)
+            record_event(
+                order=order, source=PaymentEvent.Source.WEBHOOK, event_type="cinetpay.paid",
+                outcome=PaymentEvent.Outcome.ACCEPTED, request_id=request_id,
+                payload={"status": verification.get("status"), "payment_method": verification.get("payment_method")},
+            )
+            return Response({"received": True, "paid": True})
+        if classification in {"amount_mismatch", "currency_mismatch"}:
+            logger.warning("CinetPay mismatch order=%s classification=%s", order.id, classification)
+            record_event(
+                order=order, source=PaymentEvent.Source.WEBHOOK, event_type="cinetpay.financial_mismatch",
+                outcome=PaymentEvent.Outcome.REJECTED, request_id=request_id,
+                payload={"classification": classification, "status": verification.get("status")},
+            )
             return Response({"detail": "Montant ou devise CinetPay incohérent."}, status=409)
 
-        # WAITING_FOR_CUSTOMER/REFUSED restent non délivrés. On ne marque pas FAILED ici :
-        # certains opérateurs notifient plusieurs états avant la confirmation finale.
+        record_event(
+            order=order, source=PaymentEvent.Source.WEBHOOK, event_type="cinetpay.pending",
+            outcome=PaymentEvent.Outcome.ACCEPTED, request_id=request_id,
+            payload={"status": verification.get("status"), "payment_method": verification.get("payment_method")},
+        )
         return Response({"received": True, "paid": False, "status": verification.get("status", "")})
 
 
@@ -1026,6 +1271,7 @@ class GeniusPayWebhookView(APIView):
     throttle_classes = [WebhookRateThrottle]
 
     def post(self, request):
+        request_id = _request_id(request)
         signature = request.META.get("HTTP_X_WEBHOOK_SIGNATURE", "")
         timestamp = request.META.get("HTTP_X_WEBHOOK_TIMESTAMP", "")
         event_name = request.META.get("HTTP_X_WEBHOOK_EVENT", "")
@@ -1055,37 +1301,90 @@ class GeniusPayWebhookView(APIView):
             if not any(secret for _, secret in candidates):
                 return Response({"detail": "Webhook GeniusPay non configuré."}, status=503)
             return Response({"detail": "Signature webhook invalide."}, status=400)
-
-        replay_key = f"geniuspay:webhook:{hashlib.sha256((timestamp + ':' + signature).encode()).hexdigest()}"
-        if not cache.add(replay_key, True, timeout=310):
-            return Response({"received": True, "duplicate": True})
         try:
             payload = json.loads(request.body.decode("utf-8"))
         except Exception:
             return Response({"detail": "JSON invalide."}, status=400)
+
         payload_environment = str(payload.get("environment") or "").strip().lower()
         expected_environment = "sandbox" if sandbox_event else "live"
         if payload_environment and payload_environment != expected_environment:
             return Response({"detail": "Environnement webhook GeniusPay incohérent."}, status=400)
-        if event_name == "payment.success" or payload.get("event") == "payment.success":
-            data = payload.get("data") or {}
-            metadata = data.get("metadata") or {}
-            order_id = metadata.get("order_id")
-            if order_id:
-                with transaction.atomic():
-                    order = Order.objects.select_for_update().filter(
-                        pk=order_id,
-                        provider=Order.Provider.GENIUSPAY,
-                        provider_sandbox=bool(sandbox_event),
-                    ).first()
-                    if order:
-                        amount = Decimal(str(data.get("amount", "0")))
-                        currency = str(data.get("currency") or "").upper()
-                        reference = str(data.get("reference") or data.get("id") or "")
-                        user_ok = str(metadata.get("user_id") or "") == str(order.user_id)
-                        reference_ok = bool(order.provider_reference) and reference == str(order.provider_reference)
-                        if user_ok and reference_ok and currency == order.currency and abs(amount - Decimal(order.total_amount)) <= Decimal("0.01"):
-                            CheckoutView()._fulfill(order)
+
+        data = payload.get("data") or {}
+        metadata = data.get("metadata") or {}
+        order_id = metadata.get("order_id")
+        order = Order.objects.filter(
+            pk=order_id, provider=Order.Provider.GENIUSPAY, provider_sandbox=bool(sandbox_event)
+        ).first() if order_id else None
+        external_id = str(payload.get("id") or payload.get("event_id") or payload_hash(payload))[:191]
+        _event, created = record_event(
+            order=order, provider=Order.Provider.GENIUSPAY, provider_sandbox=bool(sandbox_event),
+            source=PaymentEvent.Source.WEBHOOK, event_type=str(event_name or payload.get("event") or "geniuspay.notification")[:100],
+            external_id=external_id, outcome=PaymentEvent.Outcome.RECEIVED,
+            payload=payload, request_id=request_id,
+        )
+        if not created:
+            return Response({"received": True, "duplicate": True})
+
+        is_success = event_name == "payment.success" or payload.get("event") == "payment.success"
+        if not is_success:
+            record_event(
+                order=order, provider=Order.Provider.GENIUSPAY, provider_sandbox=bool(sandbox_event),
+                source=PaymentEvent.Source.WEBHOOK, event_type="geniuspay.ignored_event",
+                outcome=PaymentEvent.Outcome.IGNORED, request_id=request_id,
+                payload={"event": event_name or payload.get("event")},
+            )
+            return Response({"received": True})
+        if not order:
+            record_event(
+                order=None, provider=Order.Provider.GENIUSPAY, provider_sandbox=bool(sandbox_event),
+                source=PaymentEvent.Source.WEBHOOK, event_type="geniuspay.unmatched",
+                outcome=PaymentEvent.Outcome.IGNORED, request_id=request_id,
+            )
+            return Response({"received": True, "matched": False})
+
+        reference = str(data.get("reference") or data.get("id") or "")
+        user_ok = str(metadata.get("user_id") or "") == str(order.user_id)
+        reference_ok = bool(order.provider_reference) and reference == str(order.provider_reference)
+        if not user_ok or not reference_ok:
+            open_issue(
+                order, PaymentIssue.IssueType.REFERENCE_MISMATCH,
+                severity=PaymentIssue.Severity.CRITICAL,
+                message="Le webhook GeniusPay ne correspond pas à la référence/utilisateur de la commande.",
+                expected={"reference": order.provider_reference, "user_id": order.user_id},
+                observed={"reference": reference, "user_id": metadata.get("user_id")},
+            )
+            record_event(
+                order=order, source=PaymentEvent.Source.WEBHOOK, event_type="geniuspay.reference_mismatch",
+                outcome=PaymentEvent.Outcome.REJECTED, request_id=request_id,
+            )
+            return Response({"received": True, "matched": False})
+
+        verification = {
+            "paid": True,
+            "amount": Decimal(str(data.get("amount", "0"))),
+            "currency": str(data.get("currency") or "").upper(),
+            "status": str(data.get("status") or "SUCCESS").upper(),
+            "payment_method": str(data.get("payment_method") or data.get("method") or ""),
+        }
+        classification = classify_verification(order, verification)
+        if classification == "paid":
+            with transaction.atomic():
+                locked = Order.objects.select_for_update().get(pk=order.pk)
+                CheckoutView()._fulfill(locked)
+            resolve_order_issues(order, (PaymentIssue.IssueType.REFERENCE_MISMATCH,), "Webhook GeniusPay cohérent.")
+            record_event(
+                order=order, source=PaymentEvent.Source.WEBHOOK, event_type="geniuspay.paid",
+                outcome=PaymentEvent.Outcome.ACCEPTED, request_id=request_id,
+                payload={"status": verification["status"], "payment_method": verification["payment_method"]},
+            )
+        else:
+            record_event(
+                order=order, source=PaymentEvent.Source.WEBHOOK, event_type="geniuspay.financial_mismatch",
+                outcome=PaymentEvent.Outcome.REJECTED, request_id=request_id,
+                payload={"classification": classification},
+            )
         return Response({"received": True})
 
 
@@ -1095,6 +1394,7 @@ class StripeWebhookView(APIView):
     throttle_classes = [WebhookRateThrottle]
 
     def post(self, request):
+        request_id = _request_id(request)
         signature = request.META.get("HTTP_STRIPE_SIGNATURE", "")
         candidates = [
             (False, getattr(settings, "STRIPE_WEBHOOK_SECRET", "")),
@@ -1115,32 +1415,96 @@ class StripeWebhookView(APIView):
             if not any(secret for _, secret in candidates):
                 return Response({"detail": "Webhook Stripe non configuré."}, status=503)
             return Response({"detail": "Signature webhook invalide."}, status=400)
-        event_type = event.get("type")
+
+        event_type = str(event.get("type") or "stripe.event")
+        obj = (event.get("data") or {}).get("object") or {}
+        order_id = (obj.get("metadata") or {}).get("order_id") or obj.get("client_reference_id")
+        order = Order.objects.filter(
+            pk=order_id, provider=Order.Provider.STRIPE, provider_sandbox=bool(webhook_sandbox)
+        ).first() if order_id else None
+        external_id = str(event.get("id") or payload_hash({"type": event_type, "object": obj}))[:191]
+        _event, created = record_event(
+            order=order, provider=Order.Provider.STRIPE, provider_sandbox=bool(webhook_sandbox),
+            source=PaymentEvent.Source.WEBHOOK, event_type=event_type, external_id=external_id,
+            outcome=PaymentEvent.Outcome.RECEIVED, request_id=request_id,
+            payload={
+                "type": event_type, "object_id": obj.get("id"), "payment_status": obj.get("payment_status"),
+                "amount_total": obj.get("amount_total"), "currency": obj.get("currency"),
+                "metadata": obj.get("metadata") or {},
+            },
+        )
+        if not created:
+            return Response({"received": True, "duplicate": True})
+        if not order:
+            record_event(
+                order=None, provider=Order.Provider.STRIPE, provider_sandbox=bool(webhook_sandbox),
+                source=PaymentEvent.Source.WEBHOOK, event_type="stripe.unmatched",
+                outcome=PaymentEvent.Outcome.IGNORED, request_id=request_id,
+            )
+            return Response({"received": True, "matched": False})
+
+        reference_ok = bool(order.provider_reference) and str(order.provider_reference) == str(obj.get("id"))
+        metadata = obj.get("metadata") or {}
+        user_ok = not metadata.get("user_id") or str(metadata.get("user_id")) == str(order.user_id)
+        if not reference_ok or not user_ok:
+            open_issue(
+                order, PaymentIssue.IssueType.REFERENCE_MISMATCH,
+                severity=PaymentIssue.Severity.CRITICAL,
+                message="Le webhook Stripe ne correspond pas à la session/utilisateur attendu.",
+                expected={"reference": order.provider_reference, "user_id": order.user_id},
+                observed={"reference": obj.get("id"), "user_id": metadata.get("user_id")},
+            )
+            record_event(
+                order=order, source=PaymentEvent.Source.WEBHOOK, event_type="stripe.reference_mismatch",
+                outcome=PaymentEvent.Outcome.REJECTED, request_id=request_id,
+            )
+            return Response({"received": True, "matched": False})
+
         if event_type == "checkout.session.completed":
-            obj = event["data"]["object"]
-            order_id = (obj.get("metadata") or {}).get("order_id") or obj.get("client_reference_id")
-            if order_id:
+            paid = str(obj.get("payment_status") or "").lower() == "paid"
+            verification = {
+                "paid": paid,
+                "amount": _from_minor_units(obj.get("amount_total") or 0, order.currency),
+                "currency": str(obj.get("currency") or "").upper(),
+                "status": str(obj.get("payment_status") or "").upper(),
+                "payment_method": "card",
+            }
+            classification = classify_verification(order, verification)
+            if classification == "paid":
                 with transaction.atomic():
-                    order = Order.objects.select_for_update().filter(pk=order_id, provider=Order.Provider.STRIPE, provider_sandbox=bool(webhook_sandbox)).first()
-                    if order and str(order.provider_reference) == str(obj.get("id")):
-                        amount = _from_minor_units(obj.get("amount_total") or 0, order.currency)
-                        currency = str(obj.get("currency") or "").upper()
-                        metadata = obj.get("metadata") or {}
-                        user_ok = str(metadata.get("user_id") or "") == str(order.user_id)
-                        paid = str(obj.get("payment_status") or "").lower() == "paid"
-                        if paid and user_ok and currency == order.currency and abs(amount - Decimal(order.total_amount)) <= Decimal("0.01"):
-                            CheckoutView()._fulfill(order)
+                    locked = Order.objects.select_for_update().get(pk=order.pk)
+                    CheckoutView()._fulfill(locked)
+                resolve_order_issues(order, (PaymentIssue.IssueType.REFERENCE_MISMATCH,), "Webhook Stripe cohérent.")
+                record_event(
+                    order=order, source=PaymentEvent.Source.WEBHOOK, event_type="stripe.paid",
+                    outcome=PaymentEvent.Outcome.ACCEPTED, request_id=request_id,
+                )
+            elif classification in {"amount_mismatch", "currency_mismatch"}:
+                record_event(
+                    order=order, source=PaymentEvent.Source.WEBHOOK, event_type="stripe.financial_mismatch",
+                    outcome=PaymentEvent.Outcome.REJECTED, request_id=request_id,
+                    payload={"classification": classification},
+                )
         elif event_type in {"checkout.session.expired", "checkout.session.async_payment_failed"}:
-            obj = event["data"]["object"]
-            order_id = (obj.get("metadata") or {}).get("order_id") or obj.get("client_reference_id")
-            if order_id:
-                with transaction.atomic():
-                    order = Order.objects.select_for_update().filter(
-                        pk=order_id, provider=Order.Provider.STRIPE, provider_sandbox=bool(webhook_sandbox),
-                        status=Order.Status.PENDING,
-                    ).first()
-                    if order and str(order.provider_reference) == str(obj.get("id")):
-                        order.status = Order.Status.FAILED
-                        order.save(update_fields=["status"])
-                        _release_failed_order_reservations(order)
+            with transaction.atomic():
+                locked = Order.objects.select_for_update().filter(pk=order.pk, status=Order.Status.PENDING).first()
+                if locked:
+                    locked.status = Order.Status.FAILED
+                    locked.provider_status = event_type.upper()[:80]
+                    locked.last_provider_check_at = timezone.now()
+                    locked.save(update_fields=["status", "provider_status", "last_provider_check_at"])
+                    mark_attempt_failed(locked, provider_status=event_type, message="Session Stripe expirée ou paiement asynchrone échoué.")
+                    _release_failed_order_reservations(locked)
+            record_event(
+                order=order, source=PaymentEvent.Source.WEBHOOK, event_type="stripe.failed",
+                outcome=PaymentEvent.Outcome.ACCEPTED, request_id=request_id,
+                payload={"stripe_event": event_type},
+            )
+        else:
+            record_event(
+                order=order, source=PaymentEvent.Source.WEBHOOK, event_type="stripe.ignored_event",
+                outcome=PaymentEvent.Outcome.IGNORED, request_id=request_id,
+                payload={"stripe_event": event_type},
+            )
         return Response({"received": True})
+

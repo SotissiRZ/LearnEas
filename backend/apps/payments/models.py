@@ -125,6 +125,10 @@ class Order(models.Model):
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     currency = models.CharField(max_length=3, default="EUR")
     provider_reference = models.CharField(max_length=255, blank=True)
+    provider_status = models.CharField(max_length=80, blank=True)
+    payment_method = models.CharField(max_length=80, blank=True)
+    last_provider_check_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
     checkout_url = models.TextField(blank=True)
     idempotency_key = models.CharField(max_length=128, blank=True)
     request_fingerprint = models.CharField(max_length=64, blank=True)
@@ -324,3 +328,151 @@ class InstructorLedgerEntry(models.Model):
 
     def __str__(self):
         return f"{self.instructor} · {self.entry_type} · {self.amount}"
+
+class PaymentAttempt(models.Model):
+    """Tentative de paiement associée à une commande.
+
+    Une commande reste la source de vérité métier; ce journal conserve l'historique
+    opérationnel du prestataire sans exposer de données sensibles de paiement.
+    """
+    class Status(models.TextChoices):
+        CREATED = "created", "Créée"
+        REDIRECTED = "redirected", "Redirection créée"
+        PENDING = "pending", "En attente"
+        CHECKED = "checked", "Vérifiée"
+        PAID = "paid", "Payée"
+        FAILED = "failed", "Échouée"
+        ERROR = "error", "Erreur prestataire"
+
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="payment_attempts")
+    attempt_number = models.PositiveIntegerField(default=1)
+    provider = models.CharField(max_length=30)
+    provider_sandbox = models.BooleanField(default=False)
+    provider_reference = models.CharField(max_length=255, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.CREATED, db_index=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=3)
+    provider_status = models.CharField(max_length=80, blank=True)
+    payment_method = models.CharField(max_length=80, blank=True)
+    check_count = models.PositiveIntegerField(default=0)
+    error_count = models.PositiveIntegerField(default=0)
+    last_error = models.CharField(max_length=500, blank=True)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-started_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["order", "attempt_number"], name="uniq_payment_attempt_no"),
+        ]
+        indexes = [
+            models.Index(fields=["provider", "status", "started_at"], name="pay_attempt_provider_idx"),
+            models.Index(fields=["order", "status"], name="pay_attempt_order_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.order.invoice_number} · tentative {self.attempt_number} · {self.status}"
+
+
+class PaymentEvent(models.Model):
+    """Journal d'événements de paiement, volontairement redacted et append-only."""
+    class Source(models.TextChoices):
+        CHECKOUT = "checkout", "Checkout"
+        WEBHOOK = "webhook", "Webhook"
+        CONFIRM = "confirm", "Vérification utilisateur"
+        RECONCILIATION = "reconciliation", "Réconciliation"
+        ADMIN = "admin", "Administration"
+        SYSTEM = "system", "Système"
+
+    class Outcome(models.TextChoices):
+        RECEIVED = "received", "Reçu"
+        ACCEPTED = "accepted", "Accepté"
+        IGNORED = "ignored", "Ignoré"
+        REJECTED = "rejected", "Rejeté"
+        ERROR = "error", "Erreur"
+
+    order = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True, blank=True, related_name="payment_events")
+    provider = models.CharField(max_length=30, blank=True)
+    provider_sandbox = models.BooleanField(default=False)
+    source = models.CharField(max_length=20, choices=Source.choices)
+    event_type = models.CharField(max_length=100, db_index=True)
+    external_id = models.CharField(max_length=191, blank=True)
+    outcome = models.CharField(max_length=20, choices=Outcome.choices, default=Outcome.RECEIVED, db_index=True)
+    payload_hash = models.CharField(max_length=64, blank=True, db_index=True)
+    payload = models.JSONField(default=dict, blank=True)
+    request_id = models.CharField(max_length=100, blank=True, db_index=True)
+    message = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider", "provider_sandbox", "external_id"],
+                condition=~models.Q(external_id=""),
+                name="uniq_payment_external_event",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["order", "created_at"], name="pay_event_order_created_idx"),
+            models.Index(fields=["provider", "source", "created_at"], name="pay_event_provider_src_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.provider or 'internal'} · {self.event_type} · {self.outcome}"
+
+
+class PaymentIssue(models.Model):
+    """Anomalie financière nécessitant une investigation humaine ou automatique."""
+    class IssueType(models.TextChoices):
+        AMOUNT_MISMATCH = "amount_mismatch", "Montant incohérent"
+        CURRENCY_MISMATCH = "currency_mismatch", "Devise incohérente"
+        PROVIDER_ERROR = "provider_error", "Erreur prestataire répétée"
+        REFERENCE_MISMATCH = "reference_mismatch", "Référence incohérente"
+        STALE_PENDING = "stale_pending", "Paiement en attente trop longtemps"
+        WEBHOOK_REJECTED = "webhook_rejected", "Webhook rejeté"
+
+    class Severity(models.TextChoices):
+        WARNING = "warning", "Avertissement"
+        CRITICAL = "critical", "Critique"
+
+    class Status(models.TextChoices):
+        OPEN = "open", "Ouverte"
+        RESOLVED = "resolved", "Résolue"
+
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="payment_issues")
+    issue_type = models.CharField(max_length=40, choices=IssueType.choices, db_index=True)
+    severity = models.CharField(max_length=20, choices=Severity.choices, default=Severity.WARNING)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN, db_index=True)
+    message = models.CharField(max_length=500)
+    expected = models.JSONField(default=dict, blank=True)
+    observed = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolution_note = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["order", "issue_type"],
+                condition=models.Q(status="open"),
+                name="uniq_open_payment_issue",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["status", "severity", "created_at"], name="pay_issue_status_idx"),
+        ]
+
+    def resolve(self, note: str = ""):
+        if self.status == self.Status.RESOLVED:
+            return
+        self.status = self.Status.RESOLVED
+        self.resolved_at = timezone.now()
+        self.resolution_note = str(note or "")[:500]
+        self.save(update_fields=["status", "resolved_at", "resolution_note"])
+
+    def __str__(self):
+        return f"{self.order.invoice_number} · {self.issue_type} · {self.status}"

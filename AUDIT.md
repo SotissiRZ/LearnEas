@@ -266,3 +266,8 @@ Ces points ne sont pas des bugs corrigibles uniquement dans le dépôt :
 - Audit mobile : OK, aucune alerte bloquante.
 - Tests statiques de sécurité frontend : 4/4 OK.
 - `manage.py test`, build Next.js complet et Playwright restent des release gates à exécuter dans Docker/CI.
+
+
+## Audit v80 — Paiements / Mobile Money
+
+Le code financier dispose désormais d’un historique persistant de tentative/événement/anomalie et ne dépend plus d’un cache éphémère pour l’idempotence webhook. Le fulfillment est bloqué si la référence, le montant ou la devise ne concordent pas avec la commande. Les commandes externes anciennes sont signalées pour revue sans être automatiquement invalidées, afin de préserver les confirmations Mobile Money tardives. La validation live des prestataires reste conditionnée à la configuration des comptes marchands réels.

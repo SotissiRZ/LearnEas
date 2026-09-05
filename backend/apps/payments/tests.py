@@ -11,7 +11,10 @@ from apps.accounts.models import User
 from apps.catalog.models import Category, Course
 from apps.enrollments.models import CourseEnrollment
 from apps.formations.models import InteractiveFormation
-from .models import Order, OrderItem, FormationSeatReservation, Currency, PaymentGateway, InstructorLedgerEntry
+from .models import (
+    Order, OrderItem, FormationSeatReservation, Currency, PaymentGateway, InstructorLedgerEntry,
+    PaymentAttempt, PaymentEvent, PaymentIssue,
+)
 from .providers import _to_minor_units, _from_minor_units, normalize_provider_amount
 
 
@@ -575,3 +578,129 @@ class MentorshipPaymentRegressionTests(APITestCase):
         )
         self.assertEqual(valid.status_code, status.HTTP_200_OK, valid.data)
         self.assertEqual(valid.data["account_reference"], "+221771234567")
+
+
+class PaymentOperationalAuditTests(APITestCase):
+    def setUp(self):
+        self.instructor = User.objects.create_user(
+            username="audit_seller", email="audit-seller@example.com", password="passpass123", role=User.Role.INSTRUCTOR
+        )
+        self.student = User.objects.create_user(
+            username="audit_buyer", email="audit-buyer@example.com", password="passpass123", role=User.Role.STUDENT
+        )
+        self.admin = User.objects.create_user(
+            username="audit_admin", email="audit-admin@example.com", password="passpass123", role=User.Role.ADMIN
+        )
+        category = Category.objects.create(name="Audit finance")
+        self.course = Course.objects.create(
+            instructor=self.instructor, category=category, title="Cours audit paiement",
+            description="Test audit", price=Decimal("100.00"), published=True,
+        )
+        Currency.objects.update_or_create(
+            code="EUR",
+            defaults={"name": "Euro", "symbol": "€", "exchange_rate": Decimal("1"), "decimal_places": 2, "is_active": True, "is_default": True},
+        )
+        PaymentGateway.objects.update_or_create(
+            code="stripe",
+            defaults={"name": "Stripe", "is_active": True, "supported_currencies": ["EUR"], "sandbox": True},
+        )
+        self.client.force_authenticate(self.student)
+
+    @override_settings(STRIPE_SECRET_KEY="sk_test_fake")
+    @patch("apps.payments.views.create_checkout")
+    def test_checkout_creates_attempt_expiry_and_audit_event(self, create_checkout_mock):
+        create_checkout_mock.return_value = ("https://checkout.stripe.test/audit", "cs_audit_001")
+        response = self.client.post(
+            "/api/payments/checkout/",
+            {"course_ids": [self.course.id], "pdf_ids": [], "formation_ids": [], "provider": "stripe", "currency": "EUR"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        order = Order.objects.get(pk=response.data["order"]["id"])
+        self.assertIsNotNone(order.expires_at)
+        self.assertEqual(order.provider_status, "REDIRECTED")
+        attempt = PaymentAttempt.objects.get(order=order)
+        self.assertEqual(attempt.status, PaymentAttempt.Status.REDIRECTED)
+        self.assertEqual(attempt.provider_reference, "cs_audit_001")
+        self.assertTrue(PaymentEvent.objects.filter(order=order, event_type="checkout.created").exists())
+        self.assertTrue(PaymentEvent.objects.filter(order=order, event_type="checkout.redirect_created").exists())
+
+    @override_settings(STRIPE_SECRET_KEY="sk_test_fake")
+    @patch("apps.payments.views.verify_payment")
+    @patch("apps.payments.views.create_checkout")
+    def test_financial_mismatch_opens_issue_and_never_fulfills(self, create_checkout_mock, verify_payment_mock):
+        create_checkout_mock.return_value = ("https://checkout.stripe.test/mismatch", "cs_mismatch_001")
+        verify_payment_mock.return_value = {
+            "paid": True, "amount": Decimal("1.00"), "currency": "EUR", "status": "PAID", "payment_method": "card"
+        }
+        checkout = self.client.post(
+            "/api/payments/checkout/",
+            {"course_ids": [self.course.id], "pdf_ids": [], "formation_ids": [], "provider": "stripe", "currency": "EUR"},
+            format="json",
+        )
+        order_id = checkout.data["order"]["id"]
+        confirm = self.client.post(f"/api/payments/orders/{order_id}/confirm/", {}, format="json")
+        self.assertEqual(confirm.status_code, status.HTTP_409_CONFLICT, confirm.data)
+        order = Order.objects.get(pk=order_id)
+        self.assertEqual(order.status, Order.Status.PENDING)
+        self.assertFalse(CourseEnrollment.objects.filter(user=self.student, course=self.course).exists())
+        self.assertTrue(PaymentIssue.objects.filter(
+            order=order, issue_type=PaymentIssue.IssueType.AMOUNT_MISMATCH, status=PaymentIssue.Status.OPEN
+        ).exists())
+        self.assertNotEqual(
+            order.payment_attempts.latest("started_at").status, PaymentAttempt.Status.PAID
+        )
+
+    def test_payment_event_redacts_sensitive_payload_and_persistent_duplicate(self):
+        from .lifecycle import record_event
+        order = Order.objects.create(
+            user=self.student, provider=Order.Provider.CINETPAY, provider_reference="REF-001",
+            total_amount=Decimal("100.00"), base_total_amount=Decimal("100.00"), currency="EUR",
+        )
+        first, created = record_event(
+            order=order, provider=Order.Provider.CINETPAY, source=PaymentEvent.Source.WEBHOOK,
+            event_type="audit.test", external_id="evt-audit-001",
+            payload={"amount": "100", "customer_email": "secret@example.com", "cel_phone_num": "+221771234567"},
+        )
+        second, created_again = record_event(
+            order=order, provider=Order.Provider.CINETPAY, source=PaymentEvent.Source.WEBHOOK,
+            event_type="audit.test", external_id="evt-audit-001",
+            payload={"amount": "100"},
+        )
+        self.assertTrue(created)
+        self.assertFalse(created_again)
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(first.payload["customer_email"], "[redacted]")
+        self.assertEqual(first.payload["cel_phone_num"], "[redacted]")
+        self.assertEqual(first.payload["amount"], "100")
+
+    def test_stale_pending_task_opens_issue_without_forcing_failure(self):
+        from django.utils import timezone
+        from datetime import timedelta
+        from .tasks import flag_stale_pending_payments
+        order = Order.objects.create(
+            user=self.student, provider=Order.Provider.CINETPAY, provider_reference="STALE-001",
+            status=Order.Status.PENDING, total_amount=Decimal("100.00"), base_total_amount=Decimal("100.00"),
+            currency="EUR", expires_at=timezone.now() - timedelta(hours=1),
+        )
+        result = flag_stale_pending_payments()
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.PENDING)
+        self.assertEqual(result["issues_created"], 1)
+        self.assertTrue(PaymentIssue.objects.filter(
+            order=order, issue_type=PaymentIssue.IssueType.STALE_PENDING, status=PaymentIssue.Status.OPEN
+        ).exists())
+
+    def test_payment_audit_endpoint_is_admin_only(self):
+        order = Order.objects.create(
+            user=self.student, provider=Order.Provider.MANUAL, status=Order.Status.PENDING,
+            total_amount=Decimal("100.00"), base_total_amount=Decimal("100.00"), currency="EUR",
+        )
+        student_response = self.client.get(f"/api/payments/orders/{order.id}/payment-audit/")
+        self.assertEqual(student_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.client.force_authenticate(self.admin)
+        admin_response = self.client.get(f"/api/payments/orders/{order.id}/payment-audit/")
+        self.assertEqual(admin_response.status_code, status.HTTP_200_OK, admin_response.data)
+        self.assertIn("attempts", admin_response.data)
+        self.assertIn("events", admin_response.data)
+        self.assertIn("issues", admin_response.data)

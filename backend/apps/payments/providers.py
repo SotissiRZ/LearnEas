@@ -319,6 +319,8 @@ def verify_payment(order):
             "paid": paid,
             "amount": Decimal(str(amount.get("amount", "0"))) if amount else Decimal("0"),
             "currency": str(amount.get("currency") or "").upper(),
+            "status": str(payload.get("status") or "").upper(),
+            "payment_method": str(payload.get("payment_method") or payload.get("method") or ""),
         }
     if order.provider == "geniuspay":
         api_key, api_secret, base = _genius_config(sandbox)
@@ -331,6 +333,8 @@ def verify_payment(order):
             "paid": status in {"paid", "success", "completed"},
             "amount": Decimal(str(data.get("amount", "0"))),
             "currency": str(data.get("currency") or "").upper(),
+            "status": status.upper(),
+            "payment_method": str(data.get("payment_method") or data.get("method") or ""),
         }
     if order.provider == "cinetpay":
         api_key, site_id, _secret_key, base = _cinetpay_config(sandbox)
@@ -360,5 +364,7 @@ def verify_payment(order):
             "paid": str(getattr(session, "payment_status", "")) == "paid",
             "amount": _from_minor_units(getattr(session, "amount_total", 0), order.currency),
             "currency": str(getattr(session, "currency", "")).upper(),
+            "status": str(getattr(session, "payment_status", "")).upper(),
+            "payment_method": "card",
         }
     raise ProviderError("Ce prestataire ne permet pas de confirmation automatique.")

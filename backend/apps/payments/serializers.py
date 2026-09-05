@@ -1,6 +1,9 @@
 from rest_framework import serializers
 from apps.common.phone import normalize_e164_phone
-from .models import Order, OrderItem, PayoutProfile, InstructorPayout, Currency, PaymentGateway
+from .models import (
+    Order, OrderItem, PayoutProfile, InstructorPayout, Currency, PaymentGateway,
+    PaymentAttempt, PaymentEvent, PaymentIssue,
+)
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -42,17 +45,56 @@ class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     customer_name = serializers.SerializerMethodField()
     customer_email = serializers.EmailField(source="user.email", read_only=True)
+    open_payment_issue_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
         fields = [
-            "id", "status", "provider", "provider_sandbox", "base_total_amount", "total_amount", "currency", "invoice_number",
+            "id", "status", "provider", "provider_sandbox", "provider_status", "payment_method",
+            "last_provider_check_at", "expires_at", "base_total_amount", "total_amount", "currency", "invoice_number",
             "created_at", "paid_at", "refunded_at", "refund_reference", "refund_reason",
-            "items", "customer_name", "customer_email",
+            "items", "customer_name", "customer_email", "open_payment_issue_count",
         ]
 
     def get_customer_name(self, obj):
         return obj.user.get_full_name() or obj.user.username
+
+    def get_open_payment_issue_count(self, obj):
+        annotated = getattr(obj, "open_payment_issue_count", None)
+        if annotated is not None:
+            return int(annotated)
+        return obj.payment_issues.filter(status=PaymentIssue.Status.OPEN).count()
+
+
+class PaymentAttemptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PaymentAttempt
+        fields = [
+            "id", "attempt_number", "provider", "provider_sandbox", "provider_reference", "status",
+            "amount", "currency", "provider_status", "payment_method", "check_count", "error_count",
+            "last_error", "last_checked_at", "started_at", "updated_at", "completed_at",
+        ]
+        read_only_fields = fields
+
+
+class PaymentEventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PaymentEvent
+        fields = [
+            "id", "provider", "provider_sandbox", "source", "event_type", "external_id", "outcome",
+            "payload_hash", "payload", "request_id", "message", "created_at",
+        ]
+        read_only_fields = fields
+
+
+class PaymentIssueSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PaymentIssue
+        fields = [
+            "id", "issue_type", "severity", "status", "message", "expected", "observed",
+            "created_at", "resolved_at", "resolution_note",
+        ]
+        read_only_fields = fields
 
 
 class CheckoutSerializer(serializers.Serializer):

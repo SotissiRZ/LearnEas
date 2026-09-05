@@ -654,3 +654,18 @@ docker compose -f docker-compose.dev.yml exec frontend npm run build:check
 ```
 
 La configuration et les détails sont documentés dans `docs/V79_CODE_FOUNDATION.md`.
+
+
+## Mobile Money et gouvernance financière (v80)
+
+La v80 conserve les connecteurs de paiement existants et ajoute une couche financière persistante : tentatives, événements, anomalies, idempotence webhook durable, contrôle montant/devise avant attribution des droits, réconciliation des paiements en attente et outils de diagnostic admin.
+
+Commande de réconciliation :
+
+```bash
+docker compose -f docker-compose.dev.yml exec backend python manage.py reconcile_payments
+```
+
+Le back-office permet de filtrer les commandes avec anomalie, consulter leur audit détaillé, résoudre une anomalie et exporter les transactions en CSV. Les commandes Mobile Money anciennes sont signalées pour revue plutôt qu’annulées automatiquement afin de supporter les confirmations tardives des wallets.
+
+Pour le détail des variables, garanties d’idempotence et scénarios de validation live, voir `docs/V80_MOBILE_MONEY_FINANCE.md` et `docs/VALIDATION_V80.md`. Les clés/identifiants marchands réels restent des secrets de déploiement et ne sont pas inclus dans le dépôt.

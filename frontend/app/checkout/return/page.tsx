@@ -7,7 +7,13 @@ import { api, ApiError } from "@/lib/api";
 import { useCart } from "@/hooks/useCart";
 
 type State = "checking" | "paid" | "waiting" | "failed";
-type ConfirmedOrder = { items?: Array<{ item_type?: string }> };
+type ConfirmedOrder = {
+  id: number;
+  status: "pending" | "paid" | "failed" | "refunded" | string;
+  provider_status?: string;
+  payment_method?: string;
+  items?: Array<{ item_type?: string }>;
+};
 
 export default function CheckoutReturnPage() {
   const router = useRouter();
@@ -16,7 +22,8 @@ export default function CheckoutReturnPage() {
   const orderId = Number(params.get("order") || 0);
   const [state, setState] = useState<State>("checking");
   const [message, setMessage] = useState("Vérification de votre paiement Mobile Money…");
-  const attemptRef = useRef(0);
+  const pollRef = useRef(0);
+  const providerCheckRef = useRef(0);
 
   useEffect(() => {
     if (!orderId) {
@@ -28,45 +35,93 @@ export default function CheckoutReturnPage() {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const check = async () => {
-      attemptRef.current += 1;
-      setState(attemptRef.current === 1 ? "checking" : "waiting");
+    const finishPaid = (order: ConfirmedOrder) => {
+      clear();
+      setState("paid");
+      const method = order.payment_method ? ` via ${order.payment_method}` : "";
+      setMessage(`Paiement confirmé${method}. Votre accès est activé.`);
+      const items = order.items || [];
+      const employerOnly = items.length > 0 && items.every((item) => item.item_type === "employer");
+      const mentorshipOnly = items.length > 0 && items.every((item) => item.item_type === "mentoring");
+      const destination = employerOnly
+        ? `/dashboard/employer?billing=updated&order=${orderId}`
+        : mentorshipOnly
+          ? `/dashboard/student/mentorship?booked=1&order=${orderId}`
+          : `/dashboard/student?purchased=1&order=${orderId}`;
+      timer = setTimeout(() => router.replace(destination), 900);
+    };
+
+    const schedule = (fn: () => void) => {
+      const delay = Math.min(3000 + pollRef.current * 750, 8000);
+      timer = setTimeout(fn, delay);
+    };
+
+    const handleOrder = (order: ConfirmedOrder) => {
+      if (cancelled) return true;
+      if (order.status === "paid") {
+        finishPaid(order);
+        return true;
+      }
+      if (order.status === "failed" || order.status === "refunded") {
+        setState("failed");
+        setMessage(order.status === "refunded" ? "Cette commande a été remboursée." : "Le paiement a échoué ou a été annulé.");
+        return true;
+      }
+      setState("waiting");
+      const providerStatus = order.provider_status ? ` (${order.provider_status})` : "";
+      setMessage(`Confirmation opérateur en cours${providerStatus}…`);
+      return false;
+    };
+
+    const pollInternalStatus = async () => {
+      pollRef.current += 1;
+      try {
+        const order = await api.get<ConfirmedOrder>(`/payments/orders/${orderId}/`);
+        if (handleOrder(order)) return;
+      } catch (error) {
+        if (cancelled) return;
+        const text = error instanceof ApiError ? error.message : "Impossible de vérifier la commande.";
+        setState("waiting");
+        setMessage(`${text} Nouvelle tentative automatique…`);
+      }
+
+      if (pollRef.current >= 12) {
+        setState("waiting");
+        setMessage("La confirmation prend plus de temps que prévu. KalanPro continuera la réconciliation automatiquement en arrière-plan.");
+        return;
+      }
+
+      // Trois contrôles prestataire maximum pendant la page de retour. Entre eux, on lit
+      // uniquement l'état KalanPro actualisé par les webhooks, ce qui évite de marteler le wallet.
+      if ([3, 7].includes(pollRef.current)) {
+        schedule(confirmWithProvider);
+      } else {
+        schedule(pollInternalStatus);
+      }
+    };
+
+    const confirmWithProvider = async () => {
+      providerCheckRef.current += 1;
+      setState(providerCheckRef.current === 1 ? "checking" : "waiting");
       try {
         const order = await api.post<ConfirmedOrder>(`/payments/orders/${orderId}/confirm/`, {});
-        if (cancelled) return;
-        clear();
-        setState("paid");
-        setMessage("Paiement confirmé. Votre accès est activé.");
-        const items = order.items || [];
-        const employerOnly = items.length > 0 && items.every((item) => item.item_type === "employer");
-        const mentorshipOnly = items.length > 0 && items.every((item) => item.item_type === "mentoring");
-        const destination = employerOnly
-          ? `/dashboard/employer?billing=updated&order=${orderId}`
-          : mentorshipOnly
-            ? `/dashboard/student/mentorship?booked=1&order=${orderId}`
-            : `/dashboard/student?purchased=1&order=${orderId}`;
-        timer = setTimeout(() => router.replace(destination), 900);
+        if (handleOrder(order)) return;
       } catch (error) {
         if (cancelled) return;
         const text = error instanceof ApiError ? error.message : "Impossible de vérifier le paiement.";
-        const refused = /refus|annul|failed/i.test(text);
+        const refused = /refus|annul|failed|rembours/i.test(text);
         if (refused) {
           setState("failed");
           setMessage(text);
           return;
         }
-        if (attemptRef.current < 12) {
-          setState("waiting");
-          setMessage("Paiement reçu, confirmation opérateur en cours…");
-          timer = setTimeout(check, 2000);
-        } else {
-          setState("waiting");
-          setMessage("La confirmation prend plus de temps que prévu. Votre commande sera activée automatiquement dès réception du webhook opérateur.");
-        }
+        setState("waiting");
+        setMessage("Paiement initié, confirmation opérateur en cours…");
       }
+      schedule(pollInternalStatus);
     };
 
-    check();
+    void confirmWithProvider();
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
@@ -89,7 +144,7 @@ export default function CheckoutReturnPage() {
             <RotateCcw size={17} /> Réessayer le paiement
           </button>
         )}
-        {state === "waiting" && attemptRef.current >= 12 && (
+        {state === "waiting" && pollRef.current >= 12 && (
           <button type="button" onClick={() => window.location.reload()} className="btn-outline mt-6 w-full">
             <RotateCcw size={17} /> Vérifier à nouveau
           </button>

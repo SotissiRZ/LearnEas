@@ -34,7 +34,7 @@ import {
   BriefcaseBusiness,
   Bot, Database, Gauge, Sparkles, Paperclip,
 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, apiDownload } from "@/lib/api";
 import CurrencyPrice, { CurrencyValue } from "@/components/ui/CurrencyPrice";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import GuardScreen from "@/components/ui/GuardScreen";
@@ -49,6 +49,11 @@ type Order = {
   id: number;
   status: string;
   provider: string;
+  provider_sandbox: boolean;
+  provider_status: string;
+  payment_method: string;
+  last_provider_check_at: string | null;
+  expires_at: string | null;
   total_amount: string;
   currency: string;
   invoice_number: string;
@@ -56,8 +61,24 @@ type Order = {
   paid_at: string | null;
   customer_name: string;
   customer_email: string;
+  open_payment_issue_count: number;
   items: { id: number; title: string; item_type: string; instructor_name: string; unit_price: string }[];
 };
+
+type PaymentAttempt = {
+  id: number; attempt_number: number; provider: string; provider_sandbox: boolean; provider_reference: string;
+  status: string; provider_status: string; payment_method: string; check_count: number; error_count: number;
+  last_error: string; last_checked_at: string | null; started_at: string; completed_at: string | null;
+};
+type PaymentEvent = {
+  id: number; source: string; event_type: string; outcome: string; request_id: string; message: string;
+  payload: Record<string, unknown>; created_at: string;
+};
+type PaymentIssue = {
+  id: number; issue_type: string; severity: string; status: string; message: string;
+  expected: Record<string, unknown>; observed: Record<string, unknown>; created_at: string; resolved_at: string | null; resolution_note: string;
+};
+type PaymentAudit = { order: Order; attempts: PaymentAttempt[]; events: PaymentEvent[]; issues: PaymentIssue[] };
 
 type Payout = {
   id: number;
@@ -115,6 +136,12 @@ type Overview = {
   formations: number;
   orders: number;
   paid_orders: number;
+  pending_orders: number;
+  failed_orders: number;
+  refunded_orders: number;
+  open_payment_issues: number;
+  critical_payment_issues: number;
+  stale_payment_issues: number;
   total_revenue: string;
   platform_fees: string;
   instructor_earnings: string;
@@ -410,6 +437,7 @@ function OverviewTab() {
             <Kpi href="/dashboard/admin?tab=content&type=course" icon={<BookOpen size={19} />} label="Cours" value={overview?.courses || 0} />
             <Kpi href="/dashboard/admin?tab=content&type=pdf" icon={<FileText size={19} />} label="PDF" value={overview?.pdfs || 0} />
             <Kpi href="/dashboard/admin?tab=content&type=formation" icon={<Video size={19} />} label="Formations live" value={overview?.formations || 0} />
+            <Kpi href="/dashboard/admin?tab=orders&issues=1" icon={<XCircle size={19} />} label="Anomalies paiement" value={overview?.open_payment_issues || 0} />
           </div>
 
           <div className="mb-6 grid grid-cols-1 gap-5 xl:grid-cols-2">
@@ -459,6 +487,7 @@ function OverviewTab() {
             <InfoCard label="Utilisateurs actifs" value={`${overview?.active_users || 0}`} note={`${overview?.inactive_users || 0} compte(s) désactivé(s)`} href="/dashboard/admin?tab=users&active=true" />
             <InfoCard label="Demandes instructeur" value={`${overview?.pending_instructor_applications || 0}`} note="En attente de validation" href="/dashboard/admin?tab=applications&status=pending" />
             <InfoCard label="Commandes payées" value={`${overview?.paid_orders || 0}`} note={`${overview?.orders || 0} commande(s) au total`} href="/dashboard/admin?tab=orders&status=paid" />
+            <InfoCard label="Paiements à surveiller" value={`${overview?.critical_payment_issues || 0} critique(s)`} note={`${overview?.stale_payment_issues || 0} en attente prolongée`} href="/dashboard/admin?tab=orders&issues=1" />
             <InfoCard label="Politique de versement" value={`${overview?.platform_commission_percent || 0}%`} note={<>Retrait minimum : <CurrencyPrice value={overview?.minimum_payout_amount || 0} /></>} href="/dashboard/admin?tab=settings" />
           </div>
         </>
@@ -751,6 +780,7 @@ function OrdersTab() {
   const [count, setCount] = useState(0);
   const [statusFilter, setStatusFilter] = useState(params.get("status") || "");
   const [provider, setProvider] = useState("");
+  const [issuesOnly, setIssuesOnly] = useState(params.get("issues") === "1");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -762,13 +792,14 @@ function OrdersTab() {
     const q = new URLSearchParams({ page: String(page), ordering: "-created_at" });
     if (statusFilter) q.set("status", statusFilter);
     if (provider) q.set("provider", provider);
+    if (issuesOnly) q.set("has_payment_issue", "1");
     if (search) q.set("search", search);
     try {
       const data = await api.get<Paginated<Order>>(`/payments/orders/?${q}`);
       setOrders(data.results); setCount(data.count);
     } catch (e) { setError(toError(e)); }
     finally { setLoading(false); }
-  }, [statusFilter, provider, search, page]);
+  }, [statusFilter, provider, issuesOnly, search, page]);
 
   useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); }, [load]);
 
@@ -787,12 +818,14 @@ function OrdersTab() {
       <div className="card mb-4 flex flex-wrap gap-3 p-4">
         <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Facture, client..." />
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="input-admin"><option value="">Tous les statuts</option><option value="pending">En attente</option><option value="paid">Payée</option><option value="failed">Échouée</option><option value="refunded">Remboursée</option></select>
-        <select value={provider} onChange={(e) => { setProvider(e.target.value); setPage(1); }} className="input-admin"><option value="">Tous les moyens</option><option value="stripe">Carte</option><option value="paypal">PayPal</option><option value="mobile_money">Mobile Money</option></select>
+        <select value={provider} onChange={(e) => { setProvider(e.target.value); setPage(1); }} className="input-admin"><option value="">Tous les moyens</option><option value="stripe">Stripe / carte</option><option value="cinetpay">CinetPay / Mobile Money</option><option value="geniuspay">GeniusPay</option><option value="youcanpay">YouCan Pay</option><option value="manual">Manuel / test</option></select>
+        <label className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600"><input type="checkbox" checked={issuesOnly} onChange={(e) => { setIssuesOnly(e.target.checked); setPage(1); }} /> Anomalies seulement</label>
+        <button type="button" onClick={() => { const q = new URLSearchParams(); if (statusFilter) q.set("status", statusFilter); if (provider) q.set("provider", provider); if (issuesOnly) q.set("has_payment_issue", "1"); void apiDownload(`/payments/orders/export/?${q}`, `kalanpro-paiements-${new Date().toISOString().slice(0,10)}.csv`); }} className="btn-outline !py-2 text-xs"><FileText size={14} /> Export CSV</button>
       </div>
       {error && <Alert text={error} tone="error" />}
       <div className="card overflow-x-auto">
         <table className="w-full min-w-[900px] text-sm"><thead className="table-head"><tr><th>Facture</th><th>Client</th><th>Montant</th><th>Moyen</th><th>Statut</th><th>Date</th><th></th></tr></thead>
-          <tbody className="divide-y divide-gray-100">{orders.map((o) => <tr key={o.id}><td className="px-4 py-3 font-mono text-xs">{o.invoice_number}</td><td className="px-4 py-3"><p className="font-medium">{o.customer_name}</p><p className="text-xs text-gray-400">{o.customer_email}</p></td><td className="px-4 py-3 font-semibold"><CurrencyValue value={o.total_amount} code={o.currency} /></td><td className="px-4 py-3 text-gray-500">{o.provider}</td><td className="px-4 py-3"><StatusBadge status={o.status} /></td><td className="px-4 py-3 text-gray-500">{new Date(o.created_at).toLocaleDateString("fr-FR")}</td><td className="px-4 py-3"><button onClick={() => setSelected(o)} className="text-xs font-semibold text-brand-700">Détails</button></td></tr>)}</tbody>
+          <tbody className="divide-y divide-gray-100">{orders.map((o) => <tr key={o.id}><td className="px-4 py-3 font-mono text-xs">{o.invoice_number}</td><td className="px-4 py-3"><p className="font-medium">{o.customer_name}</p><p className="text-xs text-gray-400">{o.customer_email}</p></td><td className="px-4 py-3 font-semibold"><CurrencyValue value={o.total_amount} code={o.currency} /></td><td className="px-4 py-3 text-gray-500">{o.provider}</td><td className="px-4 py-3"><div className="flex flex-wrap items-center gap-1.5"><StatusBadge status={o.status} />{o.open_payment_issue_count > 0 && <span className="badge bg-red-50 text-red-700">{o.open_payment_issue_count} anomalie{o.open_payment_issue_count > 1 ? "s" : ""}</span>}</div></td><td className="px-4 py-3 text-gray-500">{new Date(o.created_at).toLocaleDateString("fr-FR")}</td><td className="px-4 py-3"><button onClick={() => setSelected(o)} className="text-xs font-semibold text-brand-700">Détails</button></td></tr>)}</tbody>
         </table>
         {loading && <LoadingBlock compact />}{!loading && orders.length === 0 && <Empty text="Aucune commande trouvée." />}
       </div>
@@ -1327,8 +1360,73 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function OrderDetails({ order, onStatus }: { order: Order; onStatus: (status: string) => void }) {
-  return <div className="space-y-5"><div className="grid gap-3 sm:grid-cols-2"><MiniMetric label="Client" value={order.customer_name} /><MiniMetric label="Montant" value={<CurrencyValue value={order.total_amount} code={order.currency} />} /><MiniMetric label="Moyen" value={order.provider} /><MiniMetric label="Statut" value={order.status} /></div><div><h3 className="mb-2 text-sm font-bold">Articles</h3><div className="divide-y divide-gray-100 rounded-xl border border-gray-100">{order.items.map((i) => <div key={i.id} className="flex items-center justify-between gap-3 p-3 text-sm"><div><p className="font-semibold">{i.title}</p><p className="text-xs text-gray-400">{i.item_type} · {i.instructor_name || "Sans instructeur"}</p></div><strong><CurrencyPrice value={i.unit_price} /></strong></div>)}</div></div><div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800">Changer le statut ici met à jour l'état interne KalanPro. Un remboursement réel auprès d'un prestataire de paiement doit être traité via son intégration lorsque celle-ci sera connectée.</div><div className="flex flex-wrap gap-2"><button onClick={() => onStatus("paid")} className="btn-primary !py-2">Marquer payée / réparer l'accès</button><button onClick={() => onStatus("failed")} className="btn-outline !py-2">Marquer échouée</button><button onClick={() => onStatus("refunded")} className="btn-outline !py-2">Marquer remboursée</button></div></div>;
+  const [audit, setAudit] = useState<PaymentAudit | null>(null);
+  const [loadingAudit, setLoadingAudit] = useState(true);
+  const [auditError, setAuditError] = useState("");
+
+  const loadAudit = useCallback(async () => {
+    setLoadingAudit(true); setAuditError("");
+    try { setAudit(await api.get<PaymentAudit>(`/payments/orders/${order.id}/payment-audit/`)); }
+    catch (e) { setAuditError(toError(e)); }
+    finally { setLoadingAudit(false); }
+  }, [order.id]);
+
+  useEffect(() => { void loadAudit(); }, [loadAudit]);
+
+  async function resolveIssue(issue: PaymentIssue) {
+    const note = window.prompt("Note de résolution", "Vérification manuelle effectuée") || "";
+    if (!note) return;
+    try {
+      await api.post(`/payments/orders/${order.id}/resolve-payment-issue/`, { issue_id: issue.id, note });
+      await loadAudit();
+    } catch (e) { setAuditError(toError(e)); }
+  }
+
+  const activeIssues = audit?.issues.filter((issue) => issue.status === "open") || [];
+  return <div className="space-y-5">
+    <div className="grid gap-3 sm:grid-cols-2">
+      <MiniMetric label="Client" value={order.customer_name} />
+      <MiniMetric label="Montant" value={<CurrencyValue value={order.total_amount} code={order.currency} />} />
+      <MiniMetric label="Moyen" value={`${order.provider}${order.provider_sandbox ? " · sandbox" : ""}`} />
+      <MiniMetric label="Statut KalanPro" value={order.status} />
+      <MiniMetric label="Statut prestataire" value={order.provider_status || "—"} />
+      <MiniMetric label="Canal" value={order.payment_method || "—"} />
+      <MiniMetric label="Dernière vérification" value={order.last_provider_check_at ? new Date(order.last_provider_check_at).toLocaleString("fr-FR") : "—"} />
+      <MiniMetric label="Fenêtre normale" value={order.expires_at ? new Date(order.expires_at).toLocaleString("fr-FR") : "—"} />
+    </div>
+
+    {activeIssues.length > 0 && <div className="rounded-xl border border-red-100 bg-red-50 p-4">
+      <p className="text-sm font-extrabold text-red-700">{activeIssues.length} anomalie(s) de paiement ouverte(s)</p>
+      <div className="mt-3 space-y-2">{activeIssues.map((issue) => <div key={issue.id} className="rounded-lg bg-white p-3 text-xs text-red-800">
+        <div className="flex items-start justify-between gap-3"><div><p className="font-bold">{issue.issue_type} · {issue.severity}</p><p className="mt-1 leading-5">{issue.message}</p></div><button type="button" onClick={() => void resolveIssue(issue)} className="btn-outline !px-2 !py-1 text-[11px]">Résoudre</button></div>
+      </div>)}</div>
+    </div>}
+
+    <div><h3 className="mb-2 text-sm font-bold">Articles</h3><div className="divide-y divide-gray-100 rounded-xl border border-gray-100">{order.items.map((i) => <div key={i.id} className="flex items-center justify-between gap-3 p-3 text-sm"><div><p className="font-semibold">{i.title}</p><p className="text-xs text-gray-400">{i.item_type} · {i.instructor_name || "Sans instructeur"}</p></div><strong><CurrencyPrice value={i.unit_price} /></strong></div>)}</div></div>
+
+    <div className="rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">Pour une passerelle externe, KalanPro n’attribue les droits qu’après vérification serveur du montant, de la devise et de la référence. Un remboursement externe doit rester confirmé par une référence prestataire avant révocation des droits.</div>
+    <div className="flex flex-wrap gap-2"><button onClick={() => onStatus("paid")} className="btn-primary !py-2">Marquer payée / réparer l'accès</button><button onClick={() => onStatus("failed")} className="btn-outline !py-2">Marquer échouée</button><button onClick={() => onStatus("refunded")} className="btn-outline !py-2">Marquer remboursée</button></div>
+
+    <div>
+      <div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-bold">Audit du paiement</h3><button type="button" onClick={() => void loadAudit()} className="text-xs font-semibold text-brand-700">Actualiser</button></div>
+      {loadingAudit ? <LoadingBlock compact /> : auditError ? <Alert text={auditError} tone="error" /> : audit ? <div className="space-y-3">
+        <div className="rounded-xl border border-gray-100 p-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Tentatives</p>
+          <div className="mt-2 space-y-2">{audit.attempts.length === 0 ? <p className="text-xs text-gray-400">Aucune tentative enregistrée.</p> : audit.attempts.map((attempt) => <div key={attempt.id} className="grid gap-1 rounded-lg bg-gray-50 p-2 text-xs sm:grid-cols-2">
+            <span><b>#{attempt.attempt_number}</b> · {attempt.status}</span><span>{attempt.provider_status || "—"} {attempt.payment_method ? `· ${attempt.payment_method}` : ""}</span><span>Checks: {attempt.check_count} · erreurs: {attempt.error_count}</span><span className="truncate font-mono">{attempt.provider_reference || "sans référence"}</span>{attempt.last_error && <span className="sm:col-span-2 text-red-600">{attempt.last_error}</span>}
+          </div>)}</div>
+        </div>
+        <div className="rounded-xl border border-gray-100 p-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Événements récents</p>
+          <div className="mt-2 max-h-72 space-y-2 overflow-y-auto">{audit.events.length === 0 ? <p className="text-xs text-gray-400">Aucun événement.</p> : audit.events.slice(0, 30).map((event) => <div key={event.id} className="rounded-lg bg-gray-50 p-2 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-bold">{event.event_type}</span><span className="text-gray-400">{new Date(event.created_at).toLocaleString("fr-FR")}</span></div><p className="mt-1 text-gray-500">{event.source} · {event.outcome}{event.request_id ? ` · req ${event.request_id}` : ""}</p>{event.message && <p className="mt-1 text-red-600">{event.message}</p>}
+          </div>)}</div>
+        </div>
+      </div> : null}
+    </div>
+  </div>;
 }
+
 
 function Alert({ text, tone = "success" }: { text: string; tone?: "success" | "error" }) {
   return <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${tone === "error" ? "border-red-100 bg-red-50 text-red-700" : "border-emerald-100 bg-emerald-50 text-emerald-700"}`}>{text}</div>;

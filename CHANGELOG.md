@@ -1212,3 +1212,16 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Sauvegarde/restauration PostgreSQL via commandes Django et `postgresql-client`, avec volumes dédiés aux dumps.
 - `.gitignore` racine, nettoyage systématique de `.next-build-check` et validation interne de secrets à haute confiance.
 - Aucun changement métier ni migration de données.
+
+## v80 — Mobile Money et gouvernance financière (2026-09-05)
+- Ajout d’un journal financier persistant : `PaymentAttempt`, `PaymentEvent` et `PaymentIssue`, avec migration additive `payments/0014`.
+- Idempotence webhook persistante, indépendante de Redis, et journalisation expurgée des secrets/PII.
+- Vérification systématique référence, montant et devise avant tout fulfillment sur les flux externes pris en charge.
+- Les divergences financières ouvrent une anomalie critique et ne débloquent jamais un achat.
+- Réconciliation des paiements `pending` durcie ; les wallets anciens sont signalés `stale_pending` sans échec forcé.
+- Nouvelles métadonnées opérationnelles sur `Order` : statut prestataire, moyen de paiement, dernière vérification et expiration.
+- Back-office enrichi avec audit par commande, anomalies résolubles, filtre d’anomalies et export CSV.
+- Commande `reconcile_payments` pour contrôle/réconciliation manuelle.
+- Retour Mobile Money optimisé : état interne/webhook prioritaire et nombre limité d’appels prestataire.
+- Variables de réconciliation/expiration documentées et planification Celery de revue des commandes anciennes.
+- Aucun secret marchand n’est embarqué ; l’activation live dépend toujours des identifiants de production fournis par le prestataire.

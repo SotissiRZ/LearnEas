@@ -1,5 +1,8 @@
 from django.contrib import admin
-from .models import Currency, PaymentGateway, Order, OrderItem, PayoutProfile, InstructorPayout
+from .models import (
+    Currency, PaymentGateway, Order, OrderItem, PayoutProfile, InstructorPayout,
+    PaymentAttempt, PaymentEvent, PaymentIssue,
+)
 
 
 @admin.register(Currency)
@@ -39,7 +42,8 @@ class OrderAdmin(admin.ModelAdmin):
     search_fields = ("invoice_number", "user__email", "provider_reference")
     readonly_fields = (
         "user", "status", "provider", "provider_sandbox", "base_total_amount", "total_amount",
-        "currency", "provider_reference", "invoice_number", "created_at", "paid_at",
+        "currency", "provider_reference", "provider_status", "payment_method", "last_provider_check_at", "expires_at",
+        "invoice_number", "created_at", "paid_at",
     )
     inlines = [OrderItemInline]
 
@@ -71,6 +75,47 @@ class InstructorPayoutAdmin(admin.ModelAdmin):
         "instructor", "amount", "status", "method", "account_reference_snapshot", "requested_at",
         "processed_at", "reference", "note",
     )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+@admin.register(PaymentAttempt)
+class PaymentAttemptAdmin(admin.ModelAdmin):
+    list_display = ("order", "attempt_number", "provider", "provider_sandbox", "status", "provider_status", "check_count", "error_count", "started_at")
+    list_filter = ("provider", "provider_sandbox", "status")
+    search_fields = ("order__invoice_number", "provider_reference")
+    readonly_fields = tuple(field.name for field in PaymentAttempt._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PaymentEvent)
+class PaymentEventAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "provider", "provider_sandbox", "source", "event_type", "outcome", "order", "request_id")
+    list_filter = ("provider", "provider_sandbox", "source", "outcome", "event_type")
+    search_fields = ("order__invoice_number", "external_id", "request_id", "payload_hash")
+    readonly_fields = tuple(field.name for field in PaymentEvent._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PaymentIssue)
+class PaymentIssueAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "order", "issue_type", "severity", "status", "resolved_at")
+    list_filter = ("status", "severity", "issue_type")
+    search_fields = ("order__invoice_number", "order__user__email", "message")
+    readonly_fields = tuple(field.name for field in PaymentIssue._meta.fields)
 
     def has_add_permission(self, request):
         return False
