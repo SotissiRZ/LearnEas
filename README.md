@@ -1,5 +1,8 @@
 # KalanPro
 
+> **v74 — documentation rôle Entreprise / Recruteur :** README aligné sur le rôle `employer` de premier niveau, compte démo recruteur, dashboard `/dashboard/employer`, validation entreprise et permissions.
+> **v73 — rôle Entreprise / Recruteur :** inscription dédiée, `EmployerProfile` transactionnel, validation admin et migration automatique des anciens profils recruteur. Voir [`docs/EMPLOYER_ROLE_V73.md`](./docs/EMPLOYER_ROLE_V73.md).
+
 > **v65 — UI KalanPro AI :** lanceur flottant déplaçable, mémorisé et contraint au viewport pour ne plus masquer les boutons d’action. Voir [`docs/AI_LAUNCHER_V65.md`](./docs/AI_LAUNCHER_V65.md).
 > **v68 — KalanPro AI Phase 2 (entretien) :** simulation guidée, score de préparation candidat, suivi post-entretien et scorecards recruteur pondérées. Voir [`docs/AI_PHASE2_V68.md`](./docs/AI_PHASE2_V68.md).
 > **v64 — KalanPro AI Phase 2 :** candidature assistée, analyse CV/offre, création réelle de cours brouillons, outils mentor/recruteur et capacités cumulées. Voir [`docs/AI_PHASE2_V64.md`](./docs/AI_PHASE2_V64.md).
@@ -74,6 +77,7 @@ Les utilisateurs de test sont créés par la commande Django `seed_demo`.
 | Étudiant | Fatou Ndiaye | `student_fatou` | `fatou@kalanpro.com` | `student1234` |
 | Étudiant | Jean Mbeki | `student_jean` | `jean@kalanpro.com` | `student1234` |
 | Étudiant | Aïcha Traoré | `student_aicha` | `aicha@kalanpro.com` | `student1234` |
+| Entreprise / Recruteur | Demo Digital Africa | `recruiter_demo` | `recruteur@kalanpro.com` | `recruiter1234` |
 
 ### Créer / recréer les données de démonstration
 
@@ -208,8 +212,9 @@ La délivrance du contenu ne dépend jamais du simple retour navigateur : KalanP
 - Pour une production fiable derrière des NAT/réseaux mobiles, un **TURN** reste nécessaire. Les credentials TURN peuvent être générés temporairement côté backend avec `RTC_TURN_SECRET`; aucun secret TURN n’est compilé dans le frontend. Pour des classes nombreuses, prévoir une architecture **SFU** plutôt qu'un maillage WebRTC pair-à-pair.
 
 ### Comptes & rôles
-- 3 rôles : étudiant, instructeur, administrateur.
+- 4 rôles de premier niveau : **étudiant**, **instructeur**, **entreprise / recruteur** (`employer`) et **administrateur**.
 - Un étudiant peut déposer une **demande pour devenir instructeur** depuis son dashboard ; le rôle n’est accordé qu’après validation explicite par un administrateur.
+- L'inscription publique permet de choisir **Apprenant** ou **Entreprise / Recruteur**. Les rôles `admin` et `instructor` ne peuvent pas être auto-attribués.
 - Dashboards dédiés :
   - **Étudiant** : mes cours, ma progression, mes PDF, mon profil, mes certificats.
   - **Instructeur** : back-office complet avec sidebar dédiée : aperçu, cours, PDF, formations live,
@@ -218,9 +223,10 @@ La délivrance du contenu ne dépend jamais du simple retour navigateur : KalanP
     dépublier ses contenus, suivre ses étudiants et leur progression, consulter ses ventes, configurer
     sa destination de versement, demander un retrait, répondre aux questions de cours, contrôler les
     présences des séances live et gérer son profil public ainsi que son mot de passe.
-  - **Admin** : back-office complet avec sidebar dédiée : aperçu, utilisateurs, demandes instructeur, contenus, commandes,
+  - **Entreprise / Recruteur** : dashboard `/dashboard/employer`, profil entreprise (nom, secteur, pays, ville, taille, site web, présentation et logo), statut de validation `pending / approved / rejected / suspended`, publication et gestion des offres, pipeline de candidatures et accès au vivier de talents après approbation administrative. Un profil en attente peut compléter sa fiche ; un profil rejeté peut être corrigé puis renvoyé.
+  - **Admin** : back-office complet avec sidebar dédiée : aperçu, utilisateurs, demandes instructeur, recrutement/entreprises, contenus, commandes,
     versements instructeurs, séances live, catégories, FAQ/avis et paramètres de la plateforme.
-    L'admin peut créer/désactiver des comptes, gérer les rôles, approuver/refuser les demandes instructeur, modérer le catalogue et les avis. Tous les KPI
+    L'admin peut créer/désactiver des comptes, gérer les rôles, approuver/refuser les demandes instructeur, approuver/refuser/suspendre les entreprises, modérer le catalogue et les avis. Tous les KPI
     sont navigables vers leur détail, les listes sont filtrables/paginées et les rapports de présence
     s'ouvrent dans une fenêtre dédiée.
     Un compte admin **technique** (`is_staff` + `is_superuser`) dispose aussi du bouton **Administration technique** vers Django Admin ; ce privilège n’est pas accordé automatiquement aux simples admins applicatifs.
@@ -571,4 +577,17 @@ L'assistant accepte des pièces jointes privées (PDF, DOCX, TXT, CSV, MD, JSON,
 
 ## Rôle Entreprise / Recruteur (v73)
 
-Un recruteur peut créer directement un compte depuis `/register?role=employer`. Le compte arrive sur `/dashboard/employer` avec un profil entreprise en attente de validation. Le compte de démonstration est `recruteur@kalanpro.com` / `recruiter1234`.
+Le rôle `employer` est un rôle utilisateur de premier niveau. Un recruteur peut créer directement un compte depuis `/register?role=employer` ou sélectionner **Entreprise / Recruteur** sur `/register`. Le compte est redirigé vers `/dashboard/employer` et reçoit immédiatement un `EmployerProfile` en statut `pending`.
+
+Avant validation administrateur, le recruteur peut compléter son profil entreprise mais ne peut pas publier d'offre ni accéder au vivier de talents. Après approbation, il peut gérer ses opportunités, consulter son pipeline de candidatures et utiliser les outils recruteur autorisés. Une suspension retire immédiatement ces capacités sans supprimer l'historique.
+
+Compte de démonstration :
+
+```text
+Email : recruteur@kalanpro.com
+Mot de passe : recruiter1234
+Dashboard : http://localhost:3000/dashboard/employer
+Entreprise : Demo Digital Africa
+```
+
+Voir également `docs/EMPLOYER_ROLE_V73.md` et `docs/EMPLOI_MISSIONS.md`.

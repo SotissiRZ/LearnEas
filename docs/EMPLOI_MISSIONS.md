@@ -18,7 +18,7 @@ Fermer la boucle produit **apprendre → pratiquer → certifier → portfolio �
 
 ## Côté recruteur
 
-Un compte KalanPro peut demander un espace entreprise sans perdre son rôle apprenant/instructeur.
+Le recruteur utilise désormais le rôle utilisateur de premier niveau `employer`. Il crée son compte via le parcours **Entreprise / Recruteur** et reçoit automatiquement un `EmployerProfile` en attente de validation.
 
 1. Le recruteur renseigne l'entreprise.
 2. Le pays est choisi dans la liste KalanPro.
@@ -91,7 +91,7 @@ Les mêmes objets restent disponibles dans l'administration Django.
 
 Après `python manage.py seed_demo` :
 
-- recruteur : `recruteur@learneas.com` / `recruiter1234` ;
+- recruteur : `recruteur@kalanpro.com` / `recruiter1234` ;
 - entreprise : **Demo Digital Africa** ;
 - deux opportunités de démonstration ;
 - Fatou possède un profil candidat visible et une candidature de démonstration.

@@ -1,3 +1,11 @@
+# v74 — documentation rôle Entreprise / Recruteur
+
+- README corrigé : 4 rôles de premier niveau au lieu de l'ancien libellé « 3 rôles ».
+- Ajout du compte de démonstration recruteur dans le tableau principal des comptes de test.
+- Documentation détaillée du dashboard `/dashboard/employer`, du `EmployerProfile`, des statuts de validation et des permissions.
+- Documentation Emploi/Missions alignée sur le rôle `employer` de v73 et sur l'email démo `recruteur@kalanpro.com`.
+- Aucun changement de schéma, migration, logique métier ou données applicatives dans ce lot.
+
 # v73 — rôle Entreprise / Recruteur
 
 - Ajoute `employer` comme rôle utilisateur de premier niveau.
