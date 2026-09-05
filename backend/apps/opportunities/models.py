@@ -25,10 +25,19 @@ class EmployerProfile(models.Model):
     company_name = models.CharField(max_length=180)
     slug = models.SlugField(max_length=200, unique=True, blank=True)
     description = models.TextField(blank=True)
+    tagline = models.CharField(max_length=180, blank=True)
     industry = models.CharField(max_length=140, blank=True)
     company_size = models.CharField(max_length=20, choices=CompanySize.choices, blank=True)
     website_url = models.URLField(blank=True)
+    linkedin_url = models.URLField(blank=True)
+    contact_email = models.EmailField(blank=True)
+    founded_year = models.PositiveSmallIntegerField(null=True, blank=True)
+    brand_color = models.CharField(max_length=7, default="#ff5a1f", blank=True)
     logo = models.ImageField(upload_to="employers/logos/%Y/%m/", blank=True, null=True)
+    banner = models.ImageField(upload_to="employers/banners/%Y/%m/", blank=True, null=True)
+    values = models.JSONField(default=list, blank=True)
+    benefits = models.JSONField(default=list, blank=True)
+    hiring_regions = models.JSONField(default=list, blank=True)
     country = models.CharField(max_length=100)
     city = models.CharField(max_length=120, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
@@ -145,10 +154,14 @@ class Opportunity(models.Model):
     work_mode = models.CharField(max_length=20, choices=WorkMode.choices, default=WorkMode.REMOTE, db_index=True)
     experience_level = models.CharField(max_length=20, choices=ExperienceLevel.choices, default=ExperienceLevel.ENTRY)
     description = models.TextField()
+    department = models.CharField(max_length=140, blank=True)
+    openings = models.PositiveSmallIntegerField(default=1)
+    cover_image = models.ImageField(upload_to="opportunities/covers/%Y/%m/", blank=True, null=True)
     responsibilities = models.JSONField(default=list, blank=True)
     requirements = models.JSONField(default=list, blank=True)
     skills_required = models.JSONField(default=list, blank=True)
     skills_optional = models.JSONField(default=list, blank=True)
+    screening_questions = models.JSONField(default=list, blank=True)
     country = models.CharField(max_length=100, blank=True, db_index=True)
     city = models.CharField(max_length=120, blank=True)
     remote_worldwide = models.BooleanField(default=False)
@@ -211,6 +224,7 @@ class OpportunityApplication(models.Model):
     candidate = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="opportunity_applications")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.SUBMITTED, db_index=True)
     cover_letter = models.TextField(blank=True)
+    screening_answers = models.JSONField(default=list, blank=True)
     resume_file = models.FileField(upload_to="opportunities/applications/%Y/%m/", blank=True, null=True)
     share_portfolio = models.BooleanField(default=True)
     match_score = models.PositiveSmallIntegerField(default=0)
@@ -226,6 +240,9 @@ class OpportunityApplication(models.Model):
     verified_projects_snapshot = models.JSONField(default=list, blank=True)
 
     recruiter_note = models.TextField(blank=True)
+    recruiter_rating = models.PositiveSmallIntegerField(default=0)
+    recruiter_tags = models.JSONField(default=list, blank=True)
+    next_step_at = models.DateTimeField(null=True, blank=True)
     applied_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -241,3 +258,24 @@ class OpportunityApplication(models.Model):
 
     def __str__(self):
         return f"{self.candidate} → {self.opportunity}"
+
+
+class TalentBookmark(models.Model):
+    employer = models.ForeignKey(EmployerProfile, on_delete=models.CASCADE, related_name="talent_bookmarks")
+    talent = models.ForeignKey(CandidateProfile, on_delete=models.CASCADE, related_name="recruiter_bookmarks")
+    note = models.TextField(blank=True)
+    tags = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["employer", "talent"], name="uniq_employer_talent_bookmark"),
+        ]
+        indexes = [
+            models.Index(fields=["employer", "-updated_at"], name="opp_bookmark_employer_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.employer.company_name} ★ {self.talent.user}"

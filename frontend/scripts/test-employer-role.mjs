@@ -24,3 +24,26 @@ test('login et navigation envoient employer vers son dashboard', () => {
 test('dashboard entreprise est protégé par le rôle employer', () => {
   assert.match(read('app/dashboard/employer/page.tsx'), /roles:\s*\["employer"\]/);
 });
+
+test('workspace recruteur v75 expose branding, ATS et vivier', () => {
+  const dashboard = read('app/dashboard/employer/page.tsx');
+  assert.match(dashboard, /banner/);
+  assert.match(dashboard, /logo/);
+  assert.match(dashboard, /brand_color/);
+  assert.match(dashboard, /screening_questions/);
+  assert.match(dashboard, /recruiter_rating/);
+  assert.match(dashboard, /recruiter_tags/);
+  assert.match(dashboard, /next_step_at/);
+  assert.match(dashboard, /talent-bookmarks/);
+  assert.match(dashboard, /Pipeline/);
+});
+
+test('offres et page entreprise affichent les visuels publics', () => {
+  assert.match(read('components/opportunities/OpportunityCard.tsx'), /cover_image/);
+  assert.match(read('app/opportunities/[slug]/page.tsx'), /screening_answers/);
+  const company = read('app/companies/[slug]/page.tsx');
+  assert.match(company, /company\.banner/);
+  assert.match(company, /company\.logo/);
+  assert.match(company, /benefits/);
+  assert.match(company, /values/);
+});

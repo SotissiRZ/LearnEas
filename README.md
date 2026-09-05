@@ -1,5 +1,7 @@
 # KalanPro
 
+> **v75 — Recruiter Workspace & marque employeur :** espace entreprise reconstruit avec logo/bannière modifiables après validation, visuels d’offres, page entreprise publique, ATS en pipeline, notes/tags/notation, prochaines étapes, filtres et favoris talents, analytics et questions de présélection. Voir [`docs/RECRUITER_WORKSPACE_V75.md`](./docs/RECRUITER_WORKSPACE_V75.md).
+
 > **v74 — documentation rôle Entreprise / Recruteur :** README aligné sur le rôle `employer` de premier niveau, compte démo recruteur, dashboard `/dashboard/employer`, validation entreprise et permissions.
 > **v73 — rôle Entreprise / Recruteur :** inscription dédiée, `EmployerProfile` transactionnel, validation admin et migration automatique des anciens profils recruteur. Voir [`docs/EMPLOYER_ROLE_V73.md`](./docs/EMPLOYER_ROLE_V73.md).
 
@@ -223,7 +225,7 @@ La délivrance du contenu ne dépend jamais du simple retour navigateur : KalanP
     dépublier ses contenus, suivre ses étudiants et leur progression, consulter ses ventes, configurer
     sa destination de versement, demander un retrait, répondre aux questions de cours, contrôler les
     présences des séances live et gérer son profil public ainsi que son mot de passe.
-  - **Entreprise / Recruteur** : dashboard `/dashboard/employer`, profil entreprise (nom, secteur, pays, ville, taille, site web, présentation et logo), statut de validation `pending / approved / rejected / suspended`, publication et gestion des offres, pipeline de candidatures et accès au vivier de talents après approbation administrative. Un profil en attente peut compléter sa fiche ; un profil rejeté peut être corrigé puis renvoyé.
+  - **Entreprise / Recruteur** : workspace `/dashboard/employer` avec marque employeur (logo, bannière, couleur, valeurs, avantages, zones de recrutement), page entreprise publique, offres avec visuel, analytics, ATS Kanban, notes internes, notation, tags, prochaine étape, questions de présélection, recherche multi-critères dans le vivier et favoris talents. Statut de validation `pending / approved / rejected / suspended`. Un profil en attente peut compléter sa fiche ; un profil rejeté peut être corrigé puis renvoyé.
   - **Admin** : back-office complet avec sidebar dédiée : aperçu, utilisateurs, demandes instructeur, recrutement/entreprises, contenus, commandes,
     versements instructeurs, séances live, catégories, FAQ/avis et paramètres de la plateforme.
     L'admin peut créer/désactiver des comptes, gérer les rôles, approuver/refuser les demandes instructeur, approuver/refuser/suspendre les entreprises, modérer le catalogue et les avis. Tous les KPI
@@ -574,6 +576,14 @@ L'assistant peut désormais analyser le CV du compte face à une offre, prépare
 
 L'assistant accepte des pièces jointes privées (PDF, DOCX, TXT, CSV, MD, JSON, XLSX, PPTX, PNG/JPEG/WebP), les conserve dans la conversation et peut utiliser leur contenu comme contexte. Les images nécessitent `AI_VISION_ENABLED=True` pour une analyse visuelle réelle. Les brouillons carrière sont exportables en PDF et Word. Voir `docs/AI_ATTACHMENTS_V67.md`.
 
+
+## Recruiter Workspace & marque employeur (v75)
+
+L'espace `/dashboard/employer` n'est plus un simple tableau d'offres. Il comprend cinq modules : **Vue d'ensemble**, **Offres**, **Candidatures**, **Talents** et **Profil entreprise**. Une entreprise approuvée peut modifier son logo et sa bannière sans perdre son approbation ; un changement d'identité sensible (nom/pays) déclenche en revanche une nouvelle validation.
+
+Les offres acceptent désormais un visuel, un département, le nombre de postes et jusqu'à huit questions de présélection. Les candidats répondent à ces questions dans KalanPro. Le recruteur gère ensuite chaque dossier dans un pipeline ATS avec note interne, notation 1–5, tags et date de prochaine étape. Le vivier de talents dispose de filtres (recherche, pays, disponibilité, expérience) et de favoris persistants.
+
+Chaque entreprise approuvée possède une page publique `/companies/<slug>` présentant sa bannière, son logo, sa mission, ses valeurs, ses avantages et ses opportunités ouvertes. Voir `docs/RECRUITER_WORKSPACE_V75.md`.
 
 ## Rôle Entreprise / Recruteur (v73)
 

@@ -1,3 +1,17 @@
+# Audit v75 — Recruiter Workspace, ATS & marque employeur
+
+- Refonte de l'espace entreprise en workspace recruteur multi-onglets : vue d'ensemble, offres, candidatures, vivier et marque employeur.
+- Branding entreprise enrichi : logo, bannière, couleur de marque, accroche, valeurs, avantages, zones de recrutement, LinkedIn et contact recrutement.
+- Page entreprise publique avec offres ouvertes ; les compteurs excluent les offres expirées.
+- Offres enrichies avec visuel, département, nombre de postes et questions de présélection.
+- ATS : pipeline, notes internes, tags, notation 1–5, prochaine étape et réponses de présélection.
+- Vivier : filtres pays/disponibilité/expérience et favoris persistants par entreprise.
+- Migration `opportunities.0003_recruiter_workspace` additive ; aucune donnée historique supprimée.
+- Contrôles statiques : 224 Python valides, 61 migrations sans cycle, 138 TS/TSX valides, tests frontend rôle employeur 6/6, performance 5/5, sécurité 4/4, audit mobile 122 fichiers sans alerte bloquante.
+- Les tests Django runtime et le build Next complet restent à rejouer dans Docker/CI. Voir `docs/VALIDATION_V75.md`.
+
+---
+
 # Audit v63 — KalanPro AI Phase 2 · lot 1
 
 - Ajout d'outils structurés séparant strictement lecture et mutation.

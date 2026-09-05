@@ -4,13 +4,23 @@ export type EmployerProfile = {
   id?: number;
   company_name?: string;
   slug?: string;
+  tagline?: string;
   description?: string;
   industry?: string;
   company_size?: string;
   website_url?: string;
+  linkedin_url?: string;
+  contact_email?: string;
+  founded_year?: number | null;
+  brand_color?: string;
   logo?: string | null;
+  banner?: string | null;
+  values?: string[];
+  benefits?: string[];
+  hiring_regions?: string[];
   country?: string;
   city?: string;
+  open_opportunities_count?: number;
   status: EmployerStatus;
   review_note?: string;
   reviewed_by_name?: string;
@@ -43,18 +53,7 @@ export type WorkMode = "remote" | "hybrid" | "onsite";
 
 export type Opportunity = {
   id: number;
-  employer: {
-    id: number;
-    company_name: string;
-    slug: string;
-    description: string;
-    industry: string;
-    company_size: string;
-    website_url: string;
-    logo: string | null;
-    country: string;
-    city: string;
-  };
+  employer: EmployerProfile & { id: number; company_name: string; slug: string; status: EmployerStatus };
   title: string;
   slug: string;
   kind: OpportunityKind;
@@ -62,10 +61,14 @@ export type Opportunity = {
   work_mode: WorkMode;
   experience_level: string;
   description: string;
+  department: string;
+  openings: number;
+  cover_image: string | null;
   responsibilities: string[];
   requirements: string[];
   skills_required: string[];
   skills_optional: string[];
+  screening_questions: string[];
   country: string;
   city: string;
   remote_worldwide: boolean;
@@ -88,6 +91,8 @@ export type Opportunity = {
   is_open: boolean;
 };
 
+export type ScreeningAnswer = { question: string; answer: string };
+
 export type OpportunityApplication = {
   id: number;
   opportunity: number;
@@ -96,6 +101,7 @@ export type OpportunityApplication = {
   company_name: string;
   status: string;
   cover_letter: string;
+  screening_answers: ScreeningAnswer[];
   resume_url: string | null;
   share_portfolio: boolean;
   match_score: number;
@@ -117,6 +123,9 @@ export type OpportunityApplication = {
     skills: string[];
   }>;
   recruiter_note?: string;
+  recruiter_rating?: number;
+  recruiter_tags?: string[];
+  next_step_at?: string | null;
   applied_at: string;
   updated_at: string;
 };
@@ -134,4 +143,28 @@ export type Talent = {
   years_experience: number;
   portfolio_slug: string;
   updated_at: string;
+};
+
+export type TalentBookmark = {
+  id: number;
+  talent: number;
+  talent_detail: Talent;
+  note: string;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type EmployerAnalytics = {
+  opportunities_total: number;
+  published: number;
+  drafts: number;
+  applications_total: number;
+  pipeline: Record<string, number>;
+  shortlisted: number;
+  interviews: number;
+  offers: number;
+  hires: number;
+  average_match: number;
+  bookmarked_talents: number;
 };

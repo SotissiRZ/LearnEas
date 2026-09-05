@@ -63,9 +63,14 @@ class Command(BaseCommand):
             user=recruiter,
             defaults={
                 "company_name": "Demo Digital Africa", "country": "Côte d'Ivoire", "city": "Abidjan",
-                "industry": "Services numériques", "company_size": "11-50",
+                "tagline": "Des produits numériques conçus en Afrique pour des marchés sans frontières.",
+                "industry": "Services numériques", "company_size": "11-50", "founded_year": 2021,
                 "description": "PME numérique de démonstration recrutant des profils francophones à distance et en Afrique de l'Ouest.",
-                "website_url": "https://example.com", "status": EmployerProfile.Status.APPROVED,
+                "website_url": "https://example.com", "contact_email": "recrutement@example.com", "brand_color": "#ff5a1f",
+                "values": ["Impact", "Autonomie", "Excellence"],
+                "benefits": ["Télétravail flexible", "Budget formation", "Mentorat interne"],
+                "hiring_regions": ["Côte d'Ivoire", "Sénégal", "Remote Afrique francophone"],
+                "status": EmployerProfile.Status.APPROVED,
                 "reviewed_by": admin, "reviewed_at": timezone.now(),
             },
         )
@@ -74,6 +79,19 @@ class Command(BaseCommand):
             demo_employer.reviewed_by = admin
             demo_employer.reviewed_at = timezone.now()
             demo_employer.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
+        demo_brand_defaults = {
+            "tagline": "Des produits numériques conçus en Afrique pour des marchés sans frontières.",
+            "contact_email": "recrutement@example.com", "brand_color": "#ff5a1f", "founded_year": 2021,
+            "values": ["Impact", "Autonomie", "Excellence"],
+            "benefits": ["Télétravail flexible", "Budget formation", "Mentorat interne"],
+            "hiring_regions": ["Côte d'Ivoire", "Sénégal", "Remote Afrique francophone"],
+        }
+        employer_updates = []
+        for field, value in demo_brand_defaults.items():
+            if not getattr(demo_employer, field, None):
+                setattr(demo_employer, field, value); employer_updates.append(field)
+        if employer_updates:
+            demo_employer.save(update_fields=employer_updates + ["updated_at"])
 
         self.stdout.write("Création des domaines et catégories...")
         dom_tech = self._domain("Technologie & Numérique", "Code2", 10)

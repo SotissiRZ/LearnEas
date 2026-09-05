@@ -4,6 +4,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.utils import timezone
+from django.db.models import Q
 import json
 from rest_framework import serializers
 
@@ -11,7 +12,7 @@ from apps.common.countries import canonical_country_name
 from apps.common.fields import RelativeImageField
 from apps.common.media_metadata import validate_upload_limits
 from apps.payments.models import Currency
-from .models import EmployerProfile, CandidateProfile, Opportunity, OpportunityApplication
+from .models import EmployerProfile, CandidateProfile, Opportunity, OpportunityApplication, TalentBookmark
 from .services import clean_strings, match_opportunity, build_application_snapshot, candidate_skills_for
 
 
@@ -27,23 +28,59 @@ def validate_country(value, *, allow_blank=True):
 
 class EmployerPublicSerializer(serializers.ModelSerializer):
     logo = RelativeImageField(read_only=True)
+    banner = RelativeImageField(read_only=True)
+    open_opportunities_count = serializers.SerializerMethodField()
 
     class Meta:
         model = EmployerProfile
-        fields = ["id", "company_name", "slug", "description", "industry", "company_size", "website_url", "logo", "country", "city"]
+        fields = [
+            "id", "company_name", "slug", "tagline", "description", "industry", "company_size",
+            "website_url", "linkedin_url", "logo", "banner", "brand_color", "founded_year",
+            "values", "benefits", "hiring_regions", "country", "city", "open_opportunities_count",
+        ]
+
+    def get_open_opportunities_count(self, obj):
+        annotated = getattr(obj, "open_opportunities_count", None)
+        if annotated is not None:
+            return annotated
+        return obj.opportunities.filter(status=Opportunity.Status.PUBLISHED).filter(
+            Q(deadline__isnull=True) | Q(deadline__gt=timezone.now())
+        ).count()
 
 
 class EmployerProfileSerializer(serializers.ModelSerializer):
     logo = RelativeImageField(required=False, allow_null=True)
+    banner = RelativeImageField(required=False, allow_null=True)
     reviewed_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = EmployerProfile
         fields = [
-            "id", "company_name", "slug", "description", "industry", "company_size", "website_url", "logo", "country", "city",
-            "status", "review_note", "reviewed_by_name", "reviewed_at", "created_at", "updated_at",
+            "id", "company_name", "slug", "tagline", "description", "industry", "company_size", "website_url",
+            "linkedin_url", "contact_email", "founded_year", "brand_color", "logo", "banner", "values", "benefits",
+            "hiring_regions", "country", "city", "status", "review_note", "reviewed_by_name", "reviewed_at", "created_at", "updated_at",
         ]
         read_only_fields = ["slug", "status", "review_note", "reviewed_by_name", "reviewed_at", "created_at", "updated_at"]
+
+    def to_internal_value(self, data):
+        if hasattr(data, "copy"):
+            data = data.copy()
+        for field in ("values", "benefits", "hiring_regions"):
+            try:
+                value = data.get(field)
+            except Exception:
+                value = None
+            if isinstance(value, str):
+                try:
+                    data[field] = json.loads(value)
+                except Exception:
+                    data[field] = [part.strip() for part in value.replace(";", ",").split(",") if part.strip()]
+        try:
+            if data.get("founded_year") == "":
+                data["founded_year"] = None
+        except Exception:
+            pass
+        return super().to_internal_value(data)
 
     def get_reviewed_by_name(self, obj):
         return (obj.reviewed_by.get_full_name() or obj.reviewed_by.username) if obj.reviewed_by else ""
@@ -60,6 +97,48 @@ class EmployerProfileSerializer(serializers.ModelSerializer):
                 field="logo",
             )
         return value
+
+    def validate_banner(self, value):
+        if value:
+            validate_upload_limits(
+                value,
+                max_bytes=settings.MAX_IMAGE_UPLOAD_MB * 1024 * 1024,
+                extensions={".jpg", ".jpeg", ".png", ".webp", ".avif"},
+                field="banner",
+            )
+        return value
+
+    def validate_brand_color(self, value):
+        color = str(value or "").strip() or "#ff5a1f"
+        import re
+        if not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
+            raise serializers.ValidationError("Utilisez une couleur hexadécimale, ex. #FF5A1F.")
+        return color.lower()
+
+    def validate_founded_year(self, value):
+        if value is not None and (value < 1800 or value > timezone.now().year):
+            raise serializers.ValidationError("Année de création invalide.")
+        return value
+
+    def _validate_strings(self, value, *, max_items=30, max_length=160):
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except Exception:
+                value = [part.strip() for part in value.replace(";", ",").split(",") if part.strip()]
+        try:
+            return clean_strings(value, max_items=max_items, max_length=max_length)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
+
+    def validate_values(self, value):
+        return self._validate_strings(value, max_items=12, max_length=120)
+
+    def validate_benefits(self, value):
+        return self._validate_strings(value, max_items=20, max_length=160)
+
+    def validate_hiring_regions(self, value):
+        return self._validate_strings(value, max_items=20, max_length=120)
 
 
 class CandidateProfileSerializer(serializers.ModelSerializer):
@@ -167,6 +246,7 @@ class CandidateProfileSerializer(serializers.ModelSerializer):
 
 class OpportunitySerializer(serializers.ModelSerializer):
     employer = EmployerPublicSerializer(read_only=True)
+    cover_image = RelativeImageField(required=False, allow_null=True)
     applications_count = serializers.IntegerField(read_only=True)
     match_score = serializers.SerializerMethodField()
     already_applied = serializers.SerializerMethodField()
@@ -176,12 +256,55 @@ class OpportunitySerializer(serializers.ModelSerializer):
         model = Opportunity
         fields = [
             "id", "employer", "title", "slug", "kind", "contract_type", "work_mode", "experience_level", "description",
-            "responsibilities", "requirements", "skills_required", "skills_optional", "country", "city", "remote_worldwide",
+            "department", "openings", "cover_image", "responsibilities", "requirements", "skills_required", "skills_optional",
+            "screening_questions", "country", "city", "remote_worldwide",
             "salary_min", "salary_max", "salary_currency", "salary_period", "show_salary", "apply_mode", "external_application_url",
             "application_deadline", "status", "featured", "published_at", "created_at", "updated_at", "applications_count",
             "match_score", "already_applied", "is_open",
         ]
         read_only_fields = ["employer", "slug", "featured", "published_at", "created_at", "updated_at", "applications_count"]
+
+    def to_internal_value(self, data):
+        if hasattr(data, "copy"):
+            data = data.copy()
+        for field in ("responsibilities", "requirements", "skills_required", "skills_optional", "screening_questions"):
+            try:
+                value = data.get(field)
+            except Exception:
+                value = None
+            if isinstance(value, str):
+                try:
+                    data[field] = json.loads(value)
+                except Exception:
+                    data[field] = [part.strip() for part in value.replace(";", ",").split(",") if part.strip()]
+        for field in ("salary_min", "salary_max", "application_deadline"):
+            try:
+                if data.get(field) == "":
+                    data[field] = None
+            except Exception:
+                pass
+        return super().to_internal_value(data)
+
+    def validate_cover_image(self, value):
+        if value:
+            validate_upload_limits(
+                value,
+                max_bytes=settings.MAX_IMAGE_UPLOAD_MB * 1024 * 1024,
+                extensions={".jpg", ".jpeg", ".png", ".webp", ".avif"},
+                field="cover_image",
+            )
+        return value
+
+    def validate_screening_questions(self, value):
+        try:
+            return clean_strings(value, max_items=8, max_length=300)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
+
+    def validate_openings(self, value):
+        if value < 1 or value > 500:
+            raise serializers.ValidationError("Le nombre de postes doit être compris entre 1 et 500.")
+        return value
 
     def _request_user(self):
         request = self.context.get("request")
@@ -301,16 +424,31 @@ class OpportunityApplicationSerializer(serializers.ModelSerializer):
     class Meta:
         model = OpportunityApplication
         fields = [
-            "id", "opportunity", "opportunity_title", "opportunity_slug", "company_name", "status", "cover_letter", "resume_file",
+            "id", "opportunity", "opportunity_title", "opportunity_slug", "company_name", "status", "cover_letter", "screening_answers", "resume_file",
             "resume_url", "share_portfolio", "match_score", "candidate_name_snapshot", "candidate_email_snapshot", "country_snapshot",
             "headline_snapshot", "skills_snapshot", "portfolio_snapshot", "certificates_snapshot", "verified_projects_snapshot",
-            "recruiter_note", "applied_at", "updated_at",
+            "recruiter_note", "recruiter_rating", "recruiter_tags", "next_step_at", "applied_at", "updated_at",
         ]
         read_only_fields = [
             "status", "match_score", "candidate_name_snapshot", "candidate_email_snapshot", "country_snapshot", "headline_snapshot",
-            "skills_snapshot", "portfolio_snapshot", "certificates_snapshot", "verified_projects_snapshot", "recruiter_note", "applied_at", "updated_at",
+            "skills_snapshot", "portfolio_snapshot", "certificates_snapshot", "verified_projects_snapshot", "recruiter_note",
+            "recruiter_rating", "recruiter_tags", "next_step_at", "applied_at", "updated_at",
         ]
         extra_kwargs = {"resume_file": {"write_only": True, "required": False, "allow_null": True}}
+
+    def to_internal_value(self, data):
+        if hasattr(data, "copy"):
+            data = data.copy()
+        try:
+            value = data.get("screening_answers")
+        except Exception:
+            value = None
+        if isinstance(value, str):
+            try:
+                data["screening_answers"] = json.loads(value)
+            except Exception:
+                data["screening_answers"] = []
+        return super().to_internal_value(data)
 
     def get_resume_url(self, obj):
         return f"/api/opportunities/applications/{obj.id}/resume/" if obj.resume_file else None
@@ -319,6 +457,32 @@ class OpportunityApplicationSerializer(serializers.ModelSerializer):
         if value:
             validate_upload_limits(value, max_bytes=10 * 1024 * 1024, extensions={".pdf", ".doc", ".docx"}, field="resume_file")
         return value
+
+    def validate_screening_answers(self, value):
+        opportunity = None
+        try:
+            raw_id = self.initial_data.get("opportunity")
+            opportunity = Opportunity.objects.filter(pk=raw_id).first()
+        except Exception:
+            opportunity = None
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Une liste de réponses est attendue.")
+        questions = opportunity.screening_questions if opportunity else []
+        if len(value) > max(8, len(questions)):
+            raise serializers.ValidationError("Trop de réponses de présélection.")
+        cleaned = []
+        for row in value:
+            if not isinstance(row, dict):
+                raise serializers.ValidationError("Format de réponse invalide.")
+            question = str(row.get("question") or "").strip()[:300]
+            answer = str(row.get("answer") or "").strip()[:2000]
+            if question:
+                cleaned.append({"question": question, "answer": answer})
+        if questions:
+            expected = [str(q).strip() for q in questions]
+            if [row["question"] for row in cleaned] != expected:
+                raise serializers.ValidationError("Répondez aux questions de l'offre dans l'ordre affiché.")
+        return cleaned
 
     def create(self, validated_data):
         request = self.context["request"]
@@ -354,7 +518,8 @@ class OpportunityApplicationSerializer(serializers.ModelSerializer):
             )
         )
         if not is_owner_recruiter:
-            data.pop("recruiter_note", None)
+            for field in ("recruiter_note", "recruiter_rating", "recruiter_tags", "next_step_at"):
+                data.pop(field, None)
             # L'email n'est transmis au recruteur qu'après candidature, jamais dans la recherche publique talents.
         return data
 
@@ -366,6 +531,17 @@ class ApplicationReviewSerializer(serializers.Serializer):
         OpportunityApplication.Status.HIRED, OpportunityApplication.Status.REJECTED,
     ])
     recruiter_note = serializers.CharField(required=False, allow_blank=True, max_length=5000)
+    recruiter_rating = serializers.IntegerField(required=False, min_value=0, max_value=5)
+    recruiter_tags = serializers.ListField(
+        child=serializers.CharField(max_length=60), required=False, allow_empty=True, max_length=20
+    )
+    next_step_at = serializers.DateTimeField(required=False, allow_null=True)
+
+    def validate_recruiter_tags(self, value):
+        try:
+            return clean_strings(value, max_items=20, max_length=60)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
 
 
 class TalentSerializer(serializers.ModelSerializer):
@@ -387,3 +563,18 @@ class TalentSerializer(serializers.ModelSerializer):
             return portfolio.slug if portfolio.is_public else ""
         except Exception:
             return ""
+
+
+class TalentBookmarkSerializer(serializers.ModelSerializer):
+    talent_detail = TalentSerializer(source="talent", read_only=True)
+
+    class Meta:
+        model = TalentBookmark
+        fields = ["id", "talent", "talent_detail", "note", "tags", "created_at", "updated_at"]
+        read_only_fields = ["created_at", "updated_at", "talent_detail"]
+
+    def validate_tags(self, value):
+        try:
+            return clean_strings(value, max_items=20, max_length=60)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))

@@ -1,3 +1,16 @@
+# v75 — Recruiter Workspace, ATS & marque employeur
+
+- Refonte complète de `/dashboard/employer` en workspace à onglets : vue d'ensemble, offres, candidatures, talents et profil entreprise.
+- Branding entreprise modifiable après approbation : logo, bannière, couleur de marque, accroche, valeurs, avantages, zones de recrutement, LinkedIn et email recrutement.
+- Page entreprise publique `/companies/<slug>` avec branding et offres ouvertes.
+- Visuel par opportunité, département, nombre de postes et questions de présélection.
+- Réponses de présélection stockées avec la candidature.
+- Pipeline ATS horizontal avec statut, notation 1–5, tags, notes internes et prochaine étape.
+- Analytics recruteur (offres, candidatures, entretiens, offres, recrutements, match moyen).
+- Vivier enrichi avec filtres pays/disponibilité/expérience et favoris talents persistants.
+- Le changement de logo/bannière ou de contenu de marque ne déclenche plus de revalidation ; le changement du nom ou du pays de l'entreprise reste soumis à contrôle.
+- Migration `opportunities.0003_recruiter_workspace` additive : aucune donnée existante n'est supprimée.
+
 # v74 — documentation rôle Entreprise / Recruteur
 
 - README corrigé : 4 rôles de premier niveau au lieu de l'ancien libellé « 3 rôles ».

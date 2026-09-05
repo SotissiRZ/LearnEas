@@ -131,3 +131,108 @@ class EmployerRoleRegressionTests(APITestCase):
         self.client.force_authenticate(self.employer)
         response = self.client.post("/api/opportunities/applications/", {"opportunity": opportunity.id}, format="json")
         self.assertEqual(response.status_code, 403, response.data)
+
+
+class RecruiterWorkspaceV75Tests(APITestCase):
+    def setUp(self):
+        from .models import CandidateProfile
+        self.recruiter = User.objects.create_user(
+            username="workspace-recruiter", email="workspace-recruiter@example.com",
+            password="StrongPass123!", country="Côte d'Ivoire", role="employer",
+        )
+        self.student = User.objects.create_user(
+            username="workspace-student", email="workspace-student@example.com",
+            password="StrongPass123!", country="Sénégal", role="student",
+            first_name="Fatou", last_name="Test",
+        )
+        self.employer = EmployerProfile.objects.create(
+            user=self.recruiter, company_name="Workspace Africa", country="Côte d'Ivoire",
+            description="Entreprise de test", status=EmployerProfile.Status.APPROVED,
+        )
+        self.talent = CandidateProfile.objects.create(
+            user=self.student, headline="Data analyst", skills=["SQL", "Power BI"],
+            years_experience=3, is_searchable=True,
+        )
+        self.job = Opportunity.objects.create(
+            employer=self.employer, title="Data Analyst", description="Analyse de données",
+            skills_required=["SQL"], screening_questions=["Pourquoi ce poste ?"],
+            remote_worldwide=True, status=Opportunity.Status.PUBLISHED,
+        )
+
+    def test_branding_update_does_not_remove_approval(self):
+        self.client.force_authenticate(self.recruiter)
+        response = self.client.patch(
+            f"/api/opportunities/employer-profile/{self.employer.id}/",
+            {
+                "tagline": "Construisons le numérique africain",
+                "brand_color": "#112233",
+                "values": ["Impact", "Autonomie"],
+                "benefits": ["Télétravail"],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.employer.refresh_from_db()
+        self.assertEqual(self.employer.status, EmployerProfile.Status.APPROVED)
+        self.assertEqual(self.employer.brand_color, "#112233")
+
+    def test_public_company_page_data_is_exposed_only_for_approved_company(self):
+        self.employer.tagline = "Entreprise test"
+        self.employer.values = ["Transparence"]
+        self.employer.save(update_fields=["tagline", "values", "updated_at"])
+        response = self.client.get(f"/api/opportunities/companies/{self.employer.slug}/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["company_name"], "Workspace Africa")
+        self.assertEqual(response.data["values"], ["Transparence"])
+        self.assertGreaterEqual(response.data["open_opportunities_count"], 1)
+
+    def test_recruiter_can_bookmark_visible_talent(self):
+        self.client.force_authenticate(self.recruiter)
+        created = self.client.post(
+            "/api/opportunities/talent-bookmarks/",
+            {"talent": self.talent.id, "tags": ["prioritaire"]},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        listed = self.client.get("/api/opportunities/talent-bookmarks/")
+        self.assertEqual(listed.status_code, 200, listed.data)
+        rows = listed.data.get("results", listed.data) if isinstance(listed.data, dict) else listed.data
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["talent_detail"]["headline"], "Data analyst")
+
+    def test_application_pipeline_metadata_is_saved(self):
+        application = OpportunityApplication.objects.create(
+            opportunity=self.job, candidate=self.student,
+            candidate_name_snapshot="Fatou Test", candidate_email_snapshot=self.student.email,
+        )
+        self.client.force_authenticate(self.recruiter)
+        response = self.client.post(
+            f"/api/opportunities/applications/{application.id}/review/",
+            {
+                "status": "shortlisted",
+                "recruiter_note": "Très bon profil",
+                "recruiter_rating": 5,
+                "recruiter_tags": ["prioritaire", "data"],
+                "next_step_at": "2026-10-10T10:00:00Z",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        application.refresh_from_db()
+        self.assertEqual(application.recruiter_rating, 5)
+        self.assertEqual(application.recruiter_tags, ["prioritaire", "data"])
+        self.assertEqual(application.status, OpportunityApplication.Status.SHORTLISTED)
+
+    def test_candidate_can_answer_screening_questions(self):
+        self.client.force_authenticate(self.student)
+        response = self.client.post(
+            "/api/opportunities/applications/",
+            {
+                "opportunity": self.job.id,
+                "screening_answers": [{"question": "Pourquoi ce poste ?", "answer": "Pour mon expérience data."}],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        application = OpportunityApplication.objects.get(pk=response.data["id"])
+        self.assertEqual(application.screening_answers[0]["question"], "Pourquoi ce poste ?")

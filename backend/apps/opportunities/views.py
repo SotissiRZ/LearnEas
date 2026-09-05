@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Avg, Count, Q
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -11,10 +11,10 @@ from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
-from .models import EmployerProfile, CandidateProfile, Opportunity, OpportunityApplication
+from .models import EmployerProfile, CandidateProfile, Opportunity, OpportunityApplication, TalentBookmark
 from .serializers import (
-    EmployerProfileSerializer, CandidateProfileSerializer, OpportunitySerializer,
-    OpportunityApplicationSerializer, ApplicationReviewSerializer, TalentSerializer,
+    EmployerPublicSerializer, EmployerProfileSerializer, CandidateProfileSerializer, OpportunitySerializer,
+    OpportunityApplicationSerializer, ApplicationReviewSerializer, TalentSerializer, TalentBookmarkSerializer,
 )
 
 
@@ -73,7 +73,7 @@ class EmployerProfileViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        sensitive_fields = {"company_name", "website_url", "country", "logo"}
+        sensitive_fields = {"company_name", "country"}
         identity_changed = any(
             field in serializer.validated_data
             and serializer.validated_data[field] != getattr(instance, field)
@@ -139,6 +139,60 @@ class EmployerProfileViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(profile).data)
 
 
+    @action(detail=False, methods=["get"])
+    def analytics(self, request):
+        employer = approved_employer_for(request.user)
+        if not employer:
+            return Response({"detail": "Espace recruteur approuvé requis."}, status=403)
+        jobs = Opportunity.objects.filter(employer=employer)
+        applications = OpportunityApplication.objects.filter(opportunity__employer=employer)
+        by_status = {
+            row["status"]: row["count"]
+            for row in applications.values("status").annotate(count=Count("id"))
+        }
+        jobs_by_status = {
+            row["status"]: row["count"]
+            for row in jobs.values("status").annotate(count=Count("id"))
+        }
+        average_match = applications.aggregate(value=Avg("match_score"))["value"] or 0
+        return Response({
+            "opportunities_total": jobs.count(),
+            "published": jobs_by_status.get(Opportunity.Status.PUBLISHED, 0),
+            "drafts": jobs_by_status.get(Opportunity.Status.DRAFT, 0),
+            "applications_total": applications.count(),
+            "pipeline": by_status,
+            "shortlisted": by_status.get(OpportunityApplication.Status.SHORTLISTED, 0),
+            "interviews": by_status.get(OpportunityApplication.Status.INTERVIEW, 0),
+            "offers": by_status.get(OpportunityApplication.Status.OFFER, 0),
+            "hires": by_status.get(OpportunityApplication.Status.HIRED, 0),
+            "average_match": round(float(average_match), 1),
+            "bookmarked_talents": TalentBookmark.objects.filter(employer=employer).count(),
+        })
+
+
+class EmployerDirectoryViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = EmployerPublicSerializer
+    permission_classes = [permissions.AllowAny]
+    lookup_field = "slug"
+    pagination_class = OpportunityPagination
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["company_name", "tagline", "description", "industry", "country", "city"]
+    ordering_fields = ["company_name", "created_at"]
+    ordering = ["company_name"]
+
+    def get_queryset(self):
+        return EmployerProfile.objects.filter(status=EmployerProfile.Status.APPROVED).annotate(
+            open_opportunities_count=Count(
+                "opportunities",
+                filter=(
+                    Q(opportunities__status=Opportunity.Status.PUBLISHED)
+                    & (Q(opportunities__deadline__isnull=True) | Q(opportunities__deadline__gt=timezone.now()))
+                ),
+                distinct=True,
+            )
+        )
+
+
 class CandidateProfileViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -201,6 +255,9 @@ class OpportunityViewSet(viewsets.ModelViewSet):
             country = str(self.request.query_params.get("country") or "").strip()
             if country:
                 public_qs = public_qs.filter(Q(country=country) | Q(remote_worldwide=True))
+            employer_slug = str(self.request.query_params.get("employer") or "").strip()
+            if employer_slug:
+                public_qs = public_qs.filter(employer__slug=employer_slug)
             return public_qs
         if user.role == "admin":
             return qs
@@ -306,14 +363,22 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Accès recruteur requis."}, status=403)
         if application.status == OpportunityApplication.Status.WITHDRAWN:
             return Response({"detail": "Le candidat a retiré cette candidature."}, status=409)
-        if request.user.role != "admin" and application.status in {OpportunityApplication.Status.HIRED, OpportunityApplication.Status.REJECTED}:
-            return Response({"detail": "Cette candidature est dans un état final."}, status=409)
         serializer = ApplicationReviewSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        application.status = serializer.validated_data["status"]
-        if "recruiter_note" in serializer.validated_data:
-            application.recruiter_note = serializer.validated_data["recruiter_note"]
-        application.save(update_fields=["status", "recruiter_note", "updated_at"])
+        target_status = serializer.validated_data["status"]
+        if (
+            request.user.role != "admin"
+            and application.status in {OpportunityApplication.Status.HIRED, OpportunityApplication.Status.REJECTED}
+            and target_status != application.status
+        ):
+            return Response({"detail": "Cette candidature est dans un état final et ne peut plus changer d'étape."}, status=409)
+        application.status = target_status
+        update_fields = ["status", "updated_at"]
+        for field in ("recruiter_note", "recruiter_rating", "recruiter_tags", "next_step_at"):
+            if field in serializer.validated_data:
+                setattr(application, field, serializer.validated_data[field])
+                update_fields.append(field)
+        application.save(update_fields=update_fields)
         return Response(self.get_serializer(application).data)
 
     @action(detail=True, methods=["get"])
@@ -341,6 +406,44 @@ class TalentViewSet(viewsets.ReadOnlyModelViewSet):
     ordering = ["-updated_at"]
 
     def get_queryset(self):
-        if self.request.user.role == "admin" or approved_employer_for(self.request.user):
-            return CandidateProfile.objects.select_related("user").filter(is_searchable=True)
-        return CandidateProfile.objects.none()
+        if not (self.request.user.role == "admin" or approved_employer_for(self.request.user)):
+            return CandidateProfile.objects.none()
+        qs = CandidateProfile.objects.select_related("user").filter(is_searchable=True)
+        country = str(self.request.query_params.get("country") or "").strip()
+        availability = str(self.request.query_params.get("availability") or "").strip()
+        min_experience = str(self.request.query_params.get("min_experience") or "").strip()
+        if country:
+            qs = qs.filter(user__country=country)
+        if availability:
+            qs = qs.filter(availability=availability)
+        if min_experience.isdigit():
+            qs = qs.filter(years_experience__gte=int(min_experience))
+        return qs
+
+
+class TalentBookmarkViewSet(viewsets.ModelViewSet):
+    serializer_class = TalentBookmarkSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_queryset(self):
+        employer = approved_employer_for(self.request.user)
+        if not employer:
+            return TalentBookmark.objects.none()
+        return TalentBookmark.objects.select_related("talent", "talent__user").filter(employer=employer)
+
+    def perform_create(self, serializer):
+        employer = approved_employer_for(self.request.user)
+        if not employer:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Espace recruteur approuvé requis.")
+        talent = serializer.validated_data["talent"]
+        if not talent.is_searchable:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({"talent": "Ce talent n'est plus visible aux recruteurs."})
+        existing = TalentBookmark.objects.filter(employer=employer, talent=talent).first()
+        if existing:
+            serializer.instance = existing
+            serializer.save(employer=employer, talent=talent)
+            return
+        serializer.save(employer=employer)
