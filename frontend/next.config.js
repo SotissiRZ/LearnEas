@@ -18,7 +18,11 @@ const nextConfig = {
   async rewrites() {
     if (!apiProxyTarget) return [];
     return [
-      { source: "/api/:path*", destination: `${apiProxyTarget}/api/:path*` },
+      // Django/DRF routes use trailing slashes. Next normalises the incoming pathname before an
+      // external rewrite, so explicitly restore the slash on the upstream destination; otherwise
+      // POST endpoints such as /auth/login/ arrive as /auth/login and APPEND_SLASH cannot safely
+      // redirect a POST body (500).
+      { source: "/api/:path*", destination: `${apiProxyTarget}/api/:path*/` },
       { source: "/admin/:path*", destination: `${apiProxyTarget}/admin/:path*` },
       { source: "/static/:path*", destination: `${apiProxyTarget}/static/:path*` },
       { source: "/media/:path*", destination: `${apiProxyTarget}/media/:path*` },

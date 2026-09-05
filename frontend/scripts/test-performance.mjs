@@ -37,3 +37,14 @@ test("docker dev utilise API same-origin", () => {
   assert.match(compose, /NEXT_PUBLIC_API_URL: \/api/);
   assert.match(compose, /API_PROXY_TARGET: http:\/\/backend:8000/);
 });
+
+
+test("proxy dev preserve le slash final exige par Django pour les POST", () => {
+  const nextConfig = read("next.config.js");
+  assert.match(nextConfig, /destination: `\$\{apiProxyTarget\}\/api\/:path\*\/`/);
+  assert.doesNotMatch(nextConfig, /destination: `\$\{apiProxyTarget\}\/api\/:path\*` \}/);
+
+  const login = read("app/login/page.tsx");
+  assert.match(login, /err\.message === "Identifiants invalides ou session expirée\."/);
+  assert.match(login, /: err\.message/);
+});

@@ -42,7 +42,12 @@ export default function LoginPage() {
       else router.push("/dashboard/student");
     } catch (err) {
       if (err instanceof ApiError) {
-        setError("Email ou mot de passe incorrect.");
+        // Ne pas transformer une panne API/timeout en faux problème d'identifiants.
+        setError(
+          err.message === "Identifiants invalides ou session expirée."
+            ? "Email ou mot de passe incorrect."
+            : err.message
+        );
       } else {
         setError("Une erreur inattendue est survenue. Veuillez réessayer.");
       }

@@ -1,3 +1,11 @@
+# KalanPro v72 — Correctif authentification proxy local
+
+- Corrige une régression v71 du proxy Next.js en développement : les routes Django/DRF étaient réécrites sans slash final, provoquant des `500` sur les POST (`/api/auth/login`, `/api/auth/token/refresh`).
+- Le proxy `/api/:path*` restaure maintenant explicitement le slash final vers le backend (`/api/:path*/`).
+- La page de connexion ne présente plus une erreur serveur/réseau comme un mauvais mot de passe ; elle conserve le message API pertinent.
+- Ajoute un test de non-régression sur le proxy et le diagnostic de connexion.
+- Aucun changement de schéma de base de données ni de données utilisateur.
+
 # KalanPro v71 — Réactivité frontend et navigation locale
 
 - Assistant KalanPro AI retiré du bundle/hydratation initiale : un lanceur léger est rendu globalement et le module complet n'est chargé qu'à l'ouverture (préchargement au survol/focus).
