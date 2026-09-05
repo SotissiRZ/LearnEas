@@ -25,6 +25,8 @@ class OpportunityPagination(PageNumberPagination):
 
 
 def approved_employer_for(user):
+    if not getattr(user, "is_authenticated", False) or user.role != "employer":
+        return None
     return EmployerProfile.objects.filter(user=user, status=EmployerProfile.Status.APPROVED).first()
 
 
@@ -36,15 +38,21 @@ class EmployerProfileViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if self.request.user.role == "admin":
             return EmployerProfile.objects.select_related("user", "reviewed_by").all()
+        if self.request.user.role != "employer":
+            return EmployerProfile.objects.none()
         return EmployerProfile.objects.select_related("user", "reviewed_by").filter(user=self.request.user)
 
     def list(self, request, *args, **kwargs):
+        if request.user.role not in {"admin", "employer"}:
+            return Response({"detail": "Compte entreprise / recruteur requis."}, status=403)
         profile = self.get_queryset().filter(user=request.user).first() if request.user.role != "admin" else None
         if request.user.role == "admin":
             return super().list(request, *args, **kwargs)
         return Response(EmployerProfileSerializer(profile, context={"request": request}).data if profile else {"status": "none"})
 
     def create(self, request, *args, **kwargs):
+        if request.user.role != "employer":
+            return Response({"detail": "Compte entreprise / recruteur requis."}, status=403)
         existing = EmployerProfile.objects.filter(user=request.user).first()
         if existing:
             if existing.status == EmployerProfile.Status.PENDING:
@@ -71,7 +79,15 @@ class EmployerProfileViewSet(viewsets.ModelViewSet):
             and serializer.validated_data[field] != getattr(instance, field)
             for field in sensitive_fields
         )
-        if request.user.role != "admin" and instance.status == EmployerProfile.Status.APPROVED and identity_changed:
+        if request.user.role != "admin" and instance.status == EmployerProfile.Status.REJECTED:
+            # Une entreprise refusée peut corriger son dossier puis le renvoyer.
+            serializer.save(
+                status=EmployerProfile.Status.PENDING,
+                review_note="",
+                reviewed_by=None,
+                reviewed_at=None,
+            )
+        elif request.user.role != "admin" and instance.status == EmployerProfile.Status.APPROVED and identity_changed:
             # Un recruteur approuvé ne peut pas remplacer son identité par celle d'une autre
             # entreprise sans contrôle. Le profil et ses offres disparaissent du public jusqu'à
             # une nouvelle validation administrateur (les candidatures historiques sont conservées).
@@ -127,10 +143,14 @@ class CandidateProfileViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
+        if request.user.role == "employer":
+            return Response({"detail": "Un compte recruteur ne possède pas de profil candidat."}, status=403)
         profile, _ = CandidateProfile.objects.get_or_create(user=request.user)
         return Response(CandidateProfileSerializer(profile, context={"request": request}).data)
 
     def partial_update(self, request, pk=None):
+        if request.user.role == "employer":
+            return Response({"detail": "Un compte recruteur ne possède pas de profil candidat."}, status=403)
         profile, _ = CandidateProfile.objects.get_or_create(user=request.user)
         serializer = CandidateProfileSerializer(profile, data=request.data, partial=True, context={"request": request})
         serializer.is_valid(raise_exception=True)
@@ -250,6 +270,8 @@ class ApplicationViewSet(viewsets.ModelViewSet):
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
+        if request.user.role == "employer":
+            return Response({"detail": "Un compte recruteur ne peut pas déposer de candidature."}, status=403)
         opportunity = get_object_or_404(Opportunity.objects.select_for_update(), pk=request.data.get("opportunity"))
         if opportunity.apply_mode != Opportunity.ApplyMode.INTERNAL:
             return Response({"detail": "Cette opportunité utilise une candidature externe."}, status=409)

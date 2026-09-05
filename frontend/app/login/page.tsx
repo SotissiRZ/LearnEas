@@ -39,6 +39,7 @@ export default function LoginPage() {
       if (safeNext) router.push(safeNext);
       else if (user.role === "admin") router.push("/dashboard/admin");
       else if (user.role === "instructor") router.push("/dashboard/instructor");
+      else if (user.role === "employer") router.push("/dashboard/employer");
       else router.push("/dashboard/student");
     } catch (err) {
       if (err instanceof ApiError) {

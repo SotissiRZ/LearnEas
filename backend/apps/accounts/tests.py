@@ -29,6 +29,47 @@ class RegistrationRegressionTests(APITestCase):
         self.assertEqual(user.role, User.Role.STUDENT)
         self.assertTrue(user.is_active)
 
+
+    def test_employer_registration_creates_pending_company_profile(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            {
+                "email": "hr@example.com",
+                "first_name": "Mariam",
+                "last_name": "Traoré",
+                "country": "Côte d'Ivoire",
+                "role": "employer",
+                "company_name": "Talent Afrique",
+                "industry": "Recrutement",
+                "company_size": "11-50",
+                "city": "Abidjan",
+                "password": "passpass123",
+                "password2": "passpass123",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        user = User.objects.get(email="hr@example.com")
+        self.assertEqual(user.role, User.Role.EMPLOYER)
+        self.assertEqual(response.data["user"]["role"], User.Role.EMPLOYER)
+        self.assertEqual(user.employer_profile.company_name, "Talent Afrique")
+        self.assertEqual(user.employer_profile.status, "pending")
+
+    def test_public_registration_cannot_self_assign_privileged_roles(self):
+        for forbidden_role in ("admin", "instructor"):
+            response = self.client.post(
+                "/api/auth/register/",
+                {
+                    "email": f"{forbidden_role}@example.com",
+                    "country": "Sénégal",
+                    "role": forbidden_role,
+                    "password": "passpass123",
+                    "password2": "passpass123",
+                },
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+
     def test_registration_ignores_django_admin_session_and_does_not_require_csrf(self):
         # Régression : lorsqu’un navigateur avait déjà un cookie de session Django
         # (ex. après connexion à /admin/), SessionAuthentication pouvait imposer un

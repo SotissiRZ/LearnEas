@@ -1,3 +1,16 @@
+# v73 — rôle Entreprise / Recruteur
+
+- Ajoute `employer` comme rôle utilisateur de premier niveau.
+- Inscription publique avec choix Apprenant ou Entreprise / Recruteur.
+- Création transactionnelle du `EmployerProfile` lors de l’inscription entreprise.
+- Profil entreprise initial en `pending` et validation administrateur conservée avant publication/vivier.
+- Redirections login/register/navbar et préchargement adaptés au dashboard employeur.
+- Espace employeur protégé explicitement par rôle.
+- Les recruteurs ne peuvent plus utiliser accidentellement les endpoints candidat.
+- Migration automatique des anciens profils employeur encore marqués `student`.
+- Compte de démonstration recruteur désormais créé avec `role=employer`.
+- Back-office admin : filtre/création/modification du rôle employeur.
+
 # KalanPro v72 — Correctif authentification proxy local
 
 - Corrige une régression v71 du proxy Next.js en développement : les routes Django/DRF étaient réécrites sans slash final, provoquant des `500` sur les POST (`/api/auth/login`, `/api/auth/token/refresh`).

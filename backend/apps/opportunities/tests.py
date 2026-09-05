@@ -9,7 +9,7 @@ User = get_user_model()
 
 class OpportunitySecurityTests(APITestCase):
     def setUp(self):
-        self.recruiter = User.objects.create_user(username="recruiter", email="recruiter@example.com", password="StrongPass123!", country="Sénégal")
+        self.recruiter = User.objects.create_user(username="recruiter", email="recruiter@example.com", password="StrongPass123!", country="Sénégal", role="employer")
         self.student = User.objects.create_user(username="student", email="student@example.com", password="StrongPass123!", country="Sénégal")
         self.employer = EmployerProfile.objects.create(user=self.recruiter, company_name="Demo SARL", country="Sénégal", status=EmployerProfile.Status.APPROVED)
         self.job = Opportunity.objects.create(employer=self.employer, title="Analyste Excel", description="Test", country="Sénégal", skills_required=["Excel"], status=Opportunity.Status.PUBLISHED)
@@ -37,7 +37,7 @@ class OpportunitySecurityTests(APITestCase):
     def test_recruiter_cannot_apply_to_own_listing(self):
         self.client.force_authenticate(self.recruiter)
         response = self.client.post("/api/opportunities/applications/", {"opportunity": self.job.id}, format="json")
-        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.status_code, 403)
 
     def test_talent_pool_requires_opt_in_and_approved_recruiter(self):
         from .models import CandidateProfile
@@ -108,3 +108,26 @@ class OpportunitySecurityTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.data["salary_min"])
         self.assertIsNone(response.data["salary_max"])
+
+
+class EmployerRoleRegressionTests(APITestCase):
+    def setUp(self):
+        from apps.accounts.models import User
+        from .models import EmployerProfile
+        self.employer = User.objects.create_user(username="employer-role", email="employer-role@example.com", password="passpass123", role=User.Role.EMPLOYER)
+        self.student = User.objects.create_user(username="student-role", email="student-role@example.com", password="passpass123", role=User.Role.STUDENT)
+        self.profile = EmployerProfile.objects.create(user=self.employer, company_name="Entreprise test", country="Sénégal")
+
+    def test_student_cannot_create_employer_profile(self):
+        self.client.force_authenticate(self.student)
+        response = self.client.post("/api/opportunities/employer-profile/", {"company_name": "Fausse entreprise", "country": "Sénégal"}, format="json")
+        self.assertEqual(response.status_code, 403, response.data)
+
+    def test_employer_cannot_apply_as_candidate(self):
+        from .models import Opportunity
+        self.profile.status = EmployerProfile.Status.APPROVED
+        self.profile.save(update_fields=["status"])
+        opportunity = Opportunity.objects.create(employer=self.profile, title="Test", description="Description", status=Opportunity.Status.PUBLISHED)
+        self.client.force_authenticate(self.employer)
+        response = self.client.post("/api/opportunities/applications/", {"opportunity": opportunity.id}, format="json")
+        self.assertEqual(response.status_code, 403, response.data)

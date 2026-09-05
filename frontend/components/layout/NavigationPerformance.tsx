@@ -100,7 +100,7 @@ export default function NavigationPerformance() {
     const preloadCommon = () => {
       for (const path of COMMON_ROUTES) prefetch(path);
       if (user) {
-        const dashboard = user.role === "admin" ? "/dashboard/admin" : user.role === "instructor" ? "/dashboard/instructor" : "/dashboard/student";
+        const dashboard = user.role === "admin" ? "/dashboard/admin" : user.role === "instructor" ? "/dashboard/instructor" : user.role === "employer" ? "/dashboard/employer" : "/dashboard/student";
         prefetch(dashboard);
       }
     };

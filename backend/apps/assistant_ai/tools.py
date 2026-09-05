@@ -440,6 +440,8 @@ RECRUITER_TOOL_DEFINITIONS = [
 ]
 
 def _approved_employer_for(user):
+    if user.role != "employer":
+        return None
     try:
         employer = user.employer_profile
     except Exception:

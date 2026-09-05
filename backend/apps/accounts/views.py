@@ -399,6 +399,8 @@ class InstructorApplyView(APIView):
         return Response(InstructorApplicationSerializer(application).data)
 
     def post(self, request):
+        if request.user.role == User.Role.EMPLOYER:
+            return Response({"detail": "Un compte entreprise / recruteur ne peut pas devenir instructeur. Utilisez un compte personnel apprenant pour ce parcours."}, status=403)
         if not PlatformSettings.load().instructor_applications_enabled and request.user.role != User.Role.ADMIN:
             return Response({"detail": "Les demandes instructeur sont temporairement désactivées."}, status=403)
         if request.user.role == User.Role.INSTRUCTOR:
@@ -610,7 +612,23 @@ class AdminUserViewSet(viewsets.ModelViewSet):
             if active_admins == 0:
                 return Response({"detail": "Au moins un administrateur actif doit rester sur la plateforme."}, status=400)
 
-        return super().partial_update(request, *args, **kwargs)
+        previous_role = target.role
+        with transaction.atomic():
+            response = super().partial_update(request, *args, **kwargs)
+            target.refresh_from_db(fields=["role", "is_active"])
+            if previous_role == User.Role.EMPLOYER and (target.role != User.Role.EMPLOYER or not target.is_active):
+                # Retirer le rôle recruteur doit retirer immédiatement ses capacités métier,
+                # sans supprimer l'historique des offres/candidatures.
+                from apps.opportunities.models import EmployerProfile, Opportunity
+                employer = EmployerProfile.objects.filter(user=target).first()
+                if employer:
+                    employer.status = EmployerProfile.Status.SUSPENDED
+                    employer.review_note = "Accès recruteur suspendu suite à une modification administrative du compte."
+                    employer.reviewed_by = request.user
+                    employer.reviewed_at = timezone.now()
+                    employer.save(update_fields=["status", "review_note", "reviewed_by", "reviewed_at", "updated_at"])
+                    Opportunity.objects.filter(employer=employer, status=Opportunity.Status.PUBLISHED).update(status=Opportunity.Status.CLOSED)
+        return response
 
 
 class PublicPlatformSettingsView(APIView):

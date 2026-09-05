@@ -8,6 +8,7 @@ class User(AbstractUser):
         ADMIN = "admin", "Administrateur"
         INSTRUCTOR = "instructor", "Instructeur"
         STUDENT = "student", "Étudiant"
+        EMPLOYER = "employer", "Entreprise / Recruteur"
 
     email = models.EmailField(unique=True)
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.STUDENT)
@@ -31,6 +32,10 @@ class User(AbstractUser):
     @property
     def is_student(self):
         return self.role == self.Role.STUDENT
+
+    @property
+    def is_employer(self):
+        return self.role == self.Role.EMPLOYER
 
 
 class PlatformSettings(models.Model):

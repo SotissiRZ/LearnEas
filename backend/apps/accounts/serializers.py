@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.db import transaction
 from rest_framework import serializers
 from apps.common.fields import RelativeImageField
 from apps.common.countries import canonical_country_name
@@ -64,12 +65,31 @@ class UserSerializer(serializers.ModelSerializer):
 
 class RegisterSerializer(serializers.ModelSerializer):
     country = serializers.CharField(required=True, allow_blank=False, max_length=100)
+    role = serializers.ChoiceField(
+        choices=[(User.Role.STUDENT, "Apprenant"), (User.Role.EMPLOYER, "Entreprise / Recruteur")],
+        default=User.Role.STUDENT,
+        write_only=True,
+    )
+    company_name = serializers.CharField(required=False, allow_blank=True, max_length=180, write_only=True)
+    industry = serializers.CharField(required=False, allow_blank=True, max_length=140, write_only=True)
+    company_size = serializers.ChoiceField(
+        required=False,
+        allow_blank=True,
+        choices=["", "solo", "1-10", "11-50", "51-200", "201-1000", "1000+"],
+        write_only=True,
+    )
+    website_url = serializers.URLField(required=False, allow_blank=True, write_only=True)
+    city = serializers.CharField(required=False, allow_blank=True, max_length=120, write_only=True)
     password = serializers.CharField(write_only=True, min_length=8)
     password2 = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
         model = User
-        fields = ["email", "first_name", "last_name", "country", "password", "password2"]
+        fields = [
+            "email", "first_name", "last_name", "country", "role",
+            "company_name", "industry", "company_size", "website_url", "city",
+            "password", "password2",
+        ]
 
     def validate_email(self, value):
         email = value.strip().lower()
@@ -86,17 +106,36 @@ class RegisterSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if attrs["password"] != attrs["password2"]:
             raise serializers.ValidationError({"password2": "Les mots de passe ne correspondent pas."})
-        candidate = User(email=attrs.get("email", ""), first_name=attrs.get("first_name", ""), last_name=attrs.get("last_name", ""))
+        role = attrs.get("role", User.Role.STUDENT)
+        if role == User.Role.EMPLOYER and not str(attrs.get("company_name") or "").strip():
+            raise serializers.ValidationError({"company_name": "Indiquez le nom de l’entreprise."})
+        candidate = User(
+            email=attrs.get("email", ""),
+            first_name=attrs.get("first_name", ""),
+            last_name=attrs.get("last_name", ""),
+            role=role,
+        )
         try:
             validate_password(attrs["password"], user=candidate)
         except Exception as exc:
             raise serializers.ValidationError({"password": list(getattr(exc, "messages", [str(exc)]))})
         return attrs
 
+    @transaction.atomic
     def create(self, validated_data):
         from django.utils.text import slugify
+        from apps.opportunities.models import EmployerProfile
+
         validated_data.pop("password2")
         password = validated_data.pop("password")
+        role = validated_data.pop("role", User.Role.STUDENT)
+        company_data = {
+            "company_name": str(validated_data.pop("company_name", "") or "").strip(),
+            "industry": str(validated_data.pop("industry", "") or "").strip(),
+            "company_size": validated_data.pop("company_size", "") or "",
+            "website_url": str(validated_data.pop("website_url", "") or "").strip(),
+            "city": str(validated_data.pop("city", "") or "").strip(),
+        }
         email = validated_data["email"]
         base = slugify(email.split("@", 1)[0]) or "user"
         username = base[:140]
@@ -105,9 +144,16 @@ class RegisterSerializer(serializers.ModelSerializer):
             n += 1
             suffix = f"-{n}"
             username = f"{base[:150-len(suffix)]}{suffix}"
-        user = User(username=username, **validated_data, role=User.Role.STUDENT, is_active=True)
+        user = User(username=username, **validated_data, role=role, is_active=True)
         user.set_password(password)
         user.save()
+        if role == User.Role.EMPLOYER:
+            EmployerProfile.objects.create(
+                user=user,
+                country=user.country,
+                status=EmployerProfile.Status.PENDING,
+                **company_data,
+            )
         return user
 
 

@@ -107,6 +107,7 @@ type Overview = {
   active_users: number;
   inactive_users: number;
   students: number;
+  employers: number;
   instructors: number;
   pending_instructor_applications: number;
   courses: number;
@@ -149,7 +150,7 @@ type AdminUser = {
   first_name: string;
   last_name: string;
   full_name: string;
-  role: "admin" | "instructor" | "student";
+  role: "admin" | "instructor" | "student" | "employer";
   is_active: boolean;
   is_staff: boolean;
   date_joined: string;
@@ -523,7 +524,7 @@ function UsersTab() {
       <div className="card mb-4 flex flex-wrap gap-3 p-4">
         <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Nom, email..." />
         <select value={role} onChange={(e) => { setRole(e.target.value); setPage(1); }} className="input-admin">
-          <option value="">Tous les rôles</option><option value="student">Étudiants</option><option value="instructor">Instructeurs</option><option value="admin">Administrateurs</option>
+          <option value="">Tous les rôles</option><option value="student">Étudiants</option><option value="employer">Entreprises / Recruteurs</option><option value="instructor">Instructeurs</option><option value="admin">Administrateurs</option>
         </select>
         <select value={active} onChange={(e) => { setActive(e.target.value); setPage(1); }} className="input-admin">
           <option value="">Tous les états</option><option value="true">Actifs</option><option value="false">Désactivés</option>
@@ -539,7 +540,7 @@ function UsersTab() {
                 <td className="px-4 py-3"><p className="font-semibold">{u.full_name}</p><p className="text-xs text-gray-400">{u.email}</p></td>
                 <td className="px-4 py-3">
                   <select value={u.role} onChange={(e) => updateUser(u.id, { role: e.target.value as AdminUser["role"] })} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs">
-                    <option value="student">Étudiant</option><option value="instructor">Instructeur</option><option value="admin">Admin</option>
+                    <option value="student">Étudiant</option><option value="employer">Entreprise / Recruteur</option><option value="instructor">Instructeur</option><option value="admin">Admin</option>
                   </select>
                 </td>
                 <td className="px-4 py-3"><Toggle checked={u.is_active} onChange={(value) => updateUser(u.id, { is_active: value })} label={u.is_active ? "Actif" : "Désactivé"} /></td>
@@ -557,7 +558,7 @@ function UsersTab() {
         <form onSubmit={createUser} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2"><label className="label-admin">Prénom<input className="input-admin w-full" value={createForm.first_name} onChange={(e) => setCreateForm({ ...createForm, first_name: e.target.value })} /></label><label className="label-admin">Nom<input className="input-admin w-full" value={createForm.last_name} onChange={(e) => setCreateForm({ ...createForm, last_name: e.target.value })} /></label></div>
           <label className="label-admin">Email<input required type="email" className="input-admin w-full" value={createForm.email} onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })} /></label>
-          <label className="label-admin">Rôle<select className="input-admin w-full" value={createForm.role} onChange={(e) => setCreateForm({ ...createForm, role: e.target.value })}><option value="student">Étudiant</option><option value="instructor">Instructeur</option><option value="admin">Administrateur</option></select></label>
+          <label className="label-admin">Rôle<select className="input-admin w-full" value={createForm.role} onChange={(e) => setCreateForm({ ...createForm, role: e.target.value })}><option value="student">Étudiant</option><option value="employer">Entreprise / Recruteur</option><option value="instructor">Instructeur</option><option value="admin">Administrateur</option></select></label>
           <label className="label-admin">Mot de passe temporaire<input required minLength={8} type="password" className="input-admin w-full" value={createForm.password} onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })} /></label>
           <p className="text-xs text-gray-400">Le nom d'utilisateur technique est généré automatiquement à partir de l'email ; l'utilisateur se connecte avec son email.</p>
           <div className="flex justify-end gap-2"><button type="button" onClick={() => setCreateOpen(false)} className="btn-outline">Annuler</button><button disabled={creating} type="submit" className="btn-primary">{creating ? "Création..." : "Créer le compte"}</button></div>

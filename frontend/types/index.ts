@@ -154,7 +154,7 @@ export interface AuthUser {
   email: string;
   first_name: string;
   last_name: string;
-  role: "admin" | "instructor" | "student";
+  role: "admin" | "instructor" | "student" | "employer";
   technical_admin?: boolean;
   avatar: string | null;
   country?: string;

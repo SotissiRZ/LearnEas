@@ -721,6 +721,7 @@ class AdminOverviewView(APIView):
             "active_users": User.objects.filter(is_active=True).count(),
             "inactive_users": User.objects.filter(is_active=False).count(),
             "students": User.objects.filter(role=User.Role.STUDENT).count(),
+            "employers": User.objects.filter(role=User.Role.EMPLOYER).count(),
             "instructors": User.objects.filter(role=User.Role.INSTRUCTOR).count(),
             "pending_instructor_applications": InstructorApplication.objects.filter(status=InstructorApplication.Status.PENDING).count(),
             "courses": Course.objects.count(),

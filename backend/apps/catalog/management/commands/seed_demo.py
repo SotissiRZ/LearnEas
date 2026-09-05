@@ -55,7 +55,7 @@ class Command(BaseCommand):
         ]
 
         recruiter = self._user(
-            "recruiter_demo", "recruteur@kalanpro.com", "recruiter1234", role="student",
+            "recruiter_demo", "recruteur@kalanpro.com", "recruiter1234", role="employer",
             first_name="Moussa", last_name="Koné", country="Côte d'Ivoire",
             headline="Responsable recrutement · Demo Digital Africa",
         )

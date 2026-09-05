@@ -567,3 +567,8 @@ L'assistant peut désormais analyser le CV du compte face à une offre, prépare
 ## KalanPro AI — fichiers et exports (v67)
 
 L'assistant accepte des pièces jointes privées (PDF, DOCX, TXT, CSV, MD, JSON, XLSX, PPTX, PNG/JPEG/WebP), les conserve dans la conversation et peut utiliser leur contenu comme contexte. Les images nécessitent `AI_VISION_ENABLED=True` pour une analyse visuelle réelle. Les brouillons carrière sont exportables en PDF et Word. Voir `docs/AI_ATTACHMENTS_V67.md`.
+
+
+## Rôle Entreprise / Recruteur (v73)
+
+Un recruteur peut créer directement un compte depuis `/register?role=employer`. Le compte arrive sur `/dashboard/employer` avec un profil entreprise en attente de validation. Le compte de démonstration est `recruteur@kalanpro.com` / `recruiter1234`.

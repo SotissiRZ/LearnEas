@@ -29,6 +29,11 @@ const LINKS: Record<string, { href: string; label: string; icon: React.ReactNode
     { href: "/dashboard/instructor/pdfs/new", label: "Nouveau PDF", icon: <PlusCircle size={16} /> },
     { href: "/assistant", label: "KalanPro AI", icon: <Bot size={16} /> },
   ],
+  employer: [
+    { href: "/dashboard/employer", label: "Espace entreprise", icon: <LayoutDashboard size={16} /> },
+    { href: "/opportunities", label: "Marché des opportunités", icon: <BriefcaseBusiness size={16} /> },
+    { href: "/assistant", label: "KalanPro AI", icon: <Bot size={16} /> },
+  ],
   admin: [
     { href: "/dashboard/admin", label: "Aperçu", icon: <LayoutDashboard size={16} /> },
     { href: "/dashboard/admin?tab=users", label: "Utilisateurs", icon: <Users size={16} /> },
@@ -36,7 +41,7 @@ const LINKS: Record<string, { href: string; label: string; icon: React.ReactNode
   ],
 };
 
-export default function DashboardNav({ role }: { role: "student" | "instructor" | "admin" }) {
+export default function DashboardNav({ role }: { role: "student" | "instructor" | "employer" | "admin" }) {
   const pathname = usePathname();
   const links = LINKS[role];
 

@@ -55,7 +55,7 @@ export default function Navbar() {
     router.push(term ? `/courses?search=${encodeURIComponent(term)}` : "/courses");
   }
 
-  const dashboardHref = user?.role === "admin" ? "/dashboard/admin" : user?.role === "instructor" ? "/dashboard/instructor" : "/dashboard/student";
+  const dashboardHref = user?.role === "admin" ? "/dashboard/admin" : user?.role === "instructor" ? "/dashboard/instructor" : user?.role === "employer" ? "/dashboard/employer" : "/dashboard/student";
   const djangoAdminHref = (process.env.NEXT_PUBLIC_API_URL || "/api").replace(/\/api\/?$/, "/admin/");
   const navLink = "whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-white/80 transition hover:bg-white/10 hover:text-white";
 
@@ -99,7 +99,7 @@ export default function Navbar() {
             <div className="p-3">
               <DropdownItem href="/opportunities" icon={<BriefcaseBusiness size={18} />} title="Emplois & missions" text="Parcourez les offres adaptées à vos compétences." />
               <DropdownItem href="/dashboard/student/portfolio" icon={<ClipboardCheck size={18} />} title="Portfolio" text="Présentez vos projets et preuves de compétences." />
-              <DropdownItem href="/dashboard/employer" icon={<Building2 size={18} />} title="Espace recruteur" text="Publiez des offres et trouvez des profils qualifiés." />
+              <DropdownItem href={user ? "/dashboard/employer" : "/register?role=employer"} icon={<Building2 size={18} />} title="Espace recruteur" text="Publiez des offres et trouvez des profils qualifiés." />
             </div>
           </DesktopDropdown>
           <Link href="/pricing" className={navLink}>Tarifs</Link>
@@ -150,17 +150,19 @@ export default function Navbar() {
                   <p className="px-2 py-1 text-sm font-bold">{user.first_name || user.username}</p>
                   <p className="px-2 pb-2 text-xs capitalize text-slate-500">{user.role}</p>
                   <MenuItem href={dashboardHref} icon={<LayoutDashboard size={16} />} label="Tableau de bord" close={() => setMenuOpen(false)} />
-                  <MenuItem href="/dashboard/student" icon={<BookOpen size={16} />} label="Mes cours" close={() => setMenuOpen(false)} />
-                  <MenuItem href="/dashboard/student/pdfs" icon={<FileText size={16} />} label="Mes PDF" close={() => setMenuOpen(false)} />
+                  {user.role !== "employer" && <>
+                    <MenuItem href="/dashboard/student" icon={<BookOpen size={16} />} label="Mes cours" close={() => setMenuOpen(false)} />
+                    <MenuItem href="/dashboard/student/pdfs" icon={<FileText size={16} />} label="Mes PDF" close={() => setMenuOpen(false)} />
+                  </>}
                   {user.role === "student" && <>
                     <MenuItem href="/dashboard/student/projects" icon={<ClipboardCheck size={16} />} label="Mes projets" close={() => setMenuOpen(false)} />
                     <MenuItem href="/dashboard/student/portfolio" icon={<BriefcaseBusiness size={16} />} label="Mon portfolio" close={() => setMenuOpen(false)} />
+                    <MenuItem href="/dashboard/student/opportunities" icon={<BriefcaseBusiness size={16} />} label="Emploi & missions" close={() => setMenuOpen(false)} />
                   </>}
-                  <MenuItem href="/dashboard/student/opportunities" icon={<BriefcaseBusiness size={16} />} label="Emploi & missions" close={() => setMenuOpen(false)} />
-                  <MenuItem href="/dashboard/employer" icon={<UserIcon size={16} />} label="Espace recruteur" close={() => setMenuOpen(false)} />
+                  {user.role === "employer" && <MenuItem href="/dashboard/employer" icon={<Building2 size={16} />} label="Mon entreprise" close={() => setMenuOpen(false)} />}
                   <MenuItem href="/assistant" icon={<Bot size={16} />} label="KalanPro AI" close={() => setMenuOpen(false)} />
                   <MenuItem href="/dashboard/messages" icon={<MessageCircle size={16} />} label="Messages" close={() => setMenuOpen(false)} />
-                  <MenuItem href="/dashboard/student/profile" icon={<UserIcon size={16} />} label="Profil" close={() => setMenuOpen(false)} />
+                  {user.role !== "employer" && <MenuItem href="/dashboard/student/profile" icon={<UserIcon size={16} />} label="Profil" close={() => setMenuOpen(false)} />}
                   {user.role === "admin" && user.technical_admin && (
                     <a href={djangoAdminHref} target="_blank" rel="noreferrer" onClick={() => setMenuOpen(false)} className="flex items-center justify-between gap-2 rounded-lg px-2 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50">
                       <span className="flex items-center gap-2"><Wrench size={16} /> Administration technique</span><ExternalLink size={13} />
@@ -200,7 +202,7 @@ export default function Navbar() {
             </MobileGroup>
             <MobileGroup label="Opportunités">
               <MobileLink href="/opportunities" label="Emplois & missions" />
-              <MobileLink href="/dashboard/employer" label="Espace recruteur" />
+              <MobileLink href={user ? "/dashboard/employer" : "/register?role=employer"} label="Espace recruteur" />
             </MobileGroup>
             <MobileLink href="/instructors" label="Instructeurs" />
             <MobileLink href="/pricing" label="Tarifs" />
@@ -214,7 +216,7 @@ export default function Navbar() {
               <>
                 <Link href={dashboardHref} className="mt-2 rounded-xl bg-brand-500 px-3 py-3 text-sm font-bold text-white">Tableau de bord</Link>
                 <MobileLink href="/assistant" label="KalanPro AI" />
-                <MobileLink href="/dashboard/employer" label="Espace recruteur" />
+                {user.role === "employer" && <MobileLink href="/dashboard/employer" label="Mon entreprise" />}
               </>
             )}
           </div>
