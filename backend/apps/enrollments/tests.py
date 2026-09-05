@@ -236,3 +236,134 @@ class LearningPlayerRegressionTests(APITestCase):
         row = listing.data["results"][0]
         self.assertEqual(row["last_accessed_lesson"], self.lesson.id)
         self.assertEqual(row["lesson_progress"][0]["last_position_seconds"], 137)
+
+
+    def test_v81_progress_separates_resume_position_from_real_watched_time(self):
+        self.client.force_authenticate(self.student)
+        url = f"/api/enrollments/my-courses/{self.enrollment.id}/update-lesson-progress/"
+        first = self.client.post(
+            url,
+            {"lesson_id": self.lesson.id, "position_seconds": 100, "watched_delta_seconds": 15},
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_200_OK, first.data)
+        self.assertEqual(first.data["last_position_seconds"], 100)
+        self.assertEqual(first.data["watched_seconds"], 15)
+
+        # Revenir en arrière doit modifier la reprise sans faire reculer le temps regardé.
+        second = self.client.post(
+            url,
+            {"lesson_id": self.lesson.id, "position_seconds": 40, "watched_delta_seconds": 10},
+            format="json",
+        )
+        self.assertEqual(second.data["last_position_seconds"], 40)
+        self.assertEqual(second.data["watched_seconds"], 25)
+
+        # Garde-fou anti-payload aberrant : une requête ne peut ajouter que 120 s.
+        capped = self.client.post(
+            url,
+            {"lesson_id": self.lesson.id, "position_seconds": 50, "watched_delta_seconds": 9999},
+            format="json",
+        )
+        self.assertEqual(capped.data["watched_seconds"], 145)
+
+    def test_hosted_video_cannot_complete_before_server_knows_duration(self):
+        self.lesson.video_file = "courses/videos/preparing.mp4"
+        self.lesson.duration_seconds = 0
+        self.lesson.duration_minutes = 0
+        self.lesson.save(update_fields=["video_file", "duration_seconds", "duration_minutes"])
+        self.client.force_authenticate(self.student)
+        response = self.client.post(
+            f"/api/enrollments/my-courses/{self.enrollment.id}/mark_lesson_complete/",
+            {"lesson_id": self.lesson.id, "position_seconds": 0, "watched_delta_seconds": 0},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT, response.data)
+        self.assertIn("préparation", response.data["detail"].lower())
+
+    def test_hosted_video_requires_real_watch_threshold_and_seek_does_not_complete(self):
+        from django.utils import timezone
+        from datetime import timedelta
+        from apps.enrollments.models import LessonProgress
+
+        self.course.video_completion_threshold_percent = 90
+        self.course.save(update_fields=["video_completion_threshold_percent"])
+        self.lesson.video_file = "courses/videos/lesson-1.mp4"
+        self.lesson.duration_seconds = 100
+        self.lesson.save(update_fields=["video_file", "duration_seconds"])
+        self.client.force_authenticate(self.student)
+        progress_url = f"/api/enrollments/my-courses/{self.enrollment.id}/update-lesson-progress/"
+        complete_url = f"/api/enrollments/my-courses/{self.enrollment.id}/mark_lesson_complete/"
+
+        seek = self.client.post(progress_url, {
+            "lesson_id": self.lesson.id, "position_seconds": 100, "watched_delta_seconds": 0,
+        }, format="json")
+        self.assertEqual(seek.status_code, status.HTTP_200_OK, seek.data)
+        self.assertEqual(seek.data["watched_seconds"], 0)
+
+        refused = self.client.post(complete_url, {
+            "lesson_id": self.lesson.id, "position_seconds": 100, "watched_delta_seconds": 0,
+        }, format="json")
+        self.assertEqual(refused.status_code, status.HTTP_409_CONFLICT, refused.data)
+        self.assertEqual(refused.data["required_percent"], 90)
+        self.assertFalse(LessonProgress.objects.get(enrollment=self.enrollment, lesson=self.lesson).completed)
+
+        progress = LessonProgress.objects.get(enrollment=self.enrollment, lesson=self.lesson)
+        progress.last_watch_heartbeat_at = timezone.now() - timedelta(seconds=50)
+        progress.save(update_fields=["last_watch_heartbeat_at"])
+        watched = self.client.post(progress_url, {
+            "lesson_id": self.lesson.id, "position_seconds": 90, "watched_delta_seconds": 90,
+        }, format="json")
+        self.assertEqual(watched.status_code, status.HTTP_200_OK, watched.data)
+        self.assertGreaterEqual(watched.data["watched_seconds"], 90)
+
+        completed = self.client.post(complete_url, {
+            "lesson_id": self.lesson.id, "position_seconds": 100, "watched_delta_seconds": 0,
+        }, format="json")
+        self.assertEqual(completed.status_code, status.HTTP_200_OK, completed.data)
+        self.assertTrue(LessonProgress.objects.get(enrollment=self.enrollment, lesson=self.lesson).completed)
+
+    def test_hosted_video_repeated_api_calls_cannot_instantly_forge_watch_time(self):
+        self.lesson.video_file = "courses/videos/anti-spam.mp4"
+        self.lesson.duration_seconds = 600
+        self.lesson.save(update_fields=["video_file", "duration_seconds"])
+        self.client.force_authenticate(self.student)
+        url = f"/api/enrollments/my-courses/{self.enrollment.id}/update-lesson-progress/"
+        first = self.client.post(url, {
+            "lesson_id": self.lesson.id, "position_seconds": 20, "watched_delta_seconds": 120,
+        }, format="json")
+        self.assertEqual(first.status_code, status.HTTP_200_OK, first.data)
+        self.assertLessEqual(first.data["watched_seconds"], 20)
+        second = self.client.post(url, {
+            "lesson_id": self.lesson.id, "position_seconds": 140, "watched_delta_seconds": 120,
+        }, format="json")
+        self.assertEqual(second.status_code, status.HTTP_200_OK, second.data)
+        self.assertLessEqual(second.data["watched_seconds"], 22)
+
+    def test_signed_offline_watch_can_sync_after_elapsed_offline_time(self):
+        from django.core import signing
+        from django.utils import timezone
+        from apps.enrollments.models import LessonProgress
+
+        self.lesson.video_file = "courses/videos/offline.mp4"
+        self.lesson.duration_seconds = 100
+        self.lesson.save(update_fields=["video_file", "duration_seconds"])
+        self.client.force_authenticate(self.student)
+        token = signing.dumps({
+            "lesson_id": self.lesson.id,
+            "user_id": self.student.id,
+            "issued_at": int(timezone.now().timestamp()) - 60,
+        }, salt="kalanpro.offline-progress", compress=True)
+        url = f"/api/enrollments/my-courses/{self.enrollment.id}/update-lesson-progress/"
+        synced = self.client.post(url, {
+            "lesson_id": self.lesson.id,
+            "position_seconds": 90,
+            "watched_delta_seconds": 0,
+            "offline_watched_seconds": 90,
+            "offline_progress_token": token,
+        }, format="json")
+        self.assertEqual(synced.status_code, status.HTTP_200_OK, synced.data)
+        self.assertEqual(synced.data["watched_seconds"], 90)
+        self.assertEqual(synced.data["credited_watched_seconds"], 90)
+        progress = LessonProgress.objects.get(enrollment=self.enrollment, lesson=self.lesson)
+        self.assertEqual(progress.watched_seconds, 90)

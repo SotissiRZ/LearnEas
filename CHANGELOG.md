@@ -1225,3 +1225,16 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Retour Mobile Money optimisé : état interne/webhook prioritaire et nombre limité d’appels prestataire.
 - Variables de réconciliation/expiration documentées et planification Celery de revue des commandes anciennes.
 - Aucun secret marchand n’est embarqué ; l’activation live dépend toujours des identifiants de production fournis par le prestataire.
+
+## v81 — Faible connexion, HLS, validation réelle et hors connexion (2026-09-05)
+- Ajout d'un master HLS faible débit virtuel via politique signée `max_height` : le même paquet HLS est filtré à ≤360p côté serveur, y compris pour Safari/iOS natif.
+- Le lecteur propose **Auto / Éco / Normal**, réagit à `Save-Data`, 2G/slow-2G/3G/4G et au débit mesuré ; les connexions rapides sont libellées 4G/5G sans fausse détection radio.
+- Initialisation ABR adaptée au réseau, buffers réduits en mode économie, estimation Mo/h et audio-only ~48 kb/s.
+- Cache navigateur privé court des segments HLS (`HLS_SEGMENT_CACHE_SECONDS`) tandis que les manifests restent non cachés.
+- Alignement des images-clés ffmpeg sur la durée des segments pour des changements de qualité plus fiables.
+- Progression séparant `position_seconds` et temps réellement regardé, avec heartbeat serveur, plafond lié au temps mural et verrou transactionnel.
+- Les vidéos hébergées ne peuvent plus être marquées terminées tant que le seuil du cours (`video_completion_threshold_percent`, 90 % par défaut) n'est pas atteint ; un simple seek vers la fin ne crédite pas le visionnage.
+- Téléchargement hors connexion opt-in par leçon : copie MP4 basse définition générée côté worker, taille maximale configurable, lien privé signé et stockage IndexedDB cloisonné par utilisateur.
+- Bibliothèque hors connexion autonome mise en cache par Service Worker (`/offline-player.html`) : lecture après redémarrage du navigateur sans réseau.
+- La progression hors ligne utilise un jeton signé et conserve toute portion non créditée lorsque le plafond anti-triche n'en accepte qu'une partie ; resynchronisation automatique au retour du réseau.
+- Nouvelles migrations additives : `catalog.0007_lesson_offline_completion_controls` et `enrollments.0007_lessonprogress_watch_heartbeat`.

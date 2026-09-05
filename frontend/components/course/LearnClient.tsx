@@ -32,6 +32,13 @@ import PdfViewer from "@/components/ui/PdfViewer";
 import VideoPlayer, { VideoPlayerHandle } from "@/components/ui/VideoPlayer";
 import { useAuth } from "@/hooks/useAuth";
 import { publishAIContext } from "@/lib/aiContext";
+import {
+  downloadOfflineVideo,
+  formatOfflineSize,
+  getOfflineVideo,
+  listOfflineLessonIds,
+  removeOfflineVideo,
+} from "@/lib/offlineVideo";
 
 type LearningTab = "overview" | "transcript" | "notes" | "qna" | "resources" | "project";
 type TranscriptScope = "video" | "course";
@@ -61,6 +68,79 @@ function formatSeconds(seconds: number): string {
   const m = Math.floor((safe % 3600) / 60);
   const s = safe % 60;
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+type LocalResumeEntry = {
+  position: number;
+  updatedAt: number;
+  watchedPending?: number;
+  offlinePending?: boolean;
+};
+type LocalResumeMap = Record<string, LocalResumeEntry>;
+
+function resumeStorageKey(userId: number, courseId: number): string {
+  return `kalanpro:resume:${userId}:${courseId}`;
+}
+
+function readLocalResume(userId: number, courseId: number): LocalResumeMap {
+  try {
+    const raw = localStorage.getItem(resumeStorageKey(userId, courseId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as LocalResumeMap;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLocalResume(
+  userId: number,
+  courseId: number,
+  lessonId: number,
+  position: number,
+  watchedDelta = 0,
+  offline = false,
+): LocalResumeEntry {
+  const updatedAt = Date.now();
+  const next: LocalResumeEntry = { position: Math.max(0, Math.floor(position)), updatedAt };
+  try {
+    const rows = readLocalResume(userId, courseId);
+    const previous = rows[String(lessonId)];
+    next.watchedPending = Math.max(0, Math.floor((previous?.watchedPending || 0) + watchedDelta));
+    next.offlinePending = Boolean(previous?.offlinePending || (offline && watchedDelta > 0));
+    rows[String(lessonId)] = next;
+    localStorage.setItem(resumeStorageKey(userId, courseId), JSON.stringify(rows));
+  } catch {}
+  return next;
+}
+
+function acknowledgeLocalResume(
+  userId: number,
+  courseId: number,
+  lessonId: number,
+  syncedAt: number,
+  creditedWatchedSeconds: number,
+): void {
+  try {
+    const rows = readLocalResume(userId, courseId);
+    const current = rows[String(lessonId)];
+    if (!current) return;
+    const remaining = Math.max(0, Math.floor((current.watchedPending || 0) - Math.max(0, creditedWatchedSeconds || 0)));
+
+    // Une nouvelle position/portion a pu être enregistrée pendant la requête réseau. Dans ce cas
+    // on garde toujours l'entrée la plus récente et on ne retire que le temps effectivement crédité.
+    if (current.updatedAt > syncedAt || remaining > 0) {
+      rows[String(lessonId)] = {
+        ...current,
+        watchedPending: remaining,
+        offlinePending: remaining > 0 ? Boolean(current.offlinePending) : false,
+      };
+    } else {
+      delete rows[String(lessonId)];
+    }
+    if (Object.keys(rows).length) localStorage.setItem(resumeStorageKey(userId, courseId), JSON.stringify(rows));
+    else localStorage.removeItem(resumeStorageKey(userId, courseId));
+  } catch {}
 }
 
 function parseTranscript(lesson: Lesson): TranscriptSegment[] {
@@ -96,6 +176,14 @@ export default function LearnClient({ course }: { course: Course }) {
   const [videoDuration, setVideoDuration] = useState(0);
   const [seekTarget, setSeekTarget] = useState<{ lessonId: number; seconds: number } | null>(null);
   const [autoStartLesson, setAutoStartLesson] = useState(false);
+  const [watchedByLesson, setWatchedByLesson] = useState<Record<number, number>>({});
+  const [completionError, setCompletionError] = useState("");
+  const [offlineLessonIds, setOfflineLessonIds] = useState<Set<number>>(new Set());
+  const [offlineSrc, setOfflineSrc] = useState<string | null>(null);
+  const [offlineProgressToken, setOfflineProgressToken] = useState<string | null>(null);
+  const [offlineBusy, setOfflineBusy] = useState<number | null>(null);
+  const [offlineProgress, setOfflineProgress] = useState(0);
+  const [offlineError, setOfflineError] = useState("");
 
   const [transcriptQuery, setTranscriptQuery] = useState("");
   const [transcriptScope, setTranscriptScope] = useState<TranscriptScope>("video");
@@ -149,7 +237,46 @@ export default function LearnClient({ course }: { course: Course }) {
       setEnrollment(found);
       if (found?.lesson_progress?.length) {
         setCompletedIds(new Set(found.lesson_progress.filter((item) => item.completed).map((item) => item.lesson)));
-        setResumePositions(Object.fromEntries(found.lesson_progress.map((item) => [item.lesson, item.last_position_seconds || 0])));
+        setWatchedByLesson(Object.fromEntries(found.lesson_progress.map((item) => [item.lesson, item.watched_seconds || 0])));
+      }
+      if (found && user) {
+        const localRows = readLocalResume(user.id, course.id);
+        const serverByLesson = new Map((found.lesson_progress || []).map((item) => [item.lesson, item]));
+        const positions: Record<number, number> = {};
+        for (const lesson of allLessons) {
+          const server = serverByLesson.get(lesson.id);
+          const local = localRows[String(lesson.id)];
+          const serverUpdatedAt = server?.updated_at ? Date.parse(server.updated_at) : 0;
+          if (local && local.updatedAt > serverUpdatedAt) positions[lesson.id] = local.position;
+          else positions[lesson.id] = server?.last_position_seconds || 0;
+        }
+        setResumePositions(positions);
+
+        // Une position écrite hors-ligne est resynchronisée dès que l'API redevient joignable.
+        // Le payload reste minuscule et n'ajoute aucun temps de visionnage artificiel.
+        for (const [lessonIdRaw, local] of Object.entries(localRows)) {
+          const lessonId = Number(lessonIdRaw);
+          const server = serverByLesson.get(lessonId);
+          const serverUpdatedAt = server?.updated_at ? Date.parse(server.updated_at) : 0;
+          if (!Number.isFinite(lessonId) || local.updatedAt <= serverUpdatedAt) continue;
+          const lesson = allLessons.find((item) => item.id === lessonId);
+          const offlineToken = lesson?.offline_progress_token || null;
+          const payload = {
+            lesson_id: lessonId,
+            position_seconds: local.position,
+            watched_delta_seconds: local.offlinePending ? 0 : Math.min(120, local.watchedPending || 0),
+            offline_watched_seconds: local.offlinePending ? (local.watchedPending || 0) : 0,
+            offline_progress_token: local.offlinePending ? offlineToken : null,
+          };
+          void api.post<{ watched_seconds?: number; credited_watched_seconds?: number }>(
+            `/enrollments/my-courses/${found.id}/update-lesson-progress/`, payload,
+          ).then((result) => {
+            acknowledgeLocalResume(user.id, course.id, lessonId, local.updatedAt, result.credited_watched_seconds || 0);
+            if (typeof result.watched_seconds === "number") {
+              setWatchedByLesson((prev) => ({ ...prev, [lessonId]: result.watched_seconds || 0 }));
+            }
+          }).catch(() => {});
+        }
       }
       if (found?.last_accessed_lesson) {
         const last = allLessons.find((lesson) => lesson.id === found.last_accessed_lesson && !lesson.locked);
@@ -163,6 +290,70 @@ export default function LearnClient({ course }: { course: Course }) {
       setActiveLesson(allLessons.find((lesson) => !lesson.locked) || allLessons[0]);
     }
   }, [allLessons, activeLesson]);
+
+  useEffect(() => {
+    if (!user || !enrollment || typeof window === "undefined") return;
+
+    const syncPendingOfflineProgress = () => {
+      if (navigator.onLine === false) return;
+      const rows = readLocalResume(user.id, course.id);
+      for (const [lessonIdRaw, local] of Object.entries(rows)) {
+        const lessonId = Number(lessonIdRaw);
+        if (!Number.isFinite(lessonId)) continue;
+        const lesson = allLessons.find((item) => item.id === lessonId);
+        if (!lesson) continue;
+        const offlineToken = lesson.offline_progress_token || null;
+        const useOfflineSync = Boolean(local.offlinePending && offlineToken);
+        const pending = Math.max(0, local.watchedPending || 0);
+        void api.post<{ watched_seconds?: number; credited_watched_seconds?: number }>(
+          `/enrollments/my-courses/${enrollment.id}/update-lesson-progress/`,
+          {
+            lesson_id: lessonId,
+            position_seconds: local.position,
+            watched_delta_seconds: useOfflineSync ? 0 : Math.min(120, pending),
+            offline_watched_seconds: useOfflineSync ? pending : 0,
+            offline_progress_token: useOfflineSync ? offlineToken : null,
+          },
+        ).then((result) => {
+          acknowledgeLocalResume(user.id, course.id, lessonId, local.updatedAt, result.credited_watched_seconds || 0);
+          if (typeof result.watched_seconds === "number") {
+            setWatchedByLesson((prev) => ({ ...prev, [lessonId]: result.watched_seconds || 0 }));
+          }
+        }).catch(() => {});
+      }
+    };
+
+    window.addEventListener("online", syncPendingOfflineProgress);
+    return () => window.removeEventListener("online", syncPendingOfflineProgress);
+  }, [user, enrollment, course.id, allLessons]);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    void listOfflineLessonIds(user.id, course.id).then((ids) => {
+      if (!cancelled) setOfflineLessonIds(new Set(ids));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [user?.id, course.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setOfflineSrc(null);
+    setOfflineProgressToken(activeLesson?.offline_progress_token || null);
+    if (!activeLesson || !user) return;
+    void getOfflineVideo(user.id, course.id, activeLesson.id).then((record) => {
+      if (cancelled || !record) return;
+      objectUrl = URL.createObjectURL(record.blob);
+      setOfflineSrc(objectUrl);
+      setOfflineProgressToken(record.progressToken || activeLesson.offline_progress_token || null);
+      setOfflineLessonIds((prev) => new Set(prev).add(activeLesson.id));
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [user?.id, course.id, activeLesson?.id]);
 
   useEffect(() => {
     publishAIContext({
@@ -185,37 +376,115 @@ export default function LearnClient({ course }: { course: Course }) {
     window.setTimeout(() => mainRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
   }, []);
 
-  async function markComplete(lesson: Lesson) {
+  async function markComplete(lesson: Lesson, positionOverride?: number, watchedDeltaSeconds = 0) {
     if (!enrollment) {
-      setCompletedIds((prev) => new Set(prev).add(lesson.id));
-      return;
+      setCompletionError("Reconnectez-vous pour valider cette leçon.");
+      return false;
     }
+    setCompletionError("");
     try {
       const updated = await api.post<CourseEnrollment>(
         `/enrollments/my-courses/${enrollment.id}/mark_lesson_complete/`,
-        { lesson_id: lesson.id, watched_seconds: Math.floor(playerRef.current?.getCurrentTime() || currentTime) },
+        {
+          lesson_id: lesson.id,
+          position_seconds: Math.floor(positionOverride ?? playerRef.current?.getCurrentTime() ?? currentTime),
+          watched_delta_seconds: watchedDeltaSeconds,
+        },
       );
       setEnrollment(updated);
+      const row = updated.lesson_progress?.find((item) => item.lesson === lesson.id);
+      if (row) setWatchedByLesson((prev) => ({ ...prev, [lesson.id]: row.watched_seconds || 0 }));
       setCompletedIds((prev) => new Set(prev).add(lesson.id));
-    } catch {
-      // La lecture continue même si la synchronisation de progression échoue momentanément.
+      return true;
+    } catch (error) {
+      setCompletionError(error instanceof ApiError ? error.message : "Impossible de valider cette leçon.");
+      return false;
     }
   }
 
-  const persistProgress = useCallback((seconds: number) => {
+  const persistProgress = useCallback((seconds: number, watchedDeltaSeconds = 0) => {
     if (!activeLesson) return;
-    setResumePositions((prev) => ({ ...prev, [activeLesson.id]: Math.floor(seconds) }));
+    const position = Math.max(0, Math.floor(seconds));
+    const watchedDelta = Math.max(0, Math.floor(watchedDeltaSeconds));
+    if (watchedDelta > 0) setWatchedByLesson((prev) => ({ ...prev, [activeLesson.id]: (prev[activeLesson.id] || 0) + watchedDelta }));
+    setResumePositions((prev) => ({ ...prev, [activeLesson.id]: position }));
+    const localEntry = user
+      ? saveLocalResume(user.id, course.id, activeLesson.id, position, watchedDelta, typeof navigator !== "undefined" && navigator.onLine === false)
+      : null;
     if (!enrollment) return;
-    void api.post(
+    const useOfflineSync = Boolean(localEntry?.offlinePending && offlineProgressToken);
+    void api.post<{ watched_seconds?: number; credited_watched_seconds?: number }>(
       `/enrollments/my-courses/${enrollment.id}/update-lesson-progress/`,
-      { lesson_id: activeLesson.id, watched_seconds: Math.floor(seconds) },
-    ).catch(() => {});
-  }, [activeLesson, enrollment]);
+      {
+        lesson_id: activeLesson.id,
+        position_seconds: position,
+        watched_delta_seconds: useOfflineSync ? 0 : watchedDelta,
+        offline_watched_seconds: useOfflineSync ? (localEntry?.watchedPending || 0) : 0,
+        offline_progress_token: useOfflineSync ? offlineProgressToken : null,
+      },
+    ).then((result) => {
+      if (user && localEntry) {
+        acknowledgeLocalResume(user.id, course.id, activeLesson.id, localEntry.updatedAt, result.credited_watched_seconds || 0);
+      }
+      if (typeof result.watched_seconds === "number") {
+        setWatchedByLesson((prev) => ({ ...prev, [activeLesson.id]: result.watched_seconds || 0 }));
+      }
+    }).catch(() => {});
+  }, [activeLesson, enrollment, user, course.id, offlineProgressToken]);
 
-  async function handleEnded() {
+  async function handleEnded(seconds: number, _duration: number, watchedDeltaSeconds: number) {
     if (!activeLesson) return;
-    await markComplete(activeLesson);
-    if (autoplay && nextLesson && !nextLesson.locked) selectLesson(nextLesson, undefined, true);
+    const completed = await markComplete(activeLesson, seconds, watchedDeltaSeconds);
+    if (completed && autoplay && nextLesson && !nextLesson.locked) selectLesson(nextLesson, undefined, true);
+  }
+
+  async function downloadActiveOffline(lesson: Lesson) {
+    if (!lesson.offline_download_url) return;
+    setOfflineBusy(lesson.id);
+    setOfflineProgress(0);
+    setOfflineError("");
+    try {
+      if (!user) throw new Error("Reconnectez-vous avant de télécharger une vidéo hors connexion.");
+      const record = await downloadOfflineVideo({
+        userId: user.id,
+        courseId: course.id,
+        lessonId: lesson.id,
+        title: lesson.title,
+        url: lesson.offline_download_url,
+        expectedSize: lesson.offline_video_size_bytes || 0,
+        progressToken: lesson.offline_progress_token || null,
+        onProgress: setOfflineProgress,
+      });
+      setOfflineLessonIds((prev) => new Set(prev).add(lesson.id));
+      if (activeLesson?.id === lesson.id) {
+        if (offlineSrc) URL.revokeObjectURL(offlineSrc);
+        setOfflineSrc(URL.createObjectURL(record.blob));
+        setOfflineProgressToken(record.progressToken || lesson.offline_progress_token || null);
+      }
+    } catch (error) {
+      setOfflineError(error instanceof Error ? error.message : "Téléchargement hors connexion impossible.");
+    } finally {
+      setOfflineBusy(null);
+    }
+  }
+
+  async function removeActiveOffline(lesson: Lesson) {
+    setOfflineBusy(lesson.id);
+    setOfflineError("");
+    try {
+      if (!user) return;
+      await removeOfflineVideo(user.id, course.id, lesson.id);
+      setOfflineLessonIds((prev) => { const next = new Set(prev); next.delete(lesson.id); return next; });
+      if (activeLesson?.id === lesson.id) {
+        if (offlineSrc) URL.revokeObjectURL(offlineSrc);
+        setOfflineSrc(null);
+        setOfflineProgressToken(null);
+      }
+    } catch (error) {
+      setOfflineError(error instanceof Error ? error.message : "Suppression de la copie locale impossible.");
+    } finally {
+      setOfflineBusy(null);
+    }
   }
 
   const canRepairActiveVideo = Boolean(
@@ -400,6 +669,21 @@ export default function LearnClient({ course }: { course: Course }) {
       ? seekTarget.seconds
       : resumePositions[activeLesson.id] || 0
     : 0;
+  const activeDurationSeconds = activeLesson
+    ? Math.max(0, activeLesson.duration_seconds || Math.floor(videoDuration) || activeLesson.duration_minutes * 60)
+    : 0;
+  const completionThreshold = Math.max(50, Math.min(100, course.video_completion_threshold_percent || 90));
+  const activeWatchedSeconds = activeLesson ? (watchedByLesson[activeLesson.id] || 0) : 0;
+  const activeWatchedPercent = activeDurationSeconds > 0
+    ? Math.min(100, Math.floor((activeWatchedSeconds / activeDurationSeconds) * 100))
+    : 0;
+  const completionPreparing = Boolean(
+    activeLesson?.video_file && activeDurationSeconds <= 0 && !completedIds.has(activeLesson.id)
+  );
+  const completionLocked = Boolean(
+    activeLesson?.video_file && !completedIds.has(activeLesson.id) &&
+    (completionPreparing || activeWatchedPercent < completionThreshold)
+  );
 
   return (
     <div ref={mainRef} className="min-h-screen bg-[#f5f7f9] text-gray-950">
@@ -455,7 +739,9 @@ export default function LearnClient({ course }: { course: Course }) {
                     key={activeLesson.id}
                     src={(activeLesson.video_url || activeLesson.video_file) as string}
                     hlsSrc={activeLesson.hls_url}
+                    dataSaverHlsSrc={activeLesson.data_saver_hls_url}
                     audioHlsSrc={activeLesson.audio_hls_url}
+                    offlineSrc={offlineSrc}
                     streamingVariants={activeLesson.streaming_variants}
                     streamingStatus={activeLesson.streaming_status}
                     poster={course.thumbnail}
@@ -464,8 +750,8 @@ export default function LearnClient({ course }: { course: Course }) {
                     initialTime={initialTime}
                     autoPlayOnLoad={autoStartLesson}
                     onTimeChange={(seconds, duration) => { setCurrentTime(seconds); setVideoDuration(duration); }}
-                    onProgress={(seconds) => persistProgress(seconds)}
-                    onEnded={() => void handleEnded()}
+                    onProgress={(seconds, _duration, watchedDeltaSeconds) => persistProgress(seconds, watchedDeltaSeconds)}
+                    onEnded={(seconds, duration, watchedDeltaSeconds) => void handleEnded(seconds, duration, watchedDeltaSeconds)}
                     onRepair={canRepairActiveVideo ? repairActiveVideo : undefined}
                   />
                 ) : (
@@ -511,16 +797,35 @@ export default function LearnClient({ course }: { course: Course }) {
                 </button>
                 Lecture automatique
               </label>
+              {activeLesson?.offline_download_allowed && activeLesson.offline_download_url && (
+                offlineLessonIds.has(activeLesson.id) ? (
+                  <button type="button" disabled={offlineBusy === activeLesson.id} onClick={() => void removeActiveOffline(activeLesson)} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 disabled:opacity-50" title="Supprimer la copie enregistrée sur cet appareil">
+                    <Trash2 size={14} /> Hors connexion
+                  </button>
+                ) : (
+                  <button type="button" disabled={offlineBusy === activeLesson.id} onClick={() => void downloadActiveOffline(activeLesson)} className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 disabled:opacity-50" title="Enregistrer cette leçon sur cet appareil">
+                    <Download size={14} /> {offlineBusy === activeLesson.id ? `${offlineProgress}%` : `Hors connexion · ${formatOfflineSize(activeLesson.offline_video_size_bytes || 0)}`}
+                  </button>
+                )
+              )}
+              {offlineLessonIds.size > 0 && (
+                <a href="/offline-player.html" className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700" title="Ouvrir vos vidéos enregistrées, même sans connexion">
+                  <BookOpen size={14} /> Bibliothèque hors ligne
+                </a>
+              )}
               {activeLesson && (
                 <button
                   type="button"
+                  disabled={completionLocked}
+                  title={completionPreparing ? "La vidéo est encore en préparation côté serveur." : completionLocked ? `Regardez au moins ${completionThreshold} % de la vidéo. Progression réelle : ${activeWatchedPercent} %.` : undefined}
                   onClick={() => void markComplete(activeLesson)}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold ${completedIds.has(activeLesson.id) ? "bg-emerald-50 text-emerald-700" : "border border-gray-200 text-gray-700 hover:bg-gray-50"}`}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45 ${completedIds.has(activeLesson.id) ? "bg-emerald-50 text-emerald-700" : "border border-gray-200 text-gray-700 hover:bg-gray-50"}`}
                 >
-                  <CheckCircle2 size={15} /> {completedIds.has(activeLesson.id) ? "Terminée" : "Marquer comme terminée"}
+                  <CheckCircle2 size={15} /> {completedIds.has(activeLesson.id) ? "Terminée" : completionPreparing ? "Préparation vidéo…" : completionLocked ? `${activeWatchedPercent}% / ${completionThreshold}% requis` : "Marquer comme terminée"}
                 </button>
               )}
             </div>
+            {(completionError || offlineError) && <div className="border-t border-gray-100 px-4 py-2 text-xs text-red-600">{completionError || offlineError}</div>}
           </div>
 
           <section className="mx-auto max-w-[1500px] px-4 py-5 sm:px-6 sm:py-7">

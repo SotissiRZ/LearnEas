@@ -1,5 +1,11 @@
 # KalanPro
 
+> **v81 — faible connexion / HLS / hors connexion contrôlé :** modes Auto/Éco/Normal selon le réseau, master HLS privé filtré ≤360p y compris Safari, audio seul ~48 kb/s, validation vidéo fondée sur le temps réellement regardé, téléchargement MP4 basse définition par leçon autorisée, bibliothèque locale IndexedDB/PWA et resynchronisation de progression. Voir [`docs/V81_LOW_BANDWIDTH.md`](./docs/V81_LOW_BANDWIDTH.md).
+
+> **v80 — Mobile Money / gouvernance financière :** journal persistant des tentatives/événements/anomalies, idempotence webhook durable, validation référence/montant/devise, réconciliation et audit financier admin. Voir [`docs/V80_MOBILE_MONEY_FINANCE.md`](./docs/V80_MOBILE_MONEY_FINANCE.md).
+
+> **v79 — fondation production :** CI, healthchecks, request-id/logs structurés, sauvegardes PostgreSQL, garde-fous production, timeouts réseau et durcissement uploads. Voir [`docs/V79_CODE_FOUNDATION.md`](./docs/V79_CODE_FOUNDATION.md).
+
 > **v78 — Gouvernance recruteur, monétisation et workflow d’embauche :** droits employeur payés `single_post` / `pro` / `business`, quotas d’offres réellement appliqués, vivier réservé Pro/Business, révocation au remboursement, renouvellements 30 jours chaînés, confidentialité renforcée des talents, journal d’accès candidat, entretiens et offres d’embauche avec réponse candidat, checkout recruteur idempotent et SEO `JobPosting`. Migrations additives uniquement : `payments.0013`, `opportunities.0004`, puis les migrations de synchronisation `formations.0011` et `opportunities.0005`. Voir [`docs/VALIDATION_V78.md`](./docs/VALIDATION_V78.md).
 
 > **v77 — correctif identité entreprise :** suppression du chevauchement logo/bannière dans le profil employeur ; le logo possède désormais sa propre ligne responsive sous la bannière.
@@ -115,7 +121,7 @@ Admin Django : **http://localhost/admin**
 - Footer enrichi avec une section **Légal** : conditions d'utilisation, confidentialité, mentions légales, cookies, paiements/remboursements et vérification publique des certificats.
 - Les informations juridiques (raison sociale, adresse, pays, immatriculation, identifiant fiscal, email confidentialité et délai de remboursement) sont configurables dans **Admin → Paramètres**.
 - Lecteur vidéo unifié : contrôles personnalisés, ±10 s, volume/mute, vitesse 0,5× à 2×, sous-titres WebVTT, Picture-in-Picture, plein écran et raccourcis clavier (K/Espace, J/L, flèches, M, F, C). Les vidéos de cours ne proposent ni téléchargement ni ouverture directe de la source.
-- Streaming adaptatif HLS : 240p/360p/480p/720p selon la résolution source, qualité Auto, mode **Économie de données ≤360p** et mode **Audio uniquement ~48 kb/s**. Les préférences faible débit sont adaptées aux connexions mobiles et le lecteur peut activer automatiquement l'économie de données sur 2G/`Save-Data`.
+- Streaming adaptatif HLS : 240p/360p/480p/720p selon la résolution source, qualité Auto, mode **Économie de données ≤360p** et mode **Audio uniquement ~48 kb/s**. Les préférences faible débit s'adaptent à 2G/3G/4G, `Save-Data` et au débit réel ; une connexion très rapide peut être présentée comme **4G/5G** sans prétendre identifier la radio 5G, que l'API navigateur ne distingue généralement pas.
 - Lecteur PDF unifié : barre native du navigateur (pages, recherche, zoom, miniatures selon navigateur), plein écran/modal, impression, nouvel onglet et téléchargement.
 - Upload vidéo instructeur : MP4/WebM/MOV/M4V, progression réelle, métadonnées extraites automatiquement et limite Docker locale de 2 Go par défaut (`MAX_VIDEO_UPLOAD_MB`).
 - Les leçons acceptent désormais un fichier de sous-titres `.vtt` et une transcription.
@@ -131,6 +137,7 @@ Admin Django : **http://localhost/admin**
 - Sommaire de cours repliable avec chapitres, durée, progression et leçon active.
 - Navigation précédent/suivant et lecture automatique de la leçon suivante.
 - Reprise automatique à la dernière leçon et au dernier timestamp enregistré.
+- En cas de coupure API, la position de reprise reste disponible localement sur le même appareil puis se resynchronise à la reconnexion ; le temps réellement regardé est compté séparément du timestamp. Pour les vidéos hébergées par KalanPro, la validation est refusée côté serveur tant que le seuil configuré du cours (90 % par défaut) n'est pas réellement atteint.
 - Onglets **Aperçu**, **Transcription**, **Carnet**, **Q&R** et **Ressources** sous le lecteur.
 - Transcriptions recherchables ; utilisez le format `[01:25] Texte du passage` pour rendre un passage cliquable.
 - Carnet privé avec notes horodatées, édition/suppression, retour instantané au passage et export texte.
@@ -513,11 +520,12 @@ Après l'upload d'un fichier vidéo, KalanPro prépare automatiquement en arriè
 
 Le lecteur propose :
 
-- **Auto** : adaptation dynamique à la bande passante ;
-- **Économie de données** : Auto plafonné à 360p, mémorisé dans le navigateur ;
-- sélection manuelle de la qualité disponible ;
+- **Auto** : ABR dynamique ; si le navigateur signale 2G/slow-2G, `Save-Data` ou un faible downlink, le master est automatiquement limité à 360p ;
+- **Éco** : force le master privé ≤`HLS_DATA_SAVER_MAX_HEIGHT` (360p par défaut), y compris avec le HLS natif Safari/iOS ;
+- **Normal** : accès à toutes les variantes disponibles et sélection manuelle 240p/360p/480p/720p ;
 - **Audio uniquement** : pas de téléchargement des segments vidéo, uniquement l'audio faible débit ;
-- conservation de la position de lecture lors du passage vidéo ↔ audio.
+- estimation de consommation en Mo/h et qualité active ;
+- conservation de la position de lecture lors du passage vidéo ↔ audio ou d'un changement de politique réseau.
 
 Pour préparer les vidéos déjà présentes avant v43 :
 
@@ -545,7 +553,21 @@ HLS_SEGMENT_SECONDS=6
 HLS_TRANSCODE_TIMEOUT_SECONDS=7200
 HLS_TRANSCODE_PRESET=veryfast
 HLS_AUDIO_ONLY_BITRATE=48k
+HLS_DATA_SAVER_MAX_HEIGHT=360
+HLS_SEGMENT_CACHE_SECONDS=600
+OFFLINE_VIDEO_ENABLED=True
+OFFLINE_VIDEO_MAX_HEIGHT=360
+OFFLINE_VIDEO_MAX_MB=250
+OFFLINE_PROGRESS_TOKEN_MAX_AGE=2592000
 ```
+
+### Lecture hors connexion contrôlée (v81)
+
+L'instructeur peut autoriser le hors connexion **leçon par leçon**. Le worker média génère alors une copie MP4 H.264/AAC basse définition, limitée par `OFFLINE_VIDEO_MAX_HEIGHT` et `OFFLINE_VIDEO_MAX_MB`. L'apprenant voit la taille estimée avant téléchargement et la copie est stockée dans IndexedDB, cloisonnée par utilisateur.
+
+Une petite coque hors connexion (`/offline-player.html`) est mise en cache par Service Worker : après téléchargement, la bibliothèque reste ouvrable après redémarrage du navigateur même sans réseau. La progression accumulée hors ligne est conservée localement, protégée par un jeton signé, puis créditée dans les limites du temps mural lors de la reconnexion.
+
+Ce mécanisme est un **cache local contrôlé**, pas un DRM absolu : un navigateur web ne peut pas garantir la même protection qu'une application native Widevine/FairPlay. Le serveur reste l'autorité pour les droits et la validation de complétion.
 
 ## WhatsApp transactionnel (v44)
 

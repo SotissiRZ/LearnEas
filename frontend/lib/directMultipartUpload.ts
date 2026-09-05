@@ -99,6 +99,7 @@ export async function uploadLessonVideoMultipart({
   isPreview,
   subtitles,
   transcript,
+  offlineDownloadAllowed = false,
   onProgress,
 }: {
   sectionId: number;
@@ -107,6 +108,7 @@ export async function uploadLessonVideoMultipart({
   isPreview: boolean;
   subtitles: File | null;
   transcript: string;
+  offlineDownloadAllowed?: boolean;
   onProgress: (percent: number) => void;
 }): Promise<void> {
   const start = await api.post<DirectUploadStart>("/catalog/lessons/direct-upload-start/", {
@@ -139,6 +141,7 @@ export async function uploadLessonVideoMultipart({
     complete.append("order", "1");
     complete.append("is_preview", String(isPreview));
     complete.append("transcript", transcript);
+    complete.append("offline_download_allowed", String(offlineDownloadAllowed));
     complete.append("object_key", start.object_key);
     complete.append("upload_id", start.upload_id);
     complete.append("expected_size", String(file.size));

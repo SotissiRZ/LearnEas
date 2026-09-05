@@ -44,6 +44,7 @@ class LessonProgress(models.Model):
     completed = models.BooleanField(default=False)
     watched_seconds = models.PositiveIntegerField(default=0)
     last_position_seconds = models.PositiveIntegerField(default=0)
+    last_watch_heartbeat_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

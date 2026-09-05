@@ -2,7 +2,7 @@ from django.conf import settings
 from django.db import transaction
 from rest_framework import serializers
 from apps.accounts.serializers import UserPublicCompactSerializer, UserPublicSerializer
-from apps.common.fields import RelativeImageField, RelativeFileField, ProtectedFileField
+from apps.common.fields import RelativeImageField, RelativeFileField, ProtectedFileField, sign_private_media_name
 from apps.common.media_metadata import extract_pdf_page_count, validate_upload_limits
 from apps.common.hls_media import sign_hls_path
 from .models import Domain, Category, Course, Section, Lesson, PDFResource, PDFProduct
@@ -79,13 +79,17 @@ class LessonSerializer(serializers.ModelSerializer):
     subtitles_file = ProtectedFileField(read_only=True)
     hls_url = serializers.SerializerMethodField()
     audio_hls_url = serializers.SerializerMethodField()
+    data_saver_hls_url = serializers.SerializerMethodField()
+    offline_download_url = serializers.SerializerMethodField()
+    offline_progress_token = serializers.SerializerMethodField()
 
     class Meta:
         model = Lesson
         fields = [
-            "id", "title", "video_url", "video_file", "duration_minutes",
+            "id", "title", "video_url", "video_file", "duration_minutes", "duration_seconds",
             "order", "is_preview", "description", "subtitles_file", "transcript", "locked",
-            "hls_url", "audio_hls_url", "streaming_status", "streaming_variants",
+            "hls_url", "audio_hls_url", "data_saver_hls_url", "streaming_status", "streaming_variants",
+            "offline_download_allowed", "offline_download_url", "offline_progress_token", "offline_video_size_bytes",
         ]
 
     def get_hls_url(self, obj):
@@ -101,6 +105,34 @@ class LessonSerializer(serializers.ModelSerializer):
             return None
         try:
             return sign_hls_path(obj.audio_hls_path)
+        except Exception:
+            return None
+
+    def get_data_saver_hls_url(self, obj):
+        if obj.streaming_status != "ready" or not obj.hls_master_path:
+            return None
+        try:
+            return sign_hls_path(obj.hls_master_path, max_height=settings.HLS_DATA_SAVER_MAX_HEIGHT)
+        except Exception:
+            return None
+
+    def get_offline_download_url(self, obj):
+        if not obj.offline_download_allowed or not obj.offline_video_path:
+            return None
+        return sign_private_media_name(obj.offline_video_path)
+
+    def get_offline_progress_token(self, obj):
+        request = self.context.get("request")
+        if not obj.offline_download_allowed or not obj.offline_video_path or not request or not request.user.is_authenticated:
+            return None
+        try:
+            from django.core import signing
+            from django.utils import timezone
+            return signing.dumps({
+                "lesson_id": obj.id,
+                "user_id": request.user.id,
+                "issued_at": int(timezone.now().timestamp()),
+            }, salt="kalanpro.offline-progress", compress=True)
         except Exception:
             return None
 
@@ -121,6 +153,11 @@ class LessonSerializer(serializers.ModelSerializer):
             data["transcript"] = ""
             data["hls_url"] = None
             data["audio_hls_url"] = None
+            data["data_saver_hls_url"] = None
+            data["offline_download_url"] = None
+            data["offline_progress_token"] = None
+            data["offline_download_allowed"] = False
+            data["offline_video_size_bytes"] = 0
         return data
 
 
@@ -197,7 +234,8 @@ class CourseDetailSerializer(CourseListSerializer):
             "certificate_signatory_name", "certificate_signatory_title",
             "certificate_accent_color", "certificate_number_prefix",
             "certificate_show_duration", "certificate_show_instructor",
-            "certificate_show_completion_date", "project_count", "required_project_count",
+            "certificate_show_completion_date", "video_completion_threshold_percent",
+            "project_count", "required_project_count",
         ]
 
     def get_project_count(self, obj):
@@ -236,6 +274,7 @@ class CourseWriteSerializer(serializers.ModelSerializer):
             "certificate_description", "certificate_signatory_name", "certificate_signatory_title",
             "certificate_accent_color", "certificate_number_prefix", "certificate_show_duration",
             "certificate_show_instructor", "certificate_show_completion_date",
+            "video_completion_threshold_percent",
         ]
         read_only_fields = ["id", "slug"]
 
@@ -295,7 +334,7 @@ class LessonWriteSerializer(serializers.ModelSerializer):
         fields = [
             "id", "section", "title", "video_url", "video_file",
             "duration_minutes", "order", "is_preview", "description",
-            "subtitles_file", "transcript",
+            "subtitles_file", "transcript", "offline_download_allowed",
         ]
 
     def validate_section(self, section):
@@ -358,9 +397,23 @@ class LessonWriteSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         video_changed = "video_file" in validated_data
+        offline_changed = "offline_download_allowed" in validated_data and bool(validated_data["offline_download_allowed"]) != bool(instance.offline_download_allowed)
+        old_offline_path = instance.offline_video_path
         lesson = super().update(instance, validated_data)
         if video_changed and lesson.video_file:
             self._schedule_video_processing(lesson)
+        elif offline_changed and lesson.video_file:
+            if lesson.offline_download_allowed:
+                from .tasks import prepare_lesson_streaming
+                transaction.on_commit(lambda: prepare_lesson_streaming.delay(lesson.pk, force=True))
+            else:
+                if old_offline_path:
+                    try:
+                        from django.core.files.storage import default_storage
+                        default_storage.delete(old_offline_path)
+                    except Exception:
+                        pass
+                Lesson.objects.filter(pk=lesson.pk).update(offline_video_path="", offline_video_size_bytes=0)
         return lesson
 
 
@@ -372,6 +425,7 @@ class LessonDirectCompleteSerializer(serializers.Serializer):
     description = serializers.CharField(required=False, allow_blank=True, default="")
     subtitles_file = serializers.FileField(required=False, allow_null=True)
     transcript = serializers.CharField(required=False, allow_blank=True, default="")
+    offline_download_allowed = serializers.BooleanField(required=False, default=False)
     object_key = serializers.CharField(max_length=700)
     upload_id = serializers.CharField(max_length=1000)
     expected_size = serializers.IntegerField(min_value=1)

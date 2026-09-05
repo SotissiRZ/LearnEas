@@ -60,6 +60,19 @@ function mainCsp(nonce: string): string {
   ].join("; ");
 }
 
+const offlinePlayerCsp = [
+  "default-src 'none'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "img-src 'self' data: blob:",
+  "media-src blob:",
+  "style-src 'unsafe-inline'",
+  "script-src 'self'",
+  "worker-src 'self'",
+  "connect-src 'none'",
+].join("; ");
+
 const runnerCsp = [
   "default-src 'none'",
   "base-uri 'none'",
@@ -74,6 +87,16 @@ const runnerCsp = [
 
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+  const isOfflinePlayer = pathname === "/offline-player.html" || pathname === "/offline-player.js";
+  if (isOfflinePlayer) {
+    const response = NextResponse.next();
+    response.headers.set("Content-Security-Policy", offlinePlayerCsp);
+    response.headers.set("Cross-Origin-Resource-Policy", "same-origin");
+    response.headers.set("X-Frame-Options", "DENY");
+    response.headers.set("Cache-Control", "public, max-age=0, must-revalidate");
+    return response;
+  }
+
   const isRunner = pathname.startsWith("/code-runner/");
   if (isRunner) {
     const response = NextResponse.next();

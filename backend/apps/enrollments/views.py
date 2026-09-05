@@ -1,7 +1,11 @@
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
+from django.conf import settings
+from django.core import signing
 from django.utils import timezone
-from django.db import models
+from django.db import models, transaction
+import math
+from datetime import datetime
 from rest_framework import viewsets, permissions, status, filters, generics
 from rest_framework.views import APIView
 from rest_framework.throttling import ScopedRateThrottle
@@ -15,6 +19,97 @@ from .serializers import (
     CourseEnrollmentSerializer, LessonProgressSerializer, LessonNoteSerializer, PDFPurchaseSerializer, WishlistSerializer,
     CertificateSerializer, PublicCertificateSerializer,
 )
+
+
+def _nonnegative_int(value, default=0):
+    try:
+        return max(0, int(float(value if value is not None else default)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _playback_payload(request, progress, lesson):
+    """Normalise position de reprise et temps réellement regardé.
+
+    v81 sépare enfin la position (`position_seconds`) du temps de visionnage cumulé
+    (`watched_delta_seconds`). L'ancien `watched_seconds` reste accepté pour les clients
+    v80 et les tests historiques.
+    """
+    has_v81_fields = "position_seconds" in request.data or "watched_delta_seconds" in request.data
+    now = timezone.now()
+    managed_video = bool(lesson.video_file)
+    if not has_v81_fields:
+        legacy = _nonnegative_int(request.data.get("watched_seconds"), progress.last_position_seconds)
+        if legacy is None:
+            return None
+        # Compatibilité de position uniquement pour les anciens clients. Sur une vidéo hébergée,
+        # `watched_seconds=position` permettrait sinon de tricher en sautant directement à la fin.
+        watched_total = progress.watched_seconds if managed_video else max(progress.watched_seconds, legacy)
+        return {"position": legacy, "watched_total": watched_total, "heartbeat": progress.last_watch_heartbeat_at, "credited_delta": 0}
+
+    position = _nonnegative_int(request.data.get("position_seconds"), progress.last_position_seconds)
+    requested_delta = _nonnegative_int(request.data.get("watched_delta_seconds"), 0)
+    if position is None or requested_delta is None:
+        return None
+
+    offline_delta = _nonnegative_int(request.data.get("offline_watched_seconds"), 0) or 0
+    offline_token = str(request.data.get("offline_progress_token") or "")
+    delta = 0
+    if managed_video and offline_delta > 0 and offline_token:
+        try:
+            payload = signing.loads(
+                offline_token, salt="kalanpro.offline-progress",
+                max_age=getattr(settings, "OFFLINE_PROGRESS_TOKEN_MAX_AGE", 30 * 24 * 3600),
+            )
+            if int(payload.get("lesson_id") or 0) != lesson.id or int(payload.get("user_id") or 0) != request.user.id:
+                raise signing.BadSignature("offline token mismatch")
+            issued_at = datetime.fromtimestamp(int(payload.get("issued_at") or 0), tz=timezone.get_current_timezone())
+            anchor = progress.last_watch_heartbeat_at or issued_at
+            elapsed = max(0.0, (now - anchor).total_seconds())
+            max_credit = max(0, int(elapsed * 2.2))
+            duration_cap = int(lesson.duration_seconds or lesson.duration_minutes * 60 or 0)
+            if duration_cap > 0:
+                max_credit = min(max_credit, duration_cap)
+            delta = min(offline_delta, max_credit)
+        except Exception:
+            delta = 0
+    else:
+        requested_delta = min(requested_delta, 120)
+        delta = requested_delta
+    if managed_video and requested_delta > 0 and not (offline_delta > 0 and offline_token):
+        # Défense côté serveur contre les appels API répétés : on ne crédite pas plus de contenu
+        # qu'il n'est physiquement possible d'en regarder depuis le dernier heartbeat. Le lecteur
+        # autorise jusqu'à 2x, d'où une marge de 2.2x. Le premier heartbeat crédite au plus 20 s.
+        if progress.last_watch_heartbeat_at:
+            elapsed = max(0.0, (now - progress.last_watch_heartbeat_at).total_seconds())
+            max_credit = min(120, max(0, int(elapsed * 2.2)))
+        else:
+            max_credit = 20
+        delta = min(requested_delta, max_credit)
+
+    duration_limit = int(lesson.duration_seconds or 0)
+    if duration_limit <= 0 and lesson.duration_minutes:
+        duration_limit = int(lesson.duration_minutes) * 60 + 60
+    if duration_limit > 0:
+        position = min(position, duration_limit)
+    return {"position": position, "watched_total": progress.watched_seconds + delta, "heartbeat": now if delta > 0 else progress.last_watch_heartbeat_at, "credited_delta": delta}
+
+
+def _managed_video_completion_requirement(lesson):
+    """Retourne (required_seconds, threshold) pour une vidéo hébergée par KalanPro.
+
+    Les URL externes ne sont pas vérifiables de façon fiable par le navigateur et conservent
+    donc la validation manuelle historique.
+    """
+    if not lesson.video_file:
+        return 0, 0
+    duration_seconds = int(lesson.duration_seconds or 0)
+    if duration_seconds <= 0 and lesson.duration_minutes:
+        duration_seconds = int(lesson.duration_minutes) * 60
+    if duration_seconds <= 0:
+        return 0, 0
+    threshold = max(50, min(100, int(getattr(lesson.section.course, "video_completion_threshold_percent", 90) or 90)))
+    return max(1, math.ceil(duration_seconds * threshold / 100)), threshold
 
 
 class CourseEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
@@ -31,15 +126,37 @@ class CourseEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
         lesson_id = request.data.get("lesson_id")
         lesson = get_object_or_404(Lesson, id=lesson_id, section__course=enrollment.course)
 
-        progress, _ = LessonProgress.objects.get_or_create(enrollment=enrollment, lesson=lesson)
-        progress.completed = True
-        try:
-            watched_seconds = max(0, int(float(request.data.get("watched_seconds", progress.watched_seconds) or 0)))
-        except (TypeError, ValueError):
-            watched_seconds = progress.watched_seconds
-        progress.watched_seconds = max(progress.watched_seconds, watched_seconds)
-        progress.last_position_seconds = watched_seconds
-        progress.save()
+        with transaction.atomic():
+            progress, _ = LessonProgress.objects.get_or_create(enrollment=enrollment, lesson=lesson)
+            progress = LessonProgress.objects.select_for_update().get(pk=progress.pk)
+            playback = _playback_payload(request, progress, lesson)
+            if playback is None:
+                return Response({"position_seconds": ["Valeur invalide."]}, status=400)
+            progress.watched_seconds = playback["watched_total"]
+            progress.last_position_seconds = playback["position"]
+            progress.last_watch_heartbeat_at = playback["heartbeat"]
+            required_seconds, threshold = _managed_video_completion_requirement(lesson)
+            if lesson.video_file and required_seconds <= 0:
+                progress.save(update_fields=["watched_seconds", "last_position_seconds", "last_watch_heartbeat_at", "updated_at"])
+                return Response({
+                    "detail": "Cette vidéo est encore en préparation. Sa durée doit être connue avant validation.",
+                    "watched_percent": 0,
+                    "required_percent": threshold or max(50, min(100, int(getattr(enrollment.course, "video_completion_threshold_percent", 90) or 90))),
+                    "watched_seconds": progress.watched_seconds,
+                    "required_seconds": None,
+                }, status=status.HTTP_409_CONFLICT)
+            if required_seconds and progress.watched_seconds < required_seconds:
+                progress.save(update_fields=["watched_seconds", "last_position_seconds", "last_watch_heartbeat_at", "updated_at"])
+                watched_percent = min(100, int((progress.watched_seconds / max(1, lesson.duration_seconds or lesson.duration_minutes * 60)) * 100))
+                return Response({
+                    "detail": f"Regardez au moins {threshold} % de cette vidéo pour la terminer.",
+                    "watched_percent": watched_percent,
+                    "required_percent": threshold,
+                    "watched_seconds": progress.watched_seconds,
+                    "required_seconds": required_seconds,
+                }, status=status.HTTP_409_CONFLICT)
+            progress.completed = True
+            progress.save()
 
         total = Lesson.objects.filter(section__course=enrollment.course).count()
         done = LessonProgress.objects.filter(enrollment=enrollment, completed=True).count()
@@ -68,19 +185,27 @@ class CourseEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
         enrollment = self.get_object()
         lesson_id = request.data.get("lesson_id")
         lesson = get_object_or_404(Lesson, id=lesson_id, section__course=enrollment.course)
-        try:
-            watched_seconds = max(0, int(float(request.data.get("watched_seconds", 0) or 0)))
-        except (TypeError, ValueError):
-            return Response({"watched_seconds": ["Valeur invalide."]}, status=400)
-
-        progress, _ = LessonProgress.objects.get_or_create(enrollment=enrollment, lesson=lesson)
-        # Ne jamais faire reculer la progression mémorisée suite à une requête arrivée en retard.
-        progress.watched_seconds = max(progress.watched_seconds, watched_seconds)
-        progress.last_position_seconds = watched_seconds
-        progress.save(update_fields=["watched_seconds", "last_position_seconds", "updated_at"])
-        enrollment.last_accessed_lesson = lesson
-        enrollment.save(update_fields=["last_accessed_lesson"])
-        return Response(LessonProgressSerializer(progress).data)
+        with transaction.atomic():
+            progress, _ = LessonProgress.objects.get_or_create(enrollment=enrollment, lesson=lesson)
+            # Deux syncs peuvent se croiser (timer + pause/navigation). Le verrou évite de
+            # perdre un `watched_delta_seconds` lors d'une mise à jour concurrente.
+            progress = LessonProgress.objects.select_for_update().get(pk=progress.pk)
+            playback = _playback_payload(request, progress, lesson)
+            if playback is None:
+                return Response({"position_seconds": ["Valeur invalide."]}, status=400)
+            progress.watched_seconds = playback["watched_total"]
+            # La position de reprise peut volontairement reculer si l'apprenant revient en arrière.
+            # Le temps réellement regardé, lui, reste cumulatif.
+            progress.last_position_seconds = playback["position"]
+            progress.last_watch_heartbeat_at = playback["heartbeat"]
+            progress.save(update_fields=["watched_seconds", "last_position_seconds", "last_watch_heartbeat_at", "updated_at"])
+            enrollment.last_accessed_lesson = lesson
+            enrollment.save(update_fields=["last_accessed_lesson"])
+        data = LessonProgressSerializer(progress).data
+        # Le client conserve la partie hors-ligne non encore créditée si le plafond anti-triche
+        # (temps mural / token signé) n'a accepté qu'une fraction de ce qu'il avait accumulé.
+        data["credited_watched_seconds"] = int(playback.get("credited_delta") or 0)
+        return Response(data)
 
     @action(detail=True, methods=["get"])
     def certificate(self, request, pk=None):

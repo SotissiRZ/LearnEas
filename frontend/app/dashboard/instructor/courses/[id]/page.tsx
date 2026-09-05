@@ -76,13 +76,13 @@ export default function ManageCoursePage() { const params = useParams<{ id: stri
   }
 
   async function addLessonByFile(
-    sectionId: number, title: string, file: File, isPreview: boolean, subtitles: File | null, transcript: string,
+    sectionId: number, title: string, file: File, isPreview: boolean, subtitles: File | null, transcript: string, offlineDownloadAllowed: boolean,
     onProgress: (percent: number) => void
   ) {
     const capabilities = await api.get<DirectUploadCapabilities>("/catalog/lessons/upload-capabilities/");
     if (capabilities.direct_multipart) {
       await uploadLessonVideoMultipart({
-        sectionId, title, file, isPreview, subtitles, transcript, onProgress,
+        sectionId, title, file, isPreview, subtitles, transcript, offlineDownloadAllowed, onProgress,
       });
     } else {
       // Développement local / stockage disque : conserver le chemin multipart HTTP classique.
@@ -90,6 +90,7 @@ export default function ManageCoursePage() { const params = useParams<{ id: stri
       const fd = new FormData();
       fd.append("section", String(sectionId)); fd.append("title", title); fd.append("order", "1");
       fd.append("is_preview", String(isPreview)); fd.append("video_file", file); fd.append("transcript", transcript);
+      fd.append("offline_download_allowed", String(offlineDownloadAllowed));
       if (subtitles) fd.append("subtitles_file", subtitles);
       await apiUploadWithProgress("/catalog/lessons/", fd, onProgress);
     }
@@ -132,6 +133,18 @@ export default function ManageCoursePage() { const params = useParams<{ id: stri
     }
   }
 
+  async function updateCompletionThreshold(value: number) {
+    if (!course) return;
+    const next = Math.max(50, Math.min(100, Math.round(value || 90)));
+    await api.patch(`/catalog/courses/${course.slug}/`, { video_completion_threshold_percent: next });
+    setCourse((current) => current ? { ...current, video_completion_threshold_percent: next } : current);
+  }
+
+  async function toggleOfflineLesson(lessonId: number, allowed: boolean) {
+    await api.patch(`/catalog/lessons/${lessonId}/`, { offline_download_allowed: allowed });
+    await load();
+  }
+
   async function togglePublish() {
     if (!course) return;
     setPublishing(true);
@@ -159,7 +172,12 @@ export default function ManageCoursePage() { const params = useParams<{ id: stri
             {course.total_lessons} vidéos · {course.total_hours} h · {course.pdf_resources?.length || 0} PDF
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600" title="Pour les vidéos hébergées par KalanPro, un saut dans la barre ne compte pas comme temps regardé.">
+            <span>Validation vidéo</span>
+            <input type="number" min={50} max={100} value={course.video_completion_threshold_percent || 90} onChange={(e) => setCourse((current) => current ? { ...current, video_completion_threshold_percent: Number(e.target.value) } : current)} onBlur={(e) => void updateCompletionThreshold(Number(e.target.value))} className="w-14 rounded border border-gray-200 px-1.5 py-1 text-center font-semibold" />
+            <span>%</span>
+          </label>
           {!canPublish && !course.published && (
             <span className="text-xs text-amber-600">Ajoutez au moins une vidéo avant de publier</span>
           )}
@@ -198,6 +216,12 @@ export default function ManageCoursePage() { const params = useParams<{ id: stri
                         <RefreshCw size={14} className={streamingBusy === lesson.id ? "animate-spin" : ""} />
                       </button>
                     )}
+                    {lesson.video_file && (
+                      <label className="hidden items-center gap-1.5 text-[10px] font-semibold text-gray-500 md:flex" title="Génère une copie 360p téléchargeable par l'apprenant sur son appareil">
+                        <input type="checkbox" checked={Boolean(lesson.offline_download_allowed)} onChange={(e) => void toggleOfflineLesson(lesson.id, e.target.checked)} />
+                        Hors ligne
+                      </label>
+                    )}
                     {(lesson.video_file || lesson.video_url) && (
                       <button type="button" onClick={() => setVideoPreview({ src: (lesson.video_file || lesson.video_url) as string, title: lesson.title, subtitles: lesson.subtitles_file, hls: lesson.hls_url, audioHls: lesson.audio_hls_url, variants: lesson.streaming_variants, streamingStatus: lesson.streaming_status })}
                         className="font-semibold text-brand-700">Lire</button>
@@ -210,7 +234,7 @@ export default function ManageCoursePage() { const params = useParams<{ id: stri
               </div>
               <AddLessonForm
                 onAddUrl={(title, duration, url, preview, subtitles, transcript) => addLessonByUrl(section.id, title, duration, url, preview, subtitles, transcript)}
-                onAddFile={(title, file, preview, subtitles, transcript, onProgress) => addLessonByFile(section.id, title, file, preview, subtitles, transcript, onProgress)}
+                onAddFile={(title, file, preview, subtitles, transcript, offline, onProgress) => addLessonByFile(section.id, title, file, preview, subtitles, transcript, offline, onProgress)}
               />
             </div>
           ))}
@@ -281,13 +305,14 @@ function AddLessonForm({
   onAddUrl, onAddFile,
 }: {
   onAddUrl: (title: string, duration: number, url: string, preview: boolean, subtitles: File | null, transcript: string) => Promise<void>;
-  onAddFile: (title: string, file: File, preview: boolean, subtitles: File | null, transcript: string, onProgress: (p: number) => void) => Promise<void>;
+  onAddFile: (title: string, file: File, preview: boolean, subtitles: File | null, transcript: string, offlineDownloadAllowed: boolean, onProgress: (p: number) => void) => Promise<void>;
 }) {
   const [mode, setMode] = useState<"file" | "url">("file");
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState(false);
+  const [offlineDownload, setOfflineDownload] = useState(false);
   const [subtitles, setSubtitles] = useState<File | null>(null);
   const [transcript, setTranscript] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -316,12 +341,12 @@ function AddLessonForm({
     setProgress(0);
     try {
       if (mode === "file" && file) {
-        await onAddFile(title, file, preview, subtitles, transcript, setProgress);
+        await onAddFile(title, file, preview, subtitles, transcript, offlineDownload, setProgress);
       } else if (mode === "url") {
         const minutes = await extractVideoDurationFromUrl(url);
         await onAddUrl(title, minutes, url, preview, subtitles, transcript);
       }
-      setTitle(""); setUrl(""); setFile(null); setPreview(false); setSubtitles(null); setTranscript(""); setProgress(0);
+      setTitle(""); setUrl(""); setFile(null); setPreview(false); setOfflineDownload(false); setSubtitles(null); setTranscript(""); setProgress(0);
       setFileInputKey((k) => k + 1); // réinitialise visuellement le champ fichier natif
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Erreur lors de l'ajout de la vidéo.");
@@ -378,6 +403,10 @@ function AddLessonForm({
         <input type="checkbox" checked={preview} onChange={(e) => setPreview(e.target.checked)} />
         Aperçu gratuit (consultable sans achat)
       </label>
+      {mode === "file" && <label className="flex items-start gap-2 text-xs text-gray-600">
+        <input className="mt-0.5" type="checkbox" checked={offlineDownload} onChange={(e) => setOfflineDownload(e.target.checked)} />
+        <span><strong>Autoriser le hors connexion</strong><span className="block text-[10px] text-gray-400">KalanPro génère une copie 360p plafonnée en taille, enregistrable sur l'appareil de l'apprenant.</span></span>
+      </label>}
 
       {uploading && mode === "file" && <UploadProgressBar percent={progress} label={progress >= 100 ? "Envoi terminé · vérification et conversion web si nécessaire…" : "Envoi de la vidéo…"} />}
 

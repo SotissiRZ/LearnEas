@@ -41,7 +41,9 @@ type StreamingVariant = {
 type Props = {
   src: string;
   hlsSrc?: string | null;
+  dataSaverHlsSrc?: string | null;
   audioHlsSrc?: string | null;
+  offlineSrc?: string | null;
   streamingVariants?: StreamingVariant[];
   streamingStatus?: "pending" | "processing" | "ready" | "failed" | string;
   poster?: string | null;
@@ -49,8 +51,8 @@ type Props = {
   subtitlesUrl?: string | null;
   initialTime?: number;
   autoPlayOnLoad?: boolean;
-  onEnded?: () => void;
-  onProgress?: (seconds: number, duration: number) => void;
+  onEnded?: (seconds: number, duration: number, watchedDeltaSeconds: number) => void;
+  onProgress?: (seconds: number, duration: number, watchedDeltaSeconds: number) => void;
   onTimeChange?: (seconds: number, duration: number) => void;
   onRepair?: () => Promise<void>;
 };
@@ -65,12 +67,25 @@ export type VideoPlayerHandle = {
 
 type EmbedSource = { kind: "youtube" | "vimeo"; url: string };
 type QualityChoice = "auto" | number;
+type DataSaverMode = "auto" | "on" | "off";
+
+type NetworkInformationLike = EventTarget & {
+  effectiveType?: string;
+  saveData?: boolean;
+  downlink?: number;
+  rtt?: number;
+};
 
 type NavigatorWithConnection = Navigator & {
-  connection?: {
-    effectiveType?: string;
-    saveData?: boolean;
-  };
+  connection?: NetworkInformationLike;
+};
+
+type NetworkState = {
+  online: boolean;
+  effectiveType: string;
+  saveData: boolean;
+  downlink: number | null;
+  rtt: number | null;
 };
 
 function getEmbedSource(value: string): EmbedSource | null {
@@ -122,11 +137,61 @@ function uniqueSortedHeights(values: number[]): number[] {
   return Array.from(new Set(values.filter((value) => Number.isFinite(value) && value > 0))).sort((a, b) => b - a);
 }
 
+function readNetworkState(): NetworkState {
+  if (typeof navigator === "undefined") return { online: true, effectiveType: "", saveData: false, downlink: null, rtt: null };
+  const connection = (navigator as NavigatorWithConnection).connection;
+  return {
+    online: navigator.onLine !== false,
+    effectiveType: connection?.effectiveType || "",
+    saveData: Boolean(connection?.saveData),
+    downlink: Number.isFinite(connection?.downlink) ? Number(connection?.downlink) : null,
+    rtt: Number.isFinite(connection?.rtt) ? Number(connection?.rtt) : null,
+  };
+}
+
+function isConstrainedNetwork(network: NetworkState): boolean {
+  return network.saveData || ["slow-2g", "2g"].includes(network.effectiveType) || (network.downlink != null && network.downlink > 0 && network.downlink < 0.8);
+}
+
+function initialBandwidthEstimate(network: NetworkState, dataSaver: boolean): number {
+  if (dataSaver) return 320_000;
+  if (network.downlink && network.downlink > 0) return Math.max(250_000, Math.min(5_000_000, network.downlink * 1_000_000 * 0.65));
+  if (network.effectiveType === "2g" || network.effectiveType === "slow-2g") return 250_000;
+  if (network.effectiveType === "3g") return 700_000;
+  if (network.effectiveType === "4g") return 2_500_000;
+  if (network.effectiveType === "5g") return 5_000_000;
+  return 1_000_000;
+}
+
+function networkDisplayLabel(network: NetworkState): string {
+  if (!network.online) return "Hors ligne";
+  const effective = network.effectiveType.toLowerCase();
+  if (effective === "slow-2g") return "2G lente";
+  if (effective === "2g") return "2G";
+  if (effective === "3g") return "3G";
+  if (effective === "5g") return "5G";
+  if (effective === "4g") {
+    // Network Information API ne distingue généralement pas 5G : un débit élevé est présenté comme
+    // connexion rapide 4G/5G sans prétendre identifier la technologie radio exacte.
+    if ((network.downlink || 0) >= 8) return "Connexion rapide (4G/5G)";
+    return "4G";
+  }
+  return "Réseau";
+}
+
+function usagePerHourLabel(bitsPerSecond: number | null): string {
+  if (!bitsPerSecond || bitsPerSecond <= 0) return "";
+  const megabytes = Math.round((bitsPerSecond * 3600) / 8 / 1_000_000);
+  return `~${megabytes} Mo/h`;
+}
+
 const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   {
     src,
     hlsSrc,
+    dataSaverHlsSrc,
     audioHlsSrc,
+    offlineSrc,
     streamingVariants = [],
     streamingStatus,
     poster,
@@ -145,13 +210,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const progressEmitRef = useRef(0);
+  const watchedAccumulatorRef = useRef(0);
+  const lastPlaybackPositionRef = useRef<number | null>(null);
   const resumeAppliedRef = useRef(false);
   const resumeTargetRef = useRef(initialTime);
   const resumeShouldPlayRef = useRef(autoPlayOnLoad);
 
   const resolvedSrc = useMemo(() => resolveMediaUrl(src), [src]);
   const resolvedHlsSrc = useMemo(() => hlsSrc ? resolveMediaUrl(hlsSrc) : null, [hlsSrc]);
+  const resolvedDataSaverHlsSrc = useMemo(() => dataSaverHlsSrc ? resolveMediaUrl(dataSaverHlsSrc) : null, [dataSaverHlsSrc]);
   const resolvedAudioHlsSrc = useMemo(() => audioHlsSrc ? resolveMediaUrl(audioHlsSrc) : null, [audioHlsSrc]);
+  const resolvedOfflineSrc = useMemo(() => offlineSrc ? resolveMediaUrl(offlineSrc) : null, [offlineSrc]);
   const resolvedSubtitles = useMemo(() => subtitlesUrl ? resolveMediaUrl(subtitlesUrl) : null, [subtitlesUrl]);
   const embed = useMemo(() => getEmbedSource(resolvedSrc), [resolvedSrc]);
 
@@ -169,9 +238,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   const [repairing, setRepairing] = useState(false);
   const [repairMessage, setRepairMessage] = useState("");
   const [audioOnly, setAudioOnly] = useState(false);
-  const [dataSaver, setDataSaver] = useState(false);
+  const [dataSaverMode, setDataSaverMode] = useState<DataSaverMode>("auto");
+  const [network, setNetwork] = useState<NetworkState>(() => readNetworkState());
   const [quality, setQuality] = useState<QualityChoice>("auto");
   const [hlsLevels, setHlsLevels] = useState<number[]>([]);
+  const [activeHeight, setActiveHeight] = useState<number | null>(null);
   const [hlsActive, setHlsActive] = useState(false);
 
   const advertisedHeights = useMemo(
@@ -179,7 +250,33 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     [streamingVariants],
   );
   const qualityHeights = hlsLevels.length ? hlsLevels : advertisedHeights;
-  const effectiveHlsSource = audioOnly && resolvedAudioHlsSrc ? resolvedAudioHlsSrc : resolvedHlsSrc;
+  const dataSaver = dataSaverMode === "on" || (dataSaverMode === "auto" && isConstrainedNetwork(network));
+  const usingOfflineCopy = !network.online && Boolean(resolvedOfflineSrc);
+  const playbackSrc = usingOfflineCopy && resolvedOfflineSrc ? resolvedOfflineSrc : resolvedSrc;
+  const effectiveHlsSource = usingOfflineCopy
+    ? null
+    : audioOnly && resolvedAudioHlsSrc
+      ? resolvedAudioHlsSrc
+      : dataSaver && resolvedDataSaverHlsSrc
+        ? resolvedDataSaverHlsSrc
+        : resolvedHlsSrc;
+
+  const estimatedBandwidth = useMemo(() => {
+    if (audioOnly) return 48_000;
+    const variants = streamingVariants.filter((variant) => Number(variant.bandwidth) > 0);
+    if (!variants.length) return null;
+    if (typeof quality === "number") {
+      const exact = variants.find((variant) => variant.height === quality);
+      if (exact?.bandwidth) return exact.bandwidth;
+    }
+    if (activeHeight) {
+      const active = variants.find((variant) => variant.height === activeHeight);
+      if (active?.bandwidth) return active.bandwidth;
+    }
+    const allowed = dataSaver ? variants.filter((variant) => variant.height <= 360) : variants;
+    const pool = allowed.length ? allowed : variants;
+    return Math.max(...pool.map((variant) => Number(variant.bandwidth) || 0));
+  }, [audioOnly, streamingVariants, quality, activeHeight, dataSaver]);
 
   useImperativeHandle(ref, () => ({
     seekTo(seconds: number) {
@@ -206,18 +303,33 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
 
   useEffect(() => {
     try {
-      const stored = window.localStorage.getItem("learneas:data-saver");
-      if (stored !== null) {
-        setDataSaver(stored === "1");
-        return;
+      const stored = window.localStorage.getItem("kalanpro:data-saver-mode");
+      if (stored === "auto" || stored === "on" || stored === "off") {
+        setDataSaverMode(stored);
+      } else {
+        // Migration transparente de l'ancien booléen v80. Sans préférence explicite,
+        // le mode Auto est préférable pour les connexions mobiles variables.
+        const legacy = window.localStorage.getItem("learneas:data-saver");
+        if (legacy === "1") setDataSaverMode("on");
+        else if (legacy === "0") setDataSaverMode("off");
       }
     } catch {
       // Le stockage local peut être bloqué en navigation privée stricte.
     }
+  }, []);
+
+  useEffect(() => {
     const connection = (navigator as NavigatorWithConnection).connection;
-    if (connection?.saveData || ["slow-2g", "2g"].includes(connection?.effectiveType || "")) {
-      setDataSaver(true);
-    }
+    const refresh = () => setNetwork(readNetworkState());
+    window.addEventListener("online", refresh);
+    window.addEventListener("offline", refresh);
+    connection?.addEventListener?.("change", refresh);
+    refresh();
+    return () => {
+      window.removeEventListener("online", refresh);
+      window.removeEventListener("offline", refresh);
+      connection?.removeEventListener?.("change", refresh);
+    };
   }, []);
 
   useEffect(() => {
@@ -225,6 +337,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
+
+  useEffect(() => {
+    if (!network.online) return;
+    const hls = hlsRef.current;
+    if (hls) {
+      try { hls.startLoad(); } catch {}
+    }
+  }, [network.online]);
 
   const applyHlsPolicy = useCallback((hls: Hls, nextQuality: QualityChoice, saveData: boolean) => {
     const levels = hls.levels || [];
@@ -267,7 +387,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   }, [quality, dataSaver, applyHlsPolicy]);
 
   useEffect(() => {
-    if (embed) return;
+    if (embed && !usingOfflineCopy) return;
     const video = videoRef.current;
     if (!video) return;
 
@@ -285,6 +405,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     video.load();
     setHlsActive(false);
     setHlsLevels([]);
+    setActiveHeight(null);
+    watchedAccumulatorRef.current = 0;
+    lastPlaybackPositionRef.current = null;
     setError("");
     setLoading(true);
     setPlaying(false);
@@ -297,9 +420,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
           enableWorker: true,
           capLevelToPlayerSize: true,
           startLevel: dataSaver ? 0 : -1,
-          maxBufferLength: dataSaver ? 15 : 30,
-          maxMaxBufferLength: dataSaver ? 30 : 60,
-          backBufferLength: dataSaver ? 15 : 30,
+          abrEwmaDefaultEstimate: initialBandwidthEstimate(network, dataSaver),
+          maxBufferLength: dataSaver ? 12 : 30,
+          maxMaxBufferLength: dataSaver ? 24 : 60,
+          backBufferLength: dataSaver ? 10 : 30,
+          maxBufferSize: dataSaver ? 12 * 1024 * 1024 : 30 * 1024 * 1024,
         });
         hlsRef.current = hls;
         setHlsActive(true);
@@ -310,10 +435,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
           setHlsLevels(heights);
           applyHlsPolicy(hls, quality, dataSaver);
         });
+        hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
+          const level = hls.levels[data.level];
+          setActiveHeight(level?.height || null);
+        });
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (!data.fatal) return;
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            hls.startLoad();
+            // Hors-ligne : attendre l'événement `online` au lieu de boucler sur des requêtes
+            // qui consomment batterie et radio. En ligne, hls.js reprend son ABR normalement.
+            if (navigator.onLine !== false) hls.startLoad();
+            else setLoading(false);
             return;
           }
           if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
@@ -330,14 +462,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
         video.src = hlsSource;
         video.load();
       } else if (!audioOnly) {
-        video.src = resolvedSrc;
+        video.src = playbackSrc;
         video.load();
       } else {
         setLoading(false);
         setError("Le mode audio adaptatif n'est pas pris en charge par ce navigateur.");
       }
     } else {
-      video.src = resolvedSrc;
+      video.src = playbackSrc;
       video.load();
     }
 
@@ -346,9 +478,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       hlsRef.current = null;
     };
   }, [
-    resolvedSrc,
+    playbackSrc,
     effectiveHlsSource,
     embed,
+    usingOfflineCopy,
     audioOnly,
     initialTime,
     applyHlsPolicy,
@@ -367,6 +500,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     const max = Number.isFinite(video.duration) ? video.duration : video.currentTime + Math.max(delta, 0);
     video.currentTime = Math.max(0, Math.min(max, video.currentTime + delta));
   }, []);
+
+  const emitProgress = useCallback((video: HTMLVideoElement, force = false) => {
+    if (!onProgress) return;
+    const seconds = video.currentTime || 0;
+    const nextDuration = Number.isFinite(video.duration) ? video.duration : duration;
+    const wholeWatchedSeconds = Math.max(0, Math.floor(watchedAccumulatorRef.current));
+    if (!force && Math.abs(seconds - progressEmitRef.current) < 15 && wholeWatchedSeconds < 15) return;
+    if (wholeWatchedSeconds > 0) watchedAccumulatorRef.current -= wholeWatchedSeconds;
+    progressEmitRef.current = seconds;
+    onProgress(seconds, nextDuration, wholeWatchedSeconds);
+  }, [duration, onProgress]);
 
   const togglePlay = useCallback(async () => {
     const video = videoRef.current;
@@ -448,17 +592,20 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   }
 
   function chooseQuality(value: QualityChoice) {
-    if (typeof value === "number" && value > 360 && dataSaver) setDataSaver(false);
+    if (typeof value === "number" && value > 360 && dataSaver) setDataSaverPreference("off");
     setQuality(value);
     const hls = hlsRef.current;
     if (hls) applyHlsPolicy(hls, value, typeof value === "number" && value > 360 ? false : dataSaver);
   }
 
-  function toggleDataSaver() {
-    const next = !dataSaver;
-    setDataSaver(next);
-    try { window.localStorage.setItem("learneas:data-saver", next ? "1" : "0"); } catch {}
-    if (next && typeof quality === "number" && quality > 360) setQuality("auto");
+  function setDataSaverPreference(mode: DataSaverMode) {
+    setDataSaverMode(mode);
+    try {
+      window.localStorage.setItem("kalanpro:data-saver-mode", mode);
+      window.localStorage.removeItem("learneas:data-saver");
+    } catch {}
+    const nextEnabled = mode === "on" || (mode === "auto" && isConstrainedNetwork(network));
+    if (nextEnabled && typeof quality === "number" && quality > 360) setQuality("auto");
   }
 
   function toggleAudioOnly() {
@@ -547,24 +694,39 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
           const video = event.currentTarget;
           const seconds = video.currentTime;
           const nextDuration = Number.isFinite(video.duration) ? video.duration : duration;
+          const previous = lastPlaybackPositionRef.current;
+          if (!video.paused && previous != null) {
+            const delta = seconds - previous;
+            // Les sauts importants sont des seeks/buffer jumps, pas du temps réellement regardé.
+            if (delta > 0 && delta <= 3.5) watchedAccumulatorRef.current += delta;
+          }
+          lastPlaybackPositionRef.current = seconds;
           setCurrentTime(seconds);
           onTimeChange?.(seconds, nextDuration);
-          if (onProgress && Math.abs(seconds - progressEmitRef.current) >= 15) {
-            progressEmitRef.current = seconds;
-            onProgress(seconds, nextDuration);
-          }
+          emitProgress(video);
         }}
+        onSeeking={() => { lastPlaybackPositionRef.current = null; }}
+        onSeeked={(event) => { lastPlaybackPositionRef.current = event.currentTarget.currentTime; }}
         onCanPlay={() => setLoading(false)}
         onWaiting={() => setLoading(true)}
-        onPlaying={() => { setPlaying(true); setLoading(false); }}
+        onPlaying={(event) => { setPlaying(true); setLoading(false); lastPlaybackPositionRef.current = event.currentTarget.currentTime; }}
         onPause={(event) => {
           setPlaying(false);
-          const seconds = event.currentTarget.currentTime;
-          onProgress?.(seconds, Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : duration);
+          emitProgress(event.currentTarget, true);
         }}
         onVolumeChange={(event) => { setMuted(event.currentTarget.muted); setVolume(event.currentTarget.volume); }}
         onRateChange={(event) => setRate(event.currentTarget.playbackRate)}
-        onEnded={() => { setPlaying(false); onEnded?.(); }}
+        onEnded={(event) => {
+          setPlaying(false);
+          const video = event.currentTarget;
+          const seconds = video.currentTime || 0;
+          const nextDuration = Number.isFinite(video.duration) ? video.duration : duration;
+          const watchedDeltaSeconds = Math.max(0, Math.floor(watchedAccumulatorRef.current));
+          if (watchedDeltaSeconds > 0) watchedAccumulatorRef.current -= watchedDeltaSeconds;
+          progressEmitRef.current = seconds;
+          if (onEnded) onEnded(seconds, nextDuration, watchedDeltaSeconds);
+          else if (onProgress) onProgress(seconds, nextDuration, watchedDeltaSeconds);
+        }}
         onError={() => {
           if (hlsRef.current) return;
           setLoading(false);
@@ -591,9 +753,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       )}
 
       <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-wrap gap-2">
-        {audioOnly && <span className="rounded-full bg-emerald-500/90 px-2.5 py-1 text-[10px] font-bold text-white shadow">AUDIO ~48 kb/s</span>}
+        {!network.online && <span className="rounded-full bg-rose-600/95 px-2.5 py-1 text-[10px] font-bold text-white shadow">HORS LIGNE</span>}
+        {audioOnly && <span className="rounded-full bg-emerald-500/90 px-2.5 py-1 text-[10px] font-bold text-white shadow">AUDIO · {usagePerHourLabel(48_000)}</span>}
         {!audioOnly && dataSaver && streamingReady && <span className="rounded-full bg-sky-600/90 px-2.5 py-1 text-[10px] font-bold text-white shadow">ÉCONOMIE ≤360p</span>}
-        {!audioOnly && hlsActive && <span className="rounded-full bg-black/60 px-2.5 py-1 text-[10px] font-semibold text-white/80 shadow">HLS adaptatif</span>}
+        {!audioOnly && hlsActive && <span className="rounded-full bg-black/60 px-2.5 py-1 text-[10px] font-semibold text-white/80 shadow">{activeHeight ? `${activeHeight}p · ` : ""}HLS adaptatif</span>}
+        {!audioOnly && estimatedBandwidth && <span className="rounded-full bg-black/60 px-2.5 py-1 text-[10px] font-semibold text-white/70 shadow">{usagePerHourLabel(estimatedBandwidth)}</span>}
       </div>
 
       {!playing && !error && !loading && (
@@ -752,20 +916,39 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
                         ))}
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={toggleDataSaver}
-                        className={`mt-2 flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left ${dataSaver ? "border-sky-500/40 bg-sky-500/10" : "border-white/10 hover:bg-white/5"}`}
-                      >
-                        <span className="flex items-center gap-2">
-                          {dataSaver ? <WifiOff size={17} className="text-sky-300" /> : <Wifi size={17} className="text-white/60" />}
-                          <span>
-                            <span className="block text-xs font-semibold text-white">Économie de données</span>
-                            <span className="block text-[10px] text-white/40">Auto plafonné à 360p</span>
+                      <div className="mt-2 rounded-lg border border-white/10 bg-white/[0.03] p-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="flex min-w-0 items-center gap-2">
+                            {dataSaver ? <WifiOff size={17} className="shrink-0 text-sky-300" /> : <Wifi size={17} className="shrink-0 text-white/60" />}
+                            <span className="min-w-0">
+                              <span className="block text-xs font-semibold text-white">Connexion & données</span>
+                              <span className="block truncate text-[10px] text-white/40">
+                                {`${networkDisplayLabel(network)}${network.downlink ? ` · ${network.downlink.toFixed(1)} Mb/s` : ""}${network.saveData ? " · Save-Data" : ""}${usingOfflineCopy ? " · copie locale" : ""}`}
+                              </span>
+                            </span>
                           </span>
-                        </span>
-                        <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${dataSaver ? "bg-sky-500 text-white" : "bg-white/10 text-white/50"}`}>{dataSaver ? "ON" : "OFF"}</span>
-                      </button>
+                          {estimatedBandwidth && <span className="shrink-0 text-[10px] font-semibold text-sky-200">{usagePerHourLabel(estimatedBandwidth)}</span>}
+                        </div>
+                        <div className="mt-2 grid grid-cols-3 gap-1">
+                          {([
+                            ["auto", "Auto"],
+                            ["on", "Éco"],
+                            ["off", "Normal"],
+                          ] as const).map(([mode, label]) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => setDataSaverPreference(mode)}
+                              className={`rounded-md px-2 py-2 text-[11px] font-semibold ${dataSaverMode === mode ? "bg-sky-600 text-white" : "bg-white/5 text-white/65 hover:bg-white/10"}`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-[10px] leading-4 text-white/35">
+                          Auto active ≤360p sur 2G/Save-Data/faible débit. Éco force le master faible débit, y compris sur Safari.
+                        </p>
+                      </div>
                     </>
                   )}
 

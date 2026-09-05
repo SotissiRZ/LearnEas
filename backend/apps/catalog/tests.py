@@ -230,6 +230,35 @@ class CatalogAccessRegressionTests(APITestCase):
         self.assertIn("inline", media["Content-Disposition"])
         self.assertEqual(media["X-Download-Options"], "noopen")
 
+
+    def test_offline_video_link_is_only_exposed_to_authorized_enrolled_user(self):
+        self.lesson.offline_download_allowed = True
+        self.lesson.offline_video_path = f"courses/hls/{self.lesson.id}/pkg/offline.mp4"
+        self.lesson.offline_video_size_bytes = 12_345_678
+        self.lesson.streaming_status = "ready"
+        self.lesson.save(update_fields=[
+            "offline_download_allowed", "offline_video_path", "offline_video_size_bytes", "streaming_status",
+        ])
+        CourseEnrollment.objects.get_or_create(user=self.student, course=self.course)
+        self.client.force_authenticate(self.student)
+        allowed = self.client.get(f"/api/catalog/courses/{self.course.slug}/")
+        lesson = allowed.data["sections"][0]["lessons"][0]
+        self.assertTrue(lesson["offline_download_allowed"])
+        self.assertTrue(lesson["offline_download_url"].startswith("/api/media/private/?token="))
+        self.assertTrue(lesson["offline_progress_token"])
+        self.assertEqual(lesson["offline_video_size_bytes"], 12_345_678)
+
+        other = User.objects.create_user(
+            username="offline-other", email="offline-other@example.com", password="passpass123", role=User.Role.STUDENT
+        )
+        self.client.force_authenticate(other)
+        locked = self.client.get(f"/api/catalog/courses/{self.course.slug}/")
+        hidden = locked.data["sections"][0]["lessons"][0]
+        self.assertTrue(hidden["locked"])
+        self.assertFalse(hidden["offline_download_allowed"])
+        self.assertIsNone(hidden["offline_download_url"])
+        self.assertIsNone(hidden["offline_progress_token"])
+
     def test_locked_lesson_does_not_leak_hls_urls(self):
         self.lesson.hls_master_path = "courses/hls/1/pkg/master.m3u8"
         self.lesson.audio_hls_path = "courses/hls/1/pkg/audio/index.m3u8"
@@ -242,6 +271,7 @@ class CatalogAccessRegressionTests(APITestCase):
         self.assertTrue(lesson["locked"])
         self.assertIsNone(lesson["hls_url"])
         self.assertIsNone(lesson["audio_hls_url"])
+        self.assertIsNone(lesson["data_saver_hls_url"])
 
     def test_hls_manifests_rewrite_nested_assets_to_signed_urls(self):
         with tempfile.TemporaryDirectory() as tmpdir, self.settings(MEDIA_ROOT=tmpdir, USE_S3=False):
@@ -289,6 +319,55 @@ class CatalogAccessRegressionTests(APITestCase):
             self.assertEqual(segment.status_code, status.HTTP_200_OK)
             self.assertEqual(segment["Content-Type"], "video/mp2t")
             self.assertIn("/_protected_media/", segment["X-Accel-Redirect"])
+
+    def test_data_saver_master_filters_high_variants_and_keeps_signed_children(self):
+        with tempfile.TemporaryDirectory() as tmpdir, self.settings(
+            MEDIA_ROOT=tmpdir, USE_S3=False, HLS_DATA_SAVER_MAX_HEIGHT=360, HLS_SEGMENT_CACHE_SECONDS=600
+        ):
+            prefix = Path(tmpdir) / "courses" / "hls" / str(self.lesson.id) / "pkg-low"
+            (prefix / "v240").mkdir(parents=True)
+            (prefix / "v720").mkdir(parents=True)
+            (prefix / "master.m3u8").write_text(
+                "#EXTM3U\n"
+                "#EXT-X-STREAM-INF:BANDWIDTH=340000,RESOLUTION=426x240,NAME=\"240p\"\n"
+                "v240/index.m3u8\n"
+                "#EXT-X-STREAM-INF:BANDWIDTH=2200000,RESOLUTION=1280x720,NAME=\"720p\"\n"
+                "v720/index.m3u8\n",
+                encoding="utf-8",
+            )
+            (prefix / "v240" / "index.m3u8").write_text(
+                "#EXTM3U\n#EXTINF:6.0,\nseg.ts\n#EXT-X-ENDLIST\n", encoding="utf-8"
+            )
+            (prefix / "v240" / "seg.ts").write_bytes(b"segment")
+            (prefix / "v720" / "index.m3u8").write_text(
+                "#EXTM3U\n#EXTINF:6.0,\nseg.ts\n#EXT-X-ENDLIST\n", encoding="utf-8"
+            )
+            (prefix / "v720" / "seg.ts").write_bytes(b"segment-high")
+
+            relative = f"courses/hls/{self.lesson.id}/pkg-low"
+            self.lesson.hls_master_path = f"{relative}/master.m3u8"
+            self.lesson.streaming_status = "ready"
+            self.lesson.streaming_variants = [
+                {"height": 240, "bandwidth": 340000},
+                {"height": 720, "bandwidth": 2200000},
+            ]
+            self.lesson.save(update_fields=["hls_master_path", "streaming_status", "streaming_variants"])
+            CourseEnrollment.objects.get_or_create(user=self.student, course=self.course)
+            self.client.force_authenticate(self.student)
+            detail = self.client.get(f"/api/catalog/courses/{self.course.slug}/")
+            lesson = detail.data["sections"][0]["lessons"][0]
+            self.assertTrue(lesson["data_saver_hls_url"].startswith("/api/media/hls/?token="))
+
+            master = self.client.get(lesson["data_saver_hls_url"])
+            body = master.content.decode()
+            self.assertIn("240p", body)
+            self.assertNotIn("720p", body)
+            child = next(line for line in body.splitlines() if line.startswith("/api/media/hls/?token="))
+            variant = self.client.get(child)
+            segment_url = next(line for line in variant.content.decode().splitlines() if line.startswith("/api/media/hls/?token="))
+            segment = self.client.get(segment_url)
+            self.assertEqual(segment.status_code, status.HTTP_200_OK)
+            self.assertEqual(segment["Cache-Control"], "private, max-age=600")
 
     def test_private_video_rejects_direct_document_navigation(self):
         self.lesson.video_url = ""

@@ -200,8 +200,8 @@ def _duration_minutes_from_info(info: dict[str, Any]) -> int:
     return max(1, math.ceil(seconds / 60))
 
 
-def prepare_video_upload(file_obj) -> tuple[Any, int]:
-    """Prépare une vidéo dans un worker et renvoie ``(fichier, durée_minutes)``.
+def prepare_video_upload(file_obj) -> tuple[Any, int, int]:
+    """Prépare une vidéo dans un worker et renvoie ``(fichier, durée_minutes, durée_secondes)``.
 
     Le fichier distant éventuel (S3/R2) n'est matérialisé qu'une seule fois sur disque local.
     La même copie sert à ffprobe, à la vérification de compatibilité et, si nécessaire, à ffmpeg.
@@ -209,7 +209,7 @@ def prepare_video_upload(file_obj) -> tuple[Any, int]:
     la source depuis le bucket uniquement pour calculer sa durée.
     """
     if not file_obj:
-        return file_obj, 0
+        return file_obj, 0, 0
 
     source_path, source_is_temp = _uploaded_file_path(file_obj)
     output_fd = None
@@ -224,13 +224,17 @@ def prepare_video_upload(file_obj) -> tuple[Any, int]:
             compatible = True
 
         try:
+            duration_seconds = max(0, int(round(float(source_info.get("duration_seconds") or 0))))
+        except (TypeError, ValueError):
+            duration_seconds = 0
+        try:
             duration_minutes = _duration_minutes_from_info(source_info)
         except ValueError:
             duration_minutes = 0
         if compatible:
             if duration_minutes <= 0:
                 raise ValueError("durée invalide")
-            return file_obj, duration_minutes
+            return file_obj, duration_minutes, duration_seconds
 
         output_fd, output_path = tempfile.mkstemp(prefix="learneas-normalized-", suffix=".mp4")
         os.close(output_fd)
@@ -246,8 +250,12 @@ def prepare_video_upload(file_obj) -> tuple[Any, int]:
 
         # Si le conteneur source ne fournissait pas une durée exploitable, vérifier la sortie.
         # (Normalement source_info suffit et évite un second ffprobe.)
-        if duration_minutes <= 0:
-            duration_minutes = _duration_minutes_from_info(probe_video_path(output_path))
+        if duration_minutes <= 0 or duration_seconds <= 0:
+            output_info = probe_video_path(output_path)
+            if duration_minutes <= 0:
+                duration_minutes = _duration_minutes_from_info(output_info)
+            if duration_seconds <= 0:
+                duration_seconds = max(1, int(round(float(output_info.get("duration_seconds") or 0))))
 
         original_name = Path(getattr(file_obj, "name", "video.mp4"))
         normalized_name = f"{original_name.stem}.mp4"
@@ -262,7 +270,7 @@ def prepare_video_upload(file_obj) -> tuple[Any, int]:
         normalized.file.flush()
         normalized.seek(0)
         normalized.size = normalized_size
-        return normalized, duration_minutes
+        return normalized, duration_minutes, duration_seconds
     except serializers.ValidationError:
         raise
     except (FileNotFoundError, subprocess.TimeoutExpired, ValueError) as exc:
@@ -297,7 +305,7 @@ def normalize_video_upload(file_obj):
     Le pipeline KalanPro de production appelle désormais :func:`prepare_video_upload` depuis
     Celery ; cette fonction est conservée pour les appels internes/anciens sans dupliquer la logique.
     """
-    prepared, _duration = prepare_video_upload(file_obj)
+    prepared, _duration, _seconds = prepare_video_upload(file_obj)
     return prepared
 
 def extract_video_duration_minutes(file_obj) -> int:

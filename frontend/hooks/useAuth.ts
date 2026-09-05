@@ -17,8 +17,15 @@ interface AuthState {
 
 function persistPublicUser(user: AuthUser | null) {
   if (typeof window === "undefined") return;
-  if (user) localStorage.setItem("learneas_user", JSON.stringify(user));
-  else localStorage.removeItem("learneas_user");
+  if (user) {
+    localStorage.setItem("learneas_user", JSON.stringify(user));
+    // Identifiant local uniquement utilisé pour cloisonner les copies vidéo IndexedDB sur appareil partagé.
+    // Il ne constitue jamais une preuve d'authentification côté API.
+    localStorage.setItem("kalanpro:offline-user-id", String(user.id));
+  } else {
+    localStorage.removeItem("learneas_user");
+    localStorage.removeItem("kalanpro:offline-user-id");
+  }
 }
 
 export const useAuth = create<AuthState>((set, get) => ({

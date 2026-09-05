@@ -17,6 +17,20 @@ et nginx sait déjà servir /media/ correctement dans les deux cas.
 from rest_framework import serializers
 
 
+def sign_private_media_name(name: str):
+    """Signe un chemin de stockage privé sans exiger un objet FieldFile."""
+    if not name:
+        return None
+    try:
+        from django.core import signing
+        from urllib.parse import quote
+        token = signing.dumps({"name": str(name)}, salt="learneas.private-media", compress=True)
+        return f"/api/media/private/?token={quote(token)}"
+    except Exception:
+        return None
+
+
+
 class RelativeImageField(serializers.ImageField):
     def to_representation(self, value):
         if not value:
@@ -43,9 +57,6 @@ class ProtectedFileField(serializers.FileField):
         if not value:
             return None
         try:
-            from django.core import signing
-            from urllib.parse import quote
-            token = signing.dumps({"name": value.name}, salt="learneas.private-media", compress=True)
-            return f"/api/media/private/?token={quote(token)}"
+            return sign_private_media_name(value.name)
         except Exception:
             return None

@@ -113,6 +113,12 @@ class Course(models.Model):
     certificate_show_instructor = models.BooleanField(default=True)
     certificate_show_completion_date = models.BooleanField(default=True)
 
+    # Une vidéo hébergée par KalanPro n'est considérée terminée qu'après ce pourcentage
+    # de visionnage réel cumulé. Le seuil est configurable par cours dans l'admin.
+    video_completion_threshold_percent = models.PositiveSmallIntegerField(
+        default=90, validators=[MinValueValidator(50), MaxValueValidator(100)]
+    )
+
     published = models.BooleanField(default=False)
     featured = models.BooleanField(default=False)
 
@@ -182,6 +188,7 @@ class Lesson(models.Model):
     video_url = models.URLField(blank=True, help_text="URL du fichier vidéo (stockage / CDN)")
     video_file = models.FileField(upload_to="courses/videos/", blank=True, null=True)
     duration_minutes = models.PositiveIntegerField(default=0)
+    duration_seconds = models.PositiveIntegerField(default=0)
     order = models.PositiveIntegerField(default=0)
     is_preview = models.BooleanField(default=False, help_text="Vidéo gratuite consultable sans achat")
     description = models.TextField(blank=True)
@@ -195,6 +202,12 @@ class Lesson(models.Model):
     streaming_variants = models.JSONField(default=list, blank=True)
     streaming_error = models.TextField(blank=True)
     streaming_updated_at = models.DateTimeField(null=True, blank=True)
+
+    # Téléchargement hors connexion contrôlé. La copie basse qualité est générée dans le
+    # même paquet que le HLS, mais n'est exposée que lorsque l'instructeur/admin l'autorise.
+    offline_download_allowed = models.BooleanField(default=False)
+    offline_video_path = models.CharField(max_length=500, blank=True)
+    offline_video_size_bytes = models.PositiveBigIntegerField(default=0)
 
     class Meta:
         ordering = ["order", "id"]

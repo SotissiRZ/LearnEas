@@ -76,6 +76,7 @@ export interface Course {
   certificate_show_duration?: boolean;
   certificate_show_instructor?: boolean;
   certificate_show_completion_date?: boolean;
+  video_completion_threshold_percent?: number;
   project_count?: number;
   required_project_count?: number;
 }
@@ -94,15 +95,21 @@ export interface Lesson {
   video_url: string | null;
   video_file: string | null;
   duration_minutes: number;
+  duration_seconds?: number;
   order: number;
   is_preview: boolean;
   description: string;
   subtitles_file?: string | null;
   transcript?: string;
   hls_url?: string | null;
+  data_saver_hls_url?: string | null;
   audio_hls_url?: string | null;
   streaming_status?: "pending" | "processing" | "ready" | "failed" | string;
-  streaming_variants?: Array<{ height: number; width?: number; bandwidth?: number }>;
+  streaming_variants?: Array<{ height: number; width?: number; bandwidth?: number; approx_mb_per_hour?: number }>;
+  offline_download_allowed?: boolean;
+  offline_download_url?: string | null;
+  offline_progress_token?: string | null;
+  offline_video_size_bytes?: number;
   locked: boolean;
 }
 

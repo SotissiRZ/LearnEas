@@ -41,3 +41,14 @@ test("aucun JWT persistant dans le stockage navigateur", () => {
   assert.doesNotMatch(api, /localStorage\.setItem\(["']learneas_(access|refresh)/);
   assert.doesNotMatch(api, /sessionStorage\.setItem\(["']learneas_(access|refresh)/);
 });
+
+
+test("lecteur hors connexion a une CSP dediee sans script inline", () => {
+  const middleware = read("middleware.ts");
+  const offline = read("public/offline-player.html");
+  assert.match(middleware, /const offlinePlayerCsp/);
+  assert.match(middleware, /script-src 'self'/);
+  assert.match(middleware, /connect-src 'none'/);
+  assert.match(offline, /src="\/offline-player\.js"/);
+  assert.doesNotMatch(offline, /<script>[^]*<\/script>/);
+});

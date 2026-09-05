@@ -175,6 +175,8 @@ HLS_SEGMENT_SECONDS = config("HLS_SEGMENT_SECONDS", default=6, cast=int)
 HLS_TRANSCODE_TIMEOUT_SECONDS = config("HLS_TRANSCODE_TIMEOUT_SECONDS", default=7200, cast=int)
 HLS_TRANSCODE_PRESET = config("HLS_TRANSCODE_PRESET", default="veryfast")
 HLS_AUDIO_ONLY_BITRATE = config("HLS_AUDIO_ONLY_BITRATE", default="48k")
+HLS_DATA_SAVER_MAX_HEIGHT = config("HLS_DATA_SAVER_MAX_HEIGHT", default=360, cast=int)
+HLS_SEGMENT_CACHE_SECONDS = config("HLS_SEGMENT_CACHE_SECONDS", default=600, cast=int)
 
 # Railway utilise un disque éphémère par défaut : activez USE_S3 avec un bucket S3-compatible
 # (AWS, Cloudflare R2, Backblaze, MinIO, etc.) pour conserver durablement les médias.
@@ -559,3 +561,8 @@ if not DEBUG:
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
     X_FRAME_OPTIONS = "DENY"
+
+OFFLINE_VIDEO_ENABLED = os.getenv("OFFLINE_VIDEO_ENABLED", "True").lower() == "true"
+OFFLINE_VIDEO_MAX_HEIGHT = int(os.getenv("OFFLINE_VIDEO_MAX_HEIGHT", "360"))
+OFFLINE_VIDEO_MAX_MB = int(os.getenv("OFFLINE_VIDEO_MAX_MB", "250"))
+OFFLINE_PROGRESS_TOKEN_MAX_AGE = int(os.getenv("OFFLINE_PROGRESS_TOKEN_MAX_AGE", str(30 * 24 * 3600)))

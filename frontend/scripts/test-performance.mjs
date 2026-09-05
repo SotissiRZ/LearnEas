@@ -119,3 +119,81 @@ test("v79 erreurs serveur exposent une reference de correlation", () => {
   assert.match(api, /Référence/);
   assert.match(api, /requestId/);
 });
+
+test("v81 lecteur faible connexion adapte le master HLS et estime la consommation", () => {
+  const player = read("components/ui/VideoPlayer.tsx");
+  const types = read("types/index.ts");
+  const backendHls = read("../backend/apps/common/hls_media.py");
+  assert.match(player, /dataSaverMode/);
+  assert.match(player, /isConstrainedNetwork/);
+  assert.match(player, /effectiveType/);
+  assert.match(player, /Connexion rapide \(4G\/5G\)/);
+  assert.match(player, /effective === "5g"/);
+  assert.match(player, /usagePerHourLabel/);
+  assert.match(player, /dataSaverHlsSrc/);
+  assert.match(player, /abrEwmaDefaultEstimate/);
+  assert.match(types, /data_saver_hls_url/);
+  assert.match(backendHls, /max_height/);
+  assert.match(backendHls, /_filter_master_by_height/);
+});
+
+test("v81 progression distingue position de reprise et temps reel regarde", () => {
+  const player = read("components/ui/VideoPlayer.tsx");
+  const learn = read("components/course/LearnClient.tsx");
+  const backend = read("../backend/apps/enrollments/views.py");
+  assert.match(player, /watchedAccumulatorRef/);
+  assert.match(player, /watchedDeltaSeconds/);
+  assert.match(learn, /position_seconds/);
+  assert.match(learn, /watched_delta_seconds/);
+  assert.match(learn, /kalanpro:resume:/);
+  assert.match(backend, /watched_delta_seconds/);
+  assert.match(backend, /last_watch_heartbeat_at/);
+  assert.match(backend, /elapsed \* 2\.2/);
+  assert.match(backend, /video_completion_threshold_percent/);
+  assert.match(backend, /HTTP_409_CONFLICT/);
+  assert.match(learn, /completionLocked/);
+  assert.match(learn, /requis/);
+});
+
+test("v81 telechargement hors connexion est controle et resynchronise la progression", () => {
+  const layout = read("app/layout.tsx");
+  const network = read("components/layout/NetworkStatus.tsx");
+  const learn = read("components/course/LearnClient.tsx");
+  const offline = read("lib/offlineVideo.ts");
+  const backend = read("../backend/apps/enrollments/views.py");
+  assert.match(layout, /NetworkStatus/);
+  assert.match(network, /navigator\.onLine/);
+  assert.match(network, /vidéos déjà téléchargées restent lisibles/);
+  assert.match(offline, /indexedDB/);
+  assert.match(offline, /userId/);
+  assert.match(offline, /userCourse/);
+  assert.match(offline, /navigator\.storage/);
+  assert.match(learn, /offline_download_url/);
+  assert.match(learn, /offline_watched_seconds/);
+  assert.match(backend, /kalanpro\.offline-progress/);
+  assert.match(backend, /offline_watched_seconds/);
+  assert.match(backend, /credited_watched_seconds/);
+  assert.match(learn, /acknowledgeLocalResume/);
+  assert.match(learn, /addEventListener\("online"/);
+});
+
+test("v81 bibliotheque video reste accessible apres redemarrage hors ligne", () => {
+  const layout = read("app/layout.tsx");
+  const registration = read("components/layout/ServiceWorkerRegistration.tsx");
+  const sw = read("public/kalanpro-sw.js");
+  const offlineHtml = read("public/offline-player.html");
+  const offlineJs = read("public/offline-player.js");
+  const middleware = read("middleware.ts");
+  assert.match(layout, /ServiceWorkerRegistration/);
+  assert.match(registration, /serviceWorker\.register\("\/kalanpro-sw\.js"/);
+  assert.match(sw, /offline-player\.html/);
+  assert.match(sw, /offline-player\.js/);
+  assert.match(sw, /caches\.open/);
+  assert.match(offlineHtml, /src="\/offline-player\.js"/);
+  assert.doesNotMatch(offlineHtml, /<script>(.|\n)*<\/script>/);
+  assert.match(offlineJs, /kalanpro-offline-media/);
+  assert.match(offlineJs, /kalanpro:resume:/);
+  assert.match(offlineJs, /offlinePending:true/);
+  assert.match(middleware, /offlinePlayerCsp/);
+  assert.match(middleware, /script-src 'self'/);
+});

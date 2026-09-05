@@ -31,6 +31,7 @@ def prepare_lesson_streaming(self, lesson_id: int, force: bool = False):
             "status": "already_ready",
             "hls_url": sign_hls_path(lesson.hls_master_path),
             "audio_hls_url": sign_hls_path(lesson.audio_hls_path) if lesson.audio_hls_path else None,
+            "data_saver_hls_url": sign_hls_path(lesson.hls_master_path, max_height=settings.HLS_DATA_SAVER_MAX_HEIGHT),
             "variants": lesson.streaming_variants,
         }
 
@@ -41,7 +42,7 @@ def prepare_lesson_streaming(self, lesson_id: int, force: bool = False):
         streaming_updated_at=timezone.now(),
     )
     try:
-        package = generate_lesson_hls(lesson.video_file, lesson_id=lesson.id)
+        package = generate_lesson_hls(lesson.video_file, lesson_id=lesson.id, offline_enabled=lesson.offline_download_allowed)
         Lesson.objects.filter(pk=lesson_id).update(
             hls_master_path=package["master_path"],
             audio_hls_path=package.get("audio_path") or "",
@@ -49,6 +50,9 @@ def prepare_lesson_streaming(self, lesson_id: int, force: bool = False):
             streaming_status=StreamingStatus.READY,
             streaming_error="",
             streaming_updated_at=timezone.now(),
+            duration_seconds=package.get("duration_seconds") or lesson.duration_seconds or 0,
+            offline_video_path=package.get("offline_path") or "",
+            offline_video_size_bytes=package.get("offline_size_bytes") or 0,
         )
         if old_manifest and old_manifest != package["master_path"]:
             delete_hls_package_from_manifest(old_manifest)
@@ -57,6 +61,7 @@ def prepare_lesson_streaming(self, lesson_id: int, force: bool = False):
             "status": "ready",
             "hls_url": sign_hls_path(package["master_path"]),
             "audio_hls_url": sign_hls_path(package["audio_path"]) if package.get("audio_path") else None,
+            "data_saver_hls_url": sign_hls_path(package["master_path"], max_height=settings.HLS_DATA_SAVER_MAX_HEIGHT),
             "variants": package.get("variants") or [],
         }
     except Exception as exc:
@@ -94,7 +99,7 @@ def normalize_lesson_video(self, lesson_id: int):
 
     old_name = lesson.video_file.name
     try:
-        normalized, duration_minutes = prepare_video_upload(lesson.video_file)
+        normalized, duration_minutes, duration_seconds = prepare_video_upload(lesson.video_file)
         was_normalized = normalized is not lesson.video_file
 
         if was_normalized:
@@ -103,10 +108,11 @@ def normalize_lesson_video(self, lesson_id: int):
         # Durée et compatibilité sont calculées sur la même copie locale de la source, ce qui
         # évite de retélécharger une grosse vidéo S3/R2 une seconde fois dans le worker.
         lesson.duration_minutes = duration_minutes
+        lesson.duration_seconds = duration_seconds
         lesson.streaming_status = StreamingStatus.PENDING
         lesson.streaming_error = ""
         lesson.streaming_updated_at = timezone.now()
-        update_fields = ["duration_minutes", "streaming_status", "streaming_error", "streaming_updated_at"]
+        update_fields = ["duration_minutes", "duration_seconds", "streaming_status", "streaming_error", "streaming_updated_at"]
         if was_normalized:
             update_fields.append("video_file")
         lesson.save(update_fields=update_fields)

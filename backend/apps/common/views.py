@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from apps.common.throttles import MediaRateThrottle, ClientTelemetryRateThrottle
-from apps.common.hls_media import rewrite_hls_playlist, unsign_hls_token
+from apps.common.hls_media import rewrite_hls_playlist, unsign_hls_token_payload
 
 
 logger = logging.getLogger(__name__)
@@ -150,7 +150,7 @@ class HlsMediaView(APIView):
     def get(self, request):
         token = request.query_params.get("token", "")
         try:
-            name = unsign_hls_token(token, max_age=settings.HLS_MEDIA_TOKEN_MAX_AGE)
+            name, max_height = unsign_hls_token_payload(token, max_age=settings.HLS_MEDIA_TOKEN_MAX_AGE)
         except Exception:
             return Response({"detail": "Lien streaming invalide ou expiré."}, status=403)
 
@@ -176,7 +176,7 @@ class HlsMediaView(APIView):
             try:
                 with default_storage.open(name, "rb") as handle:
                     body = handle.read().decode("utf-8")
-                rewritten = rewrite_hls_playlist(name, body)
+                rewritten = rewrite_hls_playlist(name, body, max_height=max_height)
             except Exception:
                 return Response({"detail": "Manifest streaming invalide."}, status=500)
             response = HttpResponse(rewritten, content_type="application/vnd.apple.mpegurl; charset=utf-8")
@@ -192,7 +192,7 @@ class HlsMediaView(APIView):
             except Exception:
                 return Response({"detail": "Segment streaming indisponible."}, status=404)
             response = redirect(storage_url)
-            response["Cache-Control"] = "private, no-store"
+            response["Cache-Control"] = f"private, max-age={settings.HLS_SEGMENT_CACHE_SECONDS}"
             response["Referrer-Policy"] = "no-referrer"
             return response
 
@@ -209,7 +209,7 @@ class HlsMediaView(APIView):
         response["Content-Disposition"] = content_disposition_header(False, Path(name).name)
         response["X-Accel-Redirect"] = f"/_protected_media/{quote(name, safe='/')}"
         response["X-Accel-Buffering"] = "no"
-        response["Cache-Control"] = "private, no-store"
+        response["Cache-Control"] = f"private, max-age={settings.HLS_SEGMENT_CACHE_SECONDS}"
         response["Accept-Ranges"] = "bytes"
         response["X-Content-Type-Options"] = "nosniff"
         response["X-Download-Options"] = "noopen"

@@ -183,6 +183,7 @@ export default function CourseCurriculum({ course: initialCourse }: { course: Co
                 key={activeLesson.id}
                 src={playableSource(activeLesson) as string}
                 hlsSrc={activeLesson.hls_url}
+                dataSaverHlsSrc={activeLesson.data_saver_hls_url}
                 audioHlsSrc={activeLesson.audio_hls_url}
                 streamingVariants={activeLesson.streaming_variants}
                 streamingStatus={activeLesson.streaming_status}

@@ -212,6 +212,7 @@ class LessonViewSet(viewsets.ModelViewSet):
             "description": request.data.get("description", ""),
             "subtitles_file": request.FILES.get("subtitles_file"),
             "transcript": request.data.get("transcript", ""),
+            "offline_download_allowed": request.data.get("offline_download_allowed", False),
             "object_key": request.data.get("object_key"),
             "upload_id": request.data.get("upload_id"),
             "expected_size": request.data.get("expected_size"),
@@ -240,6 +241,7 @@ class LessonViewSet(viewsets.ModelViewSet):
                     description=data.get("description", ""),
                     subtitles_file=data.get("subtitles_file"),
                     transcript=data.get("transcript", ""),
+                    offline_download_allowed=data.get("offline_download_allowed", False),
                     streaming_status="pending",
                     streaming_error="Vidéo en attente de préparation.",
                 )
@@ -333,9 +335,11 @@ class LessonViewSet(viewsets.ModelViewSet):
             "detail": lesson.streaming_error if lesson.streaming_status == "failed" else "",
             "hls_url": None,
             "audio_hls_url": None,
+            "data_saver_hls_url": None,
         }
         if lesson.streaming_status == "ready" and lesson.hls_master_path:
             payload["hls_url"] = sign_hls_path(lesson.hls_master_path)
+            payload["data_saver_hls_url"] = sign_hls_path(lesson.hls_master_path, max_height=settings.HLS_DATA_SAVER_MAX_HEIGHT)
             if lesson.audio_hls_path:
                 payload["audio_hls_url"] = sign_hls_path(lesson.audio_hls_path)
         return Response(payload)

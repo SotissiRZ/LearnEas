@@ -30,7 +30,8 @@ class CategoryAdmin(admin.ModelAdmin):
 @admin.register(Course)
 class CourseAdmin(admin.ModelAdmin):
     list_display = ("title", "instructor", "category", "price", "published", "featured",
-                     "total_lessons", "total_duration_minutes", "students_count", "rating_avg")
+                     "total_lessons", "total_duration_minutes", "students_count", "rating_avg",
+                     "video_completion_threshold_percent")
     list_filter = ("published", "featured", "level", "category")
     search_fields = ("title", "description")
     prepopulated_fields = {"slug": ("title",)}
@@ -44,8 +45,8 @@ class SectionAdmin(admin.ModelAdmin):
 
 @admin.register(Lesson)
 class LessonAdmin(admin.ModelAdmin):
-    list_display = ("section", "title", "duration_minutes", "streaming_status", "is_preview", "order")
-    list_filter = ("streaming_status", "is_preview")
+    list_display = ("section", "title", "duration_minutes", "streaming_status", "is_preview", "offline_download_allowed", "order")
+    list_filter = ("streaming_status", "is_preview", "offline_download_allowed")
 
 
 @admin.register(PDFResource)
