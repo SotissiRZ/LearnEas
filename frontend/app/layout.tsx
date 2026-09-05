@@ -3,7 +3,8 @@ import "./globals.css";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import AppHydrator from "@/components/layout/AppHydrator";
-import KalanProAssistant from "@/components/ai/KalanProAssistant";
+import LazyKalanProAssistant from "@/components/ai/LazyKalanProAssistant";
+import NavigationPerformance from "@/components/layout/NavigationPerformance";
 
 export const dynamic = "force-dynamic";
 
@@ -17,11 +18,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="fr">
       <body className="flex min-h-screen flex-col font-sans">
         <AppHydrator />
+        <NavigationPerformance />
         <Navbar />
         <div className="h-20 shrink-0" aria-hidden="true" />
         <main className="flex-1">{children}</main>
         <Footer />
-        <KalanProAssistant />
+        <LazyKalanProAssistant />
       </body>
     </html>
   );

@@ -28,18 +28,18 @@ export const useAuth = create<AuthState>((set, get) => ({
   hydrate: async () => {
     if (typeof window === "undefined") return;
     // Ne jamais considérer le profil localStorage comme une preuve d'authentification. La session
-    // n'est déclarée prête qu'après rotation du cookie HttpOnly puis lecture de /auth/me/.
+    // n'est déclarée prête qu'après validation/rotation du cookie HttpOnly. Le refresh renvoie aussi
+    // le profil public afin d'éviter un second aller-retour /auth/me/ au démarrage.
     set({ hydrated: false });
     try {
-      const restored = await restoreAccessToken();
-      if (!restored) {
+      const session = await restoreAccessToken<AuthUser>();
+      if (!session.restored || !session.user) {
         persistPublicUser(null);
         set({ user: null, hydrated: true });
         return;
       }
-      const me = await api.get<AuthUser>("/auth/me/");
-      persistPublicUser(me);
-      set({ user: me, hydrated: true });
+      persistPublicUser(session.user);
+      set({ user: session.user, hydrated: true });
     } catch {
       clearClientSession();
       set({ user: null, hydrated: true });

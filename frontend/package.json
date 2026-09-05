@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "audit:mobile": "node scripts/audit-mobile.mjs",
-    "test:security": "node --test scripts/test-security.mjs"
+    "test:security": "node --test scripts/test-security.mjs",
+    "test:performance": "node --test scripts/test-performance.mjs"
   },
   "dependencies": {
     "next": "15.5.21",

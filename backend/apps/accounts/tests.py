@@ -325,6 +325,8 @@ class HttpOnlyRefreshCookieRegressionTests(APITestCase):
         response = self.client.post("/api/auth/token/refresh/", {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertIn("access", response.data)
+        self.assertIn("user", response.data)
+        self.assertEqual(response.data["user"]["email"], "cookie@example.com")
         self.assertNotIn("refresh", response.data)
         # Avec plusieurs onglets, la rotation à chaque refresh crée une course : le deuxième
         # onglet peut blacklister/supprimer le cookie fraîchement émis au premier. Le refresh

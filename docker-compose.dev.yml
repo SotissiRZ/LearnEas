@@ -103,7 +103,11 @@ services:
     command: sh -c "test -x node_modules/.bin/next || npm ci --no-audit --no-fund; npm run dev"
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:${BACKEND_PORT:-8000}/api
+      # Same-origin : le navigateur parle à Next (/api), qui proxy vers le backend Docker.
+      # Cela supprime les préflights CORS répétés et rend les cookies HttpOnly plus fiables.
+      NEXT_PUBLIC_API_URL: /api
+      API_PROXY_TARGET: http://backend:8000
+      NEXT_PUBLIC_API_TIMEOUT_MS: ${NEXT_PUBLIC_API_TIMEOUT_MS:-15000}
       NEXT_PUBLIC_WS_URL: ws://localhost:${BACKEND_PORT:-8000}/ws
       # Comme en production : côté serveur (SSR), "localhost" désignerait ce conteneur
       # lui-même. On utilise le nom du service Docker pour joindre le backend en interne.

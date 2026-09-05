@@ -123,6 +123,22 @@ class CookieTokenRefreshView(APIView):
 
         data = dict(serializer.validated_data)
         rotated_refresh = data.pop("refresh", None)
+
+        # Renvoyer aussi le profil dans la même réponse évite un second aller-retour /auth/me/
+        # au chargement de chaque page. Le refresh vient d'être validé par SimpleJWT : le user_id
+        # contenu dans ce jeton peut donc servir à reconstruire la session côté frontend.
+        try:
+            identity_token = RefreshToken(rotated_refresh or refresh_value)
+            user_id = identity_token.get("user_id")
+            user = User.objects.filter(pk=user_id, is_active=True).first()
+        except Exception:
+            user = None
+        if user is None:
+            response = Response({"detail": "Session expirée."}, status=status.HTTP_401_UNAUTHORIZED)
+            _clear_refresh_cookie(response)
+            return response
+
+        data["user"] = UserSerializer(user).data
         response = Response(data, status=status.HTTP_200_OK)
         if rotated_refresh:
             _set_refresh_cookie(response, rotated_refresh)

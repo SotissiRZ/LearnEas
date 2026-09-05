@@ -204,10 +204,10 @@ export function AssistantWorkspace({ embedded = false, panelActions }: Props) {
   );
 }
 
-export default function KalanProAssistant() {
+export default function KalanProAssistant({ initialOpen = false }: { initialOpen?: boolean }) {
   const pathname = usePathname();
   const { user, hydrated } = useAuth();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initialOpen);
   const [large, setLarge] = useState(false);
   const [launcherPosition, setLauncherPosition] = useState<{ x: number; y: number } | null>(null);
   const [draggingLauncher, setDraggingLauncher] = useState(false);
@@ -243,7 +243,14 @@ export default function KalanProAssistant() {
     }
   }
 
+  const firstPathEffect = useRef(true);
   useEffect(() => {
+    // Quand le gros module IA vient d'être chargé après un clic sur le launcher léger,
+    // conserver initialOpen=true au premier rendu. Les navigations suivantes ferment le panneau.
+    if (firstPathEffect.current) {
+      firstPathEffect.current = false;
+      return;
+    }
     setOpen(false);
     setLarge(false);
     window.requestAnimationFrame(() => {

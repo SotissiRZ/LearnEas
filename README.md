@@ -316,7 +316,16 @@ make dev
 ```
 Backend sur http://localhost:8000, frontend sur http://localhost:3000, sans nginx devant.
 
+> **Mesurer les performances :** le mode `next dev` est destiné au développement et peut compiler une route lors de sa première ouverture, surtout avec un volume Windows monté dans Docker. Pour juger la vitesse réelle de KalanPro en local, utilisez plutôt le profil proche production :
+> ```bash
+> docker compose -f docker-compose.dev.yml down
+> docker compose up --build
+> ```
+> puis ouvrez **http://localhost**. Revenez au fichier `docker-compose.dev.yml` uniquement lorsque vous avez besoin du hot-reload.
+
 Depuis la v70, PostgreSQL et Redis restent **privés au réseau Docker** en mode développement : aucun port 5432/6379 n'est réservé sur Windows. Cela évite les conflits avec un PostgreSQL/Redis déjà installé localement. Le backend utilise toujours `db:5432` et `redis:6379` à l'intérieur de Docker.
+
+Depuis la v71, le navigateur utilise `/api` en same-origin en développement ; Next.js relaie ces requêtes vers `backend:8000` sur le réseau Docker. L'authentification initiale est réduite à un refresh unique et l'assistant IA complet est chargé à la demande afin de garder l'interface interactive dès le premier rendu.
 
 Pour inspecter PostgreSQL :
 ```bash
@@ -430,8 +439,8 @@ npx tsc --noEmit
 npm run build
 ```
 
-Pour la v70, la génération locale valide la compilation Python, la syntaxe TS/TSX/JS, les YAML Compose/CI,
-`npm run audit:mobile` et les tests statiques de sécurité frontend. L’environnement de génération ne peut pas
+Pour la v71, la génération locale valide la compilation Python, les YAML Compose/CI, `npm run audit:mobile`,
+`npm run test:security` et `npm run test:performance`. L’environnement de génération ne peut pas
 installer les dépendances npm/pip (timeout réseau), donc le build Next.js, Playwright et la suite Django complète
 restent des **release gates obligatoires** de la CI/Docker avant déploiement.
 

@@ -17,10 +17,12 @@ const nextConfig = {
   images: { formats: ["image/avif", "image/webp"] },
   async rewrites() {
     if (!apiProxyTarget) return [];
-    return [{
-      source: "/api/:path*",
-      destination: `${apiProxyTarget}/api/:path*`,
-    }];
+    return [
+      { source: "/api/:path*", destination: `${apiProxyTarget}/api/:path*` },
+      { source: "/admin/:path*", destination: `${apiProxyTarget}/admin/:path*` },
+      { source: "/static/:path*", destination: `${apiProxyTarget}/static/:path*` },
+      { source: "/media/:path*", destination: `${apiProxyTarget}/media/:path*` },
+    ];
   },
   async headers() {
     return [{

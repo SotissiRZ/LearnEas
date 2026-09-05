@@ -34,7 +34,28 @@ const API_URL =
 // nouveau sans exposer de secret à JavaScript.
 let accessToken: string | null = null;
 let refreshPromise: Promise<string | null> | null = null;
+let lastRefreshUser: unknown = null;
 let authGeneration = 0;
+
+const API_TIMEOUT_MS = Math.max(3000, Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || 15000));
+const inFlightGets = new Map<string, Promise<unknown>>();
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = API_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const upstreamSignal = init.signal;
+  const abortFromUpstream = () => controller.abort();
+  if (upstreamSignal) {
+    if (upstreamSignal.aborted) controller.abort();
+    else upstreamSignal.addEventListener("abort", abortFromUpstream, { once: true });
+  }
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+    upstreamSignal?.removeEventListener("abort", abortFromUpstream);
+  }
+}
 
 function getToken(): string | null {
   return typeof window === "undefined" ? null : accessToken;
@@ -61,21 +82,23 @@ async function refreshAccessToken(): Promise<string | null> {
   const generationAtStart = authGeneration;
   refreshPromise = (async () => {
     try {
-      const response = await fetch(`${API_URL}/auth/token/refresh/`, {
+      const response = await fetchWithTimeout(`${API_URL}/auth/token/refresh/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         cache: "no-store",
       });
       if (!response.ok) throw new Error("Refresh JWT refusé");
-      const data = await response.json() as { access?: string };
+      const data = await response.json() as { access?: string; user?: unknown };
       if (!data.access) throw new Error("Nouveau jeton absent");
+      lastRefreshUser = data.user ?? null;
       // Si un login/logout a eu lieu pendant ce refresh lent, sa décision est plus récente :
       // l'ancienne requête ne doit jamais écraser la nouvelle session.
       if (generationAtStart !== authGeneration) return accessToken;
       accessToken = data.access;
       return data.access;
     } catch {
+      lastRefreshUser = null;
       if (generationAtStart === authGeneration) clearClientSession();
       return null;
     } finally {
@@ -86,8 +109,11 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
-export async function restoreAccessToken(): Promise<boolean> {
-  return Boolean(await refreshAccessToken());
+export async function restoreAccessToken<T = unknown>(): Promise<{ restored: boolean; user: T | null }> {
+  const restored = Boolean(await refreshAccessToken());
+  const user = restored ? (lastRefreshUser as T | null) : null;
+  lastRefreshUser = null;
+  return { restored, user };
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -164,8 +190,11 @@ export async function apiFetch<T>(
 
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, { ...options, headers, credentials: "include", cache: "no-store" });
-  } catch {
+    res = await fetchWithTimeout(`${API_URL}${path}`, { ...options, headers, credentials: "include", cache: "no-store" });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError("Le serveur met trop de temps à répondre. Réessayez dans quelques instants.");
+    }
     throw new ApiError(
       "Impossible de contacter le serveur. Vérifiez votre connexion ou réessayez plus tard."
     );
@@ -176,8 +205,11 @@ export async function apiFetch<T>(
     if (renewed) {
       headers.Authorization = `Bearer ${renewed}`;
       try {
-        res = await fetch(`${API_URL}${path}`, { ...options, headers, credentials: "include", cache: "no-store" });
-      } catch {
+        res = await fetchWithTimeout(`${API_URL}${path}`, { ...options, headers, credentials: "include", cache: "no-store" });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          throw new ApiError("Le serveur met trop de temps à répondre. Réessayez dans quelques instants.");
+        }
         throw new ApiError("Impossible de contacter le serveur. Vérifiez votre connexion ou réessayez plus tard.");
       }
     }
@@ -200,8 +232,17 @@ export async function apiFetch<T>(
   }
 }
 
+function dedupedGet<T>(path: string): Promise<T> {
+  if (typeof window === "undefined") return apiFetch<T>(path);
+  const existing = inFlightGets.get(path) as Promise<T> | undefined;
+  if (existing) return existing;
+  const request = apiFetch<T>(path).finally(() => inFlightGets.delete(path));
+  inFlightGets.set(path, request as Promise<unknown>);
+  return request;
+}
+
 export const api = {
-  get: <T>(path: string) => apiFetch<T>(path),
+  get: <T>(path: string) => dedupedGet<T>(path),
   post: <T>(path: string, body?: unknown) =>
     apiFetch<T>(path, {
       method: "POST",

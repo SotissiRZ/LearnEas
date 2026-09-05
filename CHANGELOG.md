@@ -1,3 +1,15 @@
+# KalanPro v71 — Réactivité frontend et navigation locale
+
+- Assistant KalanPro AI retiré du bundle/hydratation initiale : un lanceur léger est rendu globalement et le module complet n'est chargé qu'à l'ouverture (préchargement au survol/focus).
+- Restauration de session réduite à une seule requête : le refresh HttpOnly renvoie aussi l'utilisateur courant, supprimant l'appel `/auth/me/` séquentiel au démarrage.
+- Hydratation des devises repoussée après le premier rendu via `requestIdleCallback` (fallback temporisé) afin de ne plus bloquer l'interface initiale.
+- API frontend protégée par timeout explicite et déduplication des GET simultanés identiques ; un serveur lent produit désormais une erreur visible au lieu d'un clic qui semble sans réponse.
+- Mode Docker développement passé en API same-origin (`/api`) avec proxy Next vers `backend:8000`, supprimant les préflights CORS répétés sur les requêtes navigateur.
+- Ajout d'un indicateur de navigation immédiat et préchargement des routes internes au survol/focus puis pendant l'idle.
+- Les appels publics SSR ont désormais un timeout borné pour qu'une API lente ne suspende pas indéfiniment le rendu d'une page.
+- Nouveau test statique `npm run test:performance` couvrant lazy-loading IA, restauration auth en un appel, timeout/déduplication API et proxy same-origin.
+- Validation statique : tests sécurité frontend 4/4, tests performance 4/4, audit mobile 121 fichiers sans alerte bloquante, 221 fichiers Python parsés et 58 migrations sans cycle.
+
 # KalanPro v70 — Correctif démarrage local Docker
 
 - PostgreSQL et Redis ne publient plus leurs ports sur Windows dans `docker-compose.dev.yml`; le backend continue à les joindre via le réseau Docker (`db:5432`, `redis:6379`).

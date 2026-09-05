@@ -2,6 +2,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 
 const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://backend:8000/api";
+const PUBLIC_API_TIMEOUT_MS = Math.max(2000, Number(process.env.PUBLIC_API_TIMEOUT_MS || 8000));
 
 type CachedResult<T> = { data: T; ok: boolean; error?: string };
 type CacheTtl = 15 | 30 | 60 | 300;
@@ -15,8 +16,12 @@ async function fetchPublicJson<T>(path: string): Promise<T> {
       // `unstable_cache` gère la durée de vie. Le fetch interne reste explicite pour ne pas
       // dépendre du mode dynamique requis par le nonce CSP global.
       cache: "no-store",
+      signal: AbortSignal.timeout(PUBLIC_API_TIMEOUT_MS),
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      throw new Error("Le serveur met trop de temps à répondre.");
+    }
     throw new Error("Impossible de contacter le serveur.");
   }
   if (!response.ok) {
