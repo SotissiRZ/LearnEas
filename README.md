@@ -1,5 +1,7 @@
 # KalanPro
 
+> **v88 — Premium apprenant :** pass 30 jours optionnel pour un catalogue de cours/PDF sélectionné par l’administrateur, droits temporaires expirables, renouvellements chaînés, révocation au remboursement et achats à l’unité toujours permanents. Voir [`docs/V88_PREMIUM.md`](./docs/V88_PREMIUM.md).
+
 > **v87 — analytics produit & pilotage admin :** métriques acquisition/finance/apprentissage/recrutement, funnels, rétention, événements produit minimisés, export CSV et rétention automatique sans tracker tiers. Voir [`docs/V87_ANALYTICS.md`](./docs/V87_ANALYTICS.md).
 
 > **v86 — recherche globale & recommandations :** recherche unifiée cours/formations/PDF/mentors/opportunités/entreprises, talents protégés Pro/Business, suggestions navbar et recommandations selon le profil. Voir [`docs/V86_DISCOVERY.md`](./docs/V86_DISCOVERY.md).
@@ -136,6 +138,7 @@ Admin Django : **http://localhost/admin**
 - Rétention par période, tunnels commerce/recrutement, séries quotidiennes, top pages/contenus et export CSV.
 - Rétention technique automatique des événements (`ANALYTICS_RETENTION_DAYS=395` par défaut).
 - Migration additive `analytics.0001_product_analytics_v87`.
+- Correctifs runtime de clôture : actions IA candidat/recruteur validées dans le bon garde-fou, exports `?format=pdf/docx` non interceptés par DRF, isolation des throttles dans les tests, compatibilité avec les domaines seedés, verrou mentorat nullable corrigé et fixtures upload conformes aux signatures réelles.
 
 
 ### Recherche globale & recommandations (v86)
@@ -499,11 +502,11 @@ restent des **release gates obligatoires** de la CI/Docker avant déploiement.
 
 ## 📁 Prochaines étapes suggérées
 
-- Notifications (email + in-app) sur achat, nouveau commentaire, réponse instructeur.
-- Recherche full-text avancée (Algolia/Meilisearch), comme dans le projet Laravel d'origine.
-- Étendre progressivement le realtime WebSocket au chat général et, si nécessaire, aux signaux sortants à très haute fréquence.
-- Stockage objet/CDN pour les médias volumineux et supervision de la qualité des séances WebRTC.
-- Système d'abonnement "Premium" (accès illimité à un catalogue) en complément de l'achat à l'unité.
+- Stockage objet/CDN production pour les médias volumineux, lifecycle et reprise d'upload.
+- Supervision production : erreurs applicatives, files Celery, qualité WebRTC/HLS et alertes de capacité.
+- Étendre progressivement le realtime WebSocket au chat général si le besoin produit est confirmé.
+- Premium phase 2 éventuelle : renouvellement automatique natif prestataire et modèle contractuel de redistribution aux créateurs.
+- Recherche externe dédiée (Meilisearch/Algolia/OpenSearch) uniquement lorsque le volume rend PostgreSQL insuffisant.
 
 Bon lancement avec **KalanPro** 🚀
 

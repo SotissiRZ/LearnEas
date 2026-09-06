@@ -7,13 +7,13 @@ from django.core import mail
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.accounts.models import User
+from apps.accounts.models import User, PlatformSettings
 from apps.catalog.models import Category, Course
 from apps.enrollments.models import CourseEnrollment
 from apps.formations.models import InteractiveFormation
 from .models import (
     Order, OrderItem, FormationSeatReservation, Currency, PaymentGateway, InstructorLedgerEntry,
-    PaymentAttempt, PaymentEvent, PaymentIssue,
+    PaymentAttempt, PaymentEvent, PaymentIssue, LearnerSubscription,
 )
 from .providers import _to_minor_units, _from_minor_units, normalize_provider_amount
 
@@ -766,3 +766,102 @@ class MentorshipPackPaymentRegressionTests(APITestCase):
         self.assertEqual(result["mentorship_passes"], 1)
         pass_obj = MentorshipPass.objects.get(user=self.student, pack=self.pack, source_order=order)
         self.assertIsNotNone(pass_obj.revoked_at)
+class LearnerPremiumV88Tests(APITestCase):
+    def setUp(self):
+        self.instructor = User.objects.create_user(
+            username="premium-seller", email="premium-seller@example.com", password="passpass123", role=User.Role.INSTRUCTOR
+        )
+        self.student = User.objects.create_user(
+            username="premium-buyer", email="premium-buyer@example.com", password="passpass123", role=User.Role.STUDENT
+        )
+        category = Category.objects.create(name="Premium")
+        self.course = Course.objects.create(
+            instructor=self.instructor, category=category, title="Cours Premium", description="Test",
+            price=Decimal("25.00"), published=True, premium_included=True,
+        )
+        Currency.objects.update_or_create(
+            code="EUR",
+            defaults={"name": "Euro", "symbol": "€", "exchange_rate": Decimal("1"), "decimal_places": 2, "is_active": True, "is_default": True},
+        )
+        pricing = PlatformSettings.load()
+        pricing.learner_premium_enabled = True
+        pricing.learner_premium_monthly_eur = Decimal("9.99")
+        pricing.save(update_fields=["learner_premium_enabled", "learner_premium_monthly_eur"])
+        self.client.force_authenticate(self.student)
+
+    @override_settings(TEST_PAYMENTS_ENABLED=True)
+    def test_premium_checkout_is_reserved_to_student_accounts(self):
+        employer = User.objects.create_user(
+            username="premium-employer", email="premium-employer@example.com", password="passpass123", role=User.Role.EMPLOYER
+        )
+        self.client.force_authenticate(employer)
+        response = self.client.post(
+            "/api/payments/checkout/",
+            {"learner_product": "premium", "provider": "manual", "currency": "EUR", "test_payment": True},
+            format="json", HTTP_IDEMPOTENCY_KEY="premium-v88-role",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN, response.data)
+        self.assertFalse(LearnerSubscription.all_objects.filter(user=employer).exists())
+
+    @override_settings(TEST_PAYMENTS_ENABLED=True)
+    def test_premium_checkout_claim_and_unit_purchase_conversion(self):
+        checkout = self.client.post(
+            "/api/payments/checkout/",
+            {"learner_product": "premium", "provider": "manual", "currency": "EUR", "test_payment": True},
+            format="json", HTTP_IDEMPOTENCY_KEY="premium-v88-first",
+        )
+        self.assertEqual(checkout.status_code, status.HTTP_201_CREATED, checkout.data)
+        subscription = LearnerSubscription.objects.get(user=self.student)
+        self.assertEqual(subscription.source_order_id, checkout.data["order"]["id"])
+
+        claim = self.client.post("/api/payments/premium/", {"course_id": self.course.id}, format="json")
+        self.assertEqual(claim.status_code, status.HTTP_201_CREATED, claim.data)
+        temporary = CourseEnrollment.objects.get(user=self.student, course=self.course)
+        self.assertEqual(temporary.source_subscription_id, subscription.id)
+        self.assertIsNotNone(temporary.access_expires_at)
+        self.assertIsNone(temporary.source_order_id)
+
+        permanent = self.client.post(
+            "/api/payments/checkout/",
+            {"course_ids": [self.course.id], "provider": "manual", "currency": "EUR", "test_payment": True},
+            format="json", HTTP_IDEMPOTENCY_KEY="premium-v88-unit-course",
+        )
+        self.assertEqual(permanent.status_code, status.HTTP_201_CREATED, permanent.data)
+        converted = CourseEnrollment.objects.get(user=self.student, course=self.course)
+        self.assertIsNone(converted.source_subscription_id)
+        self.assertIsNone(converted.access_expires_at)
+        self.assertEqual(converted.source_order_id, permanent.data["order"]["id"])
+
+    @override_settings(TEST_PAYMENTS_ENABLED=True)
+    def test_premium_renewal_is_chained_and_refund_rebases_future_period(self):
+        order_ids = []
+        for key in ("premium-v88-a", "premium-v88-b"):
+            response = self.client.post(
+                "/api/payments/checkout/",
+                {"learner_product": "premium", "provider": "manual", "currency": "EUR", "test_payment": True},
+                format="json", HTTP_IDEMPOTENCY_KEY=key,
+            )
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+            order_ids.append(response.data["order"]["id"])
+
+        periods = list(LearnerSubscription.all_objects.filter(user=self.student).order_by("starts_at"))
+        self.assertEqual(len(periods), 2)
+        self.assertEqual(periods[1].starts_at, periods[0].ends_at)
+        second_start_before_refund = periods[1].starts_at
+
+        admin = User.objects.create_user(
+            username="premium-admin", email="premium-admin@example.com", password="passpass123", role=User.Role.ADMIN
+        )
+        self.client.force_authenticate(admin)
+        refunded = self.client.post(
+            f"/api/payments/orders/{order_ids[0]}/set_status/",
+            {"status": Order.Status.REFUNDED, "reason": "Test remboursement Premium"}, format="json",
+        )
+        self.assertEqual(refunded.status_code, status.HTTP_200_OK, refunded.data)
+
+        first = LearnerSubscription.all_objects.get(source_order_id=order_ids[0])
+        second = LearnerSubscription.all_objects.get(source_order_id=order_ids[1])
+        self.assertIsNotNone(first.revoked_at)
+        self.assertLess(second.starts_at, second_start_before_refund)
+        self.assertTrue(second.is_active)
+

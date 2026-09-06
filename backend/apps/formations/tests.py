@@ -281,7 +281,11 @@ class InteractiveFormationRegressionTests(APITestCase):
     def test_live_room_file_upload_list_and_download(self):
         session, _ = self._started_session_with_student()
         with tempfile.TemporaryDirectory() as tmpdir, self.settings(MEDIA_ROOT=tmpdir):
-            upload = SimpleUploadedFile("support.pdf", b"fake-pdf-content", content_type="application/pdf")
+            upload = SimpleUploadedFile(
+                "support.pdf",
+                b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n",
+                content_type="application/pdf",
+            )
             created = self.client.post(
                 f"/api/sessions/{session.id}/files/", {"file": upload}, format="multipart"
             )

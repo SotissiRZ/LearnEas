@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { PlayCircle, Award, Clock, BookOpen, CreditCard, Loader2, RefreshCw, ClipboardCheck, BriefcaseBusiness, ArrowRight } from "lucide-react";
+import { PlayCircle, Award, Clock, BookOpen, CreditCard, Loader2, RefreshCw, ClipboardCheck, BriefcaseBusiness, ArrowRight, Crown } from "lucide-react";
 import { api, formatDuration, ApiError } from "@/lib/api";
 import { CourseEnrollment } from "@/types";
 import ProgressBar from "@/components/ui/ProgressBar";
@@ -11,6 +11,14 @@ import { useAuthGuard } from "@/hooks/useAuthGuard";
 import DashboardNav from "@/components/dashboard/DashboardNav";
 import GuardScreen from "@/components/ui/GuardScreen";
 
+
+
+type PremiumStatus = {
+  active: boolean;
+  starts_at: string | null;
+  current_period_ends_at: string | null;
+  coverage_ends_at: string | null;
+};
 
 type StudentOrder = {
   id: number;
@@ -28,18 +36,21 @@ export default function StudentDashboard() {
   const searchParams = useSearchParams();
   const [enrollments, setEnrollments] = useState<CourseEnrollment[]>([]);
   const [orders, setOrders] = useState<StudentOrder[]>([]);
+  const [premium, setPremium] = useState<PremiumStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkingOrderId, setCheckingOrderId] = useState<number | null>(null);
   const [paymentMessage, setPaymentMessage] = useState("");
   const autoConfirmedRef = useRef<number | null>(null);
 
   const loadData = useCallback(async () => {
-    const [courseData, orderData] = await Promise.all([
+    const [courseData, orderData, premiumData] = await Promise.all([
       api.get<{ results: CourseEnrollment[] } | CourseEnrollment[]>("/enrollments/my-courses/"),
       api.get<{ results: StudentOrder[] } | StudentOrder[]>("/payments/orders/?ordering=-created_at&page_size=10"),
+      api.get<PremiumStatus>("/payments/premium/").catch(() => null),
     ]);
     setEnrollments(Array.isArray(courseData) ? courseData : courseData.results);
     setOrders(Array.isArray(orderData) ? orderData : orderData.results);
+    setPremium(premiumData);
   }, []);
 
   const verifyOrder = useCallback(async (orderId: number, automatic = false) => {
@@ -81,12 +92,24 @@ export default function StudentDashboard() {
       <DashboardNav role="student" />
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Stat icon={<BookOpen size={20} />} label="Cours possédés" value={enrollments.length} />
+        <Stat icon={<BookOpen size={20} />} label="Cours accessibles" value={enrollments.length} />
         <Stat icon={<Clock size={20} />} label="En cours" value={inProgress.length} />
         <Stat icon={<Award size={20} />} label="Terminés" value={completed.length} />
       </div>
 
       {paymentMessage && <div className="mb-5 rounded-xl border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-800">{paymentMessage}</div>}
+
+      {premium?.active && (
+        <section className="mb-8 overflow-hidden rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50 to-white p-5 shadow-card">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-violet-600 text-white"><Crown size={20} /></span>
+              <div><p className="font-extrabold text-violet-950">KalanPro Premium actif</p><p className="mt-1 text-xs leading-5 text-violet-700">Accès au catalogue Premium jusqu’au {premium.coverage_ends_at ? new Date(premium.coverage_ends_at).toLocaleDateString("fr-FR") : "prochain renouvellement"}. Vos achats à l’unité restent permanents.</p></div>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2"><Link href="/courses?premium_included=true" className="btn-primary !py-2 !text-xs">Cours Premium</Link><Link href="/pdfs?premium_included=true" className="btn-outline !py-2 !text-xs">PDF Premium</Link><Link href="/checkout?learner_product=premium" className="btn-outline !py-2 !text-xs">Prolonger 30 jours</Link></div>
+          </div>
+        </section>
+      )}
 
       <div className="mb-8 grid gap-4 md:grid-cols-2">
         <Link href="/dashboard/student/projects" className="card group flex items-center gap-4 p-5 transition hover:-translate-y-0.5 hover:shadow-soft"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-violet-50 text-violet-700"><ClipboardCheck size={20}/></span><div className="min-w-0 flex-1"><p className="font-bold">Projets pratiques</p><p className="mt-1 text-xs text-gray-500">Appliquez vos cours sur des livrables corrigés par vos instructeurs.</p></div><ArrowRight size={16} className="text-gray-300 transition group-hover:text-brand-600"/></Link>
@@ -123,6 +146,7 @@ export default function StudentDashboard() {
                 <div className="p-4 pb-0">
                   <h3 className="line-clamp-2 font-bold">{e.course.title}</h3>
                   <p className="mt-1 text-xs text-gray-500">{formatDuration(e.course.total_duration_minutes)} · {e.course.total_lessons} vidéos</p>
+                  {e.access_expires_at && <p className="mt-1 text-[11px] font-semibold text-violet-700">Premium · accès jusqu’au {new Date(e.access_expires_at).toLocaleDateString("fr-FR")}</p>}
                   <div className="mt-3">
                     <div className="mb-1 flex justify-between text-xs text-gray-500">
                       <span>{e.progress_percent}% terminé</span>

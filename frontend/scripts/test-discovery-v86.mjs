@@ -1,12 +1,12 @@
-import fs from "node:fs";
+import { readFrontend, readRepo } from "./test-paths.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-const page = fs.readFileSync("components/discovery/SearchClient.tsx", "utf8");
-const nav = fs.readFileSync("components/layout/Navbar.tsx", "utf8");
-const types = fs.readFileSync("types/discovery.ts", "utf8");
-const backendViews = fs.readFileSync("../backend/apps/discovery/views.py", "utf8");
-const backendServices = fs.readFileSync("../backend/apps/discovery/services.py", "utf8");
+const page = readFrontend("components/discovery/SearchClient.tsx");
+const nav = readFrontend("components/layout/Navbar.tsx");
+const types = readFrontend("types/discovery.ts");
+const backendViews = readRepo("backend/apps/discovery/views.py");
+const backendServices = readRepo("backend/apps/discovery/services.py");
 
 test("v86 recherche globale couvre les catalogues principaux", () => {
   assert.match(page, /\/discovery\/search\//);

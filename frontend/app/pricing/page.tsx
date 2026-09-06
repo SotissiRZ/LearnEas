@@ -10,6 +10,8 @@ export const metadata: Metadata = {
 const fallback: PublicPricingSettings = {
   pricing_enabled: true,
   platform_commission_percent: 15,
+  learner_premium_enabled: true,
+  learner_premium_monthly_eur: "9.99",
   instructor_pro_monthly_eur: "15.09",
   instructor_pro_commission_percent: 8,
   mentor_commission_percent: 15,

@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     Currency, PaymentGateway, Order, OrderItem, PayoutProfile, InstructorPayout,
-    PaymentAttempt, PaymentEvent, PaymentIssue,
+    PaymentAttempt, PaymentEvent, PaymentIssue, LearnerSubscription,
 )
 
 
@@ -116,6 +116,20 @@ class PaymentIssueAdmin(admin.ModelAdmin):
     list_filter = ("status", "severity", "issue_type")
     search_fields = ("order__invoice_number", "order__user__email", "message")
     readonly_fields = tuple(field.name for field in PaymentIssue._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(LearnerSubscription)
+class LearnerSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ("user", "starts_at", "ends_at", "revoked_at", "source_order")
+    list_filter = ("revoked_at",)
+    search_fields = ("user__email", "user__username", "source_order__invoice_number")
+    readonly_fields = ("user", "source_order", "starts_at", "ends_at", "revoked_at", "revocation_reason", "created_at", "updated_at")
 
     def has_add_permission(self, request):
         return False

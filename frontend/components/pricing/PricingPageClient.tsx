@@ -10,6 +10,8 @@ import CurrencyPrice from "@/components/ui/CurrencyPrice";
 export type PublicPricingSettings = {
   pricing_enabled: boolean;
   platform_commission_percent: number;
+  learner_premium_enabled: boolean;
+  learner_premium_monthly_eur: string;
   instructor_pro_monthly_eur: string;
   instructor_pro_commission_percent: number;
   mentor_commission_percent: number;
@@ -78,7 +80,7 @@ export default function PricingPageClient({ settings }: { settings: PublicPricin
         <div className="container-app relative text-center">
           <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white/80"><Sparkles size={14} className="text-brand-400" /> Tarifs de lancement</span>
           <h1 className="mx-auto mt-5 max-w-4xl text-4xl font-black tracking-tight sm:text-5xl">Un modèle simple, transparent et adapté à chaque profil</h1>
-          <p className="mx-auto mt-5 max-w-3xl text-base leading-7 text-white/65 sm:text-lg">Pas d’abonnement obligatoire pour apprendre. Vous payez les contenus ou services que vous choisissez, tandis que les créateurs et recruteurs disposent d’offres adaptées à leur activité.</p>
+          <p className="mx-auto mt-5 max-w-3xl text-base leading-7 text-white/65 sm:text-lg">L’achat à l’unité reste disponible. KalanPro Premium ajoute, en option, un accès de 30 jours au catalogue asynchrone sélectionné.</p>
           <div className="mt-7 flex flex-wrap justify-center gap-2 text-xs font-bold text-white/70">
             <a href="#apprenants" className="rounded-full border border-white/15 px-4 py-2 hover:bg-white/10">Apprenants</a>
             <a href="#instructeurs" className="rounded-full border border-white/15 px-4 py-2 hover:bg-white/10">Instructeurs</a>
@@ -91,20 +93,25 @@ export default function PricingPageClient({ settings }: { settings: PublicPricin
       <section id="apprenants" className="scroll-mt-28 py-14">
         <div className="container-app">
           <AudienceHeader icon={<GraduationCap size={22} />} title="Apprenants" text="Commencez gratuitement et payez uniquement ce que vous utilisez." />
-          <div className="mt-7 grid gap-5 lg:grid-cols-3">
+          <div className="mt-7 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             <PlanCard title="Compte KalanPro" eyebrow="Accès plateforme" price={0} suffix="/ mois" badge="Sans engagement" cta="Créer un compte" href="/register">
               <Feature>Création du profil et accès au catalogue gratuits.</Feature>
               <Feature>Accès aux cours et ressources signalés comme gratuits.</Feature>
               <Feature>Portfolio, candidatures et vérification des certificats.</Feature>
             </PlanCard>
-            <PlanCard title="Formations & ressources" eyebrow="À la carte" priceLabel="Prix affiché par contenu" cta="Voir les formations" href="/courses" featured>
+            {settings.learner_premium_enabled && <PlanCard title="KalanPro Premium" eyebrow="Catalogue sélectionné" price={settings.learner_premium_monthly_eur} suffix="/ 30 jours" badge="Optionnel" featured cta="Activer Premium" href="/checkout?learner_product=premium">
+              <Feature>Accès aux cours et PDF portant le badge Premium.</Feature>
+              <Feature>Progression et certificats conservés ; l’accès au contenu expire avec le pass.</Feature>
+              <Feature>Renouvellements chaînés sans perdre les jours déjà payés.</Feature>
+            </PlanCard>}
+            <PlanCard title="Formations & ressources" eyebrow="À la carte" priceLabel="Prix affiché par contenu" cta="Voir les formations" href="/courses">
               <Feature>Cours vidéo, PDF et cohortes au prix affiché par le créateur.</Feature>
-              <Feature>Aucun abonnement mensuel obligatoire pour acheter.</Feature>
+              <Feature>Un achat à l’unité reste un accès permanent, indépendamment de Premium.</Feature>
               <Feature>Certificat inclus lorsqu’il est prévu par la formation.</Feature>
             </PlanCard>
             <PlanCard title="Mentorat" eyebrow="À la séance" priceLabel="Prix fixé par le mentor" cta="Trouver un mentor" href="/mentorship">
               <Feature>Le mentor fixe son tarif par séance ou accompagnement.</Feature>
-              <Feature>Vous connaissez le prix avant la réservation.</Feature>
+              <Feature>Les cohortes live et le mentorat restent hors Premium.</Feature>
               <Feature>Historique et suivi depuis votre espace KalanPro.</Feature>
             </PlanCard>
           </div>

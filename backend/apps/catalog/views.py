@@ -66,7 +66,7 @@ class CourseViewSet(viewsets.ModelViewSet):
     permission_classes = [IsInstructorOrAdmin]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = [
-        "level", "language", "is_free", "category__slug", "category__domain__slug", "instructor__id"
+        "level", "language", "is_free", "premium_included", "category__slug", "category__domain__slug", "instructor__id"
     ]
     search_fields = ["title", "subtitle", "description"]
     ordering_fields = ["created_at", "price", "rating_avg", "students_count", "total_duration_minutes"]
@@ -360,7 +360,7 @@ class PDFProductViewSet(viewsets.ModelViewSet):
     permission_classes = [IsInstructorOrAdmin]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = [
-        "level", "language", "is_free", "category__slug", "category__domain__slug", "instructor__id"
+        "level", "language", "is_free", "premium_included", "category__slug", "category__domain__slug", "instructor__id"
     ]
     search_fields = ["title", "description"]
     ordering_fields = ["created_at", "price", "rating_avg", "downloads_count"]

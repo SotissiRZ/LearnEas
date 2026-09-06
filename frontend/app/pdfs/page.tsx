@@ -11,6 +11,7 @@ interface Props {
     domain?: string;
     level?: string;
     is_free?: string;
+    premium_included?: string;
     search?: string;
     ordering?: string;
     page?: string;
@@ -24,6 +25,7 @@ export default async function PdfsPage({ searchParams }: Props) {
   if (query.category) params.set("category__slug", query.category);
   if (query.level) params.set("level", query.level);
   if (query.is_free) params.set("is_free", query.is_free);
+  if (query.premium_included) params.set("premium_included", query.premium_included);
   if (query.search) params.set("search", query.search);
   params.set("ordering", query.ordering || "-created_at");
   if (query.page) params.set("page", query.page);

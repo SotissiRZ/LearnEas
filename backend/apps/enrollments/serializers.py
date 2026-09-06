@@ -18,7 +18,7 @@ class CourseEnrollmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = CourseEnrollment
         fields = [
-            "id", "course", "purchased_at", "progress_percent",
+            "id", "course", "purchased_at", "access_expires_at", "progress_percent",
             "completed", "certificate_issued", "last_accessed_lesson", "lesson_progress",
         ]
 
@@ -59,7 +59,7 @@ class PDFPurchaseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PDFPurchase
-        fields = ["id", "pdf_product", "purchased_at"]
+        fields = ["id", "pdf_product", "purchased_at", "access_expires_at"]
 
 
 class WishlistSerializer(serializers.ModelSerializer):

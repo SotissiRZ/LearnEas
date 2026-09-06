@@ -171,6 +171,7 @@ class OrderItem(models.Model):
         MENTORING = "mentoring", "Mentorat"
         MENTOR_PACK = "mentor_pack", "Pack mentorat"
         EMPLOYER = "employer", "Droit recruteur"
+        LEARNER_SUBSCRIPTION = "learner_subscription", "Abonnement apprenant"
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
     item_type = models.CharField(max_length=20, choices=ItemType.choices)
@@ -203,6 +204,38 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f"{self.item_type} · {self.course or self.pdf_product or self.formation or self.mentorship_booking or self.mentorship_pack or self.entitlement_code}"
+
+
+class ActiveLearnerSubscriptionManager(models.Manager):
+    def get_queryset(self):
+        now = timezone.now()
+        return super().get_queryset().filter(revoked_at__isnull=True, starts_at__lte=now, ends_at__gt=now)
+
+
+class LearnerSubscription(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="learner_subscriptions")
+    source_order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="learner_subscription")
+    starts_at = models.DateTimeField(db_index=True)
+    ends_at = models.DateTimeField(db_index=True)
+    revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    revocation_reason = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = ActiveLearnerSubscriptionManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        ordering = ["-starts_at", "-id"]
+        indexes = [models.Index(fields=["user", "ends_at"], name="pay_learnsub_user_end_idx")]
+
+    @property
+    def is_active(self):
+        now = timezone.now()
+        return self.revoked_at is None and self.starts_at <= now < self.ends_at
+
+    def __str__(self):
+        return f"Premium {self.user} · {self.starts_at:%Y-%m-%d} → {self.ends_at:%Y-%m-%d}"
 
 
 class FormationSeatReservation(models.Model):

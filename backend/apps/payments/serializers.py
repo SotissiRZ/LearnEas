@@ -28,6 +28,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
             return f"Mentorat · {obj.mentorship_booking.offering.title}"
         if obj.mentorship_pack:
             return f"Pack mentorat · {obj.mentorship_pack.offering.title} · {obj.mentorship_pack.sessions_count} séances"
+        if obj.item_type == OrderItem.ItemType.LEARNER_SUBSCRIPTION:
+            return "KalanPro Premium apprenant · 30 jours"
         employer_titles = {
             "single_post": "Annonce recruteur · 30 jours",
             "pro": "KalanPro Pro recrutement · 30 jours",
@@ -108,6 +110,7 @@ class CheckoutSerializer(serializers.Serializer):
     employer_product = serializers.ChoiceField(
         choices=["single_post", "pro", "business"], required=False, allow_blank=True, default=""
     )
+    learner_product = serializers.ChoiceField(choices=["premium"], required=False, allow_blank=True, default="")
     provider = serializers.CharField(max_length=30, default=Order.Provider.STRIPE)
     currency = serializers.CharField(max_length=3, default="EUR")
     test_payment = serializers.BooleanField(required=False, default=False)
@@ -117,6 +120,10 @@ class CheckoutSerializer(serializers.Serializer):
         attrs["currency"] = attrs["currency"].strip().upper()
         for field in ("course_ids", "pdf_ids", "formation_ids", "mentorship_booking_ids", "mentorship_pack_ids"):
             attrs[field] = list(dict.fromkeys(attrs[field]))
+        if attrs.get("employer_product") and attrs.get("learner_product"):
+            raise serializers.ValidationError({"learner_product": "Un abonnement apprenant et un produit recruteur doivent être achetés séparément."})
+        if attrs.get("learner_product") and any(attrs[field] for field in ("course_ids", "pdf_ids", "formation_ids", "mentorship_booking_ids", "mentorship_pack_ids")):
+            raise serializers.ValidationError({"learner_product": "Un abonnement apprenant doit être acheté dans une commande dédiée."})
         if attrs.get("employer_product") and any(
             attrs[field] for field in ("course_ids", "pdf_ids", "formation_ids", "mentorship_booking_ids", "mentorship_pack_ids")
         ):

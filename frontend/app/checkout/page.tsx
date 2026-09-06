@@ -13,12 +13,15 @@ type Currency = { id: number; code: string; name: string; symbol: string; exchan
 type Gateway = { id: number; code: string; name: string; description: string; supported_currencies: string[]; configured: boolean; sandbox: boolean };
 type PaymentConfig = { currencies: Currency[]; gateways: Gateway[]; default_currency: string; test_payments_enabled?: boolean };
 type EmployerProduct = "single_post" | "pro" | "business";
+type LearnerProduct = "premium";
 type EmployerPricing = {
   employer_single_post_eur: string;
   employer_pro_monthly_eur: string;
   employer_pro_active_jobs: number;
   employer_business_monthly_eur: string;
   employer_business_active_jobs: number;
+  learner_premium_enabled: boolean;
+  learner_premium_monthly_eur: string;
 };
 
 type CheckoutResponse = {
@@ -46,11 +49,11 @@ function GatewayIcon({ code }: { code: string }) {
   return <CreditCard size={20} />;
 }
 
-function newIdempotencyKey(product: EmployerProduct): string {
+function newIdempotencyKey(scope: "employer" | "learner", product: EmployerProduct | LearnerProduct): string {
   const random = typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return `employer-${product}-${random}`;
+  return `${scope}-${product}-${random}`;
 }
 
 export default function CheckoutPage() {
@@ -59,8 +62,12 @@ export default function CheckoutPage() {
   const router = useRouter();
   const params = useSearchParams();
   const productParam = params.get("employer_product");
+  const learnerParam = params.get("learner_product");
   const employerProduct = isEmployerProduct(productParam) ? productParam : null;
+  const learnerProduct: LearnerProduct | null = learnerParam === "premium" ? "premium" : null;
   const isEmployerCheckout = Boolean(employerProduct);
+  const isLearnerCheckout = Boolean(learnerProduct);
+  const isDedicatedCheckout = isEmployerCheckout || isLearnerCheckout;
   const idempotencyKeyRef = useRef<string | null>(null);
   const selectedDisplayCode = useCurrency((state) => state.selectedCode);
   const selectDisplayCurrency = useCurrency((state) => state.selectCurrency);
@@ -85,13 +92,13 @@ export default function CheckoutPage() {
         setProvider(first?.code || (data.test_payments_enabled ? "__test__" : ""));
       }),
     ];
-    if (isEmployerCheckout) {
+    if (isDedicatedCheckout) {
       requests.push(api.get<EmployerPricing>("/auth/platform-settings/").then(setEmployerPricing));
     }
     Promise.all(requests)
       .catch((e) => setError(e instanceof ApiError ? e.message : "Impossible de charger les moyens de paiement."))
       .finally(() => setConfigLoading(false));
-  }, [isEmployerCheckout]);
+  }, [isDedicatedCheckout]);
 
   useEffect(() => {
     if (config?.currencies.some((item) => item.code === selectedDisplayCode) && selectedDisplayCode !== currency) {
@@ -119,7 +126,13 @@ export default function CheckoutPage() {
     return `${quota ?? "—"} offres actives + vivier · 30 jours`;
   }, [employerProduct, employerPricing]);
 
-  const checkoutTotal = isEmployerCheckout ? employerAmount : total();
+  const learnerAmount = useMemo(() => {
+    if (!learnerProduct || !employerPricing?.learner_premium_enabled) return 0;
+    const amount = Number(employerPricing.learner_premium_monthly_eur);
+    return Number.isFinite(amount) ? amount : 0;
+  }, [learnerProduct, employerPricing]);
+
+  const checkoutTotal = isEmployerCheckout ? employerAmount : isLearnerCheckout ? learnerAmount : total();
   const selectedCurrency = config?.currencies.find((item) => item.code === currency);
   const providerDisplayTotal = useMemo(() => {
     if (!selectedCurrency) return null;
@@ -135,7 +148,7 @@ export default function CheckoutPage() {
     () => (config?.gateways || []).filter((gateway) => !gateway.supported_currencies.length || gateway.supported_currencies.includes(currency)),
     [config, currency],
   );
-  const isFreeCart = !isEmployerCheckout && checkoutTotal <= 0;
+  const isFreeCart = checkoutTotal <= 0;
 
   useEffect(() => {
     if (provider === "__test__" && config?.test_payments_enabled) return;
@@ -149,6 +162,10 @@ export default function CheckoutPage() {
       setError("Ce checkout est réservé aux comptes entreprise/recruteur.");
       return;
     }
+    if (isLearnerCheckout && user?.role !== "student") {
+      setError("KalanPro Premium apprenant est réservé aux comptes étudiants.");
+      return;
+    }
     if (!isFreeCart && !provider) {
       setError("Aucun moyen de paiement n'est disponible pour cette devise.");
       return;
@@ -159,12 +176,24 @@ export default function CheckoutPage() {
       const isTestPayment = provider === "__test__";
       let res: CheckoutResponse;
       if (employerProduct) {
-        if (!idempotencyKeyRef.current) idempotencyKeyRef.current = newIdempotencyKey(employerProduct);
+        if (!idempotencyKeyRef.current) idempotencyKeyRef.current = newIdempotencyKey("employer", employerProduct);
         res = await apiFetch<CheckoutResponse>("/payments/checkout/", {
           method: "POST",
           headers: { "Idempotency-Key": idempotencyKeyRef.current },
           body: JSON.stringify({
             employer_product: employerProduct,
+            provider: isTestPayment ? "manual" : (provider || "manual"),
+            currency,
+            test_payment: isTestPayment,
+          }),
+        });
+      } else if (learnerProduct) {
+        if (!idempotencyKeyRef.current) idempotencyKeyRef.current = newIdempotencyKey("learner", learnerProduct);
+        res = await apiFetch<CheckoutResponse>("/payments/checkout/", {
+          method: "POST",
+          headers: { "Idempotency-Key": idempotencyKeyRef.current },
+          body: JSON.stringify({
+            learner_product: learnerProduct,
             provider: isTestPayment ? "manual" : (provider || "manual"),
             currency,
             test_payment: isTestPayment,
@@ -187,7 +216,7 @@ export default function CheckoutPage() {
         return;
       }
       if (res.manual_review) {
-        if (!isEmployerCheckout) clear();
+        if (!isDedicatedCheckout) clear();
         router.push(isEmployerCheckout
           ? `/dashboard/employer?payment_pending=1&order=${res.order.id}`
           : `/dashboard/student?payment_pending=1&order=${res.order.id}`);
@@ -195,6 +224,10 @@ export default function CheckoutPage() {
       }
       if (isEmployerCheckout) {
         router.push(`/dashboard/employer?billing=updated&order=${res.order.id}`);
+        return;
+      }
+      if (isLearnerCheckout) {
+        router.push(`/dashboard/student?premium=updated&order=${res.order.id}`);
         return;
       }
       const mentoringOnly = items.length > 0 && items.every((i) => i.type === "mentoring" || i.type === "mentor_pack");
@@ -209,8 +242,11 @@ export default function CheckoutPage() {
 
   if (!user) return <div className="container-app py-20 text-center text-gray-500">Veuillez vous connecter pour continuer.</div>;
   if (isEmployerCheckout && user.role !== "employer") return <div className="container-app py-20 text-center text-gray-500">Cette offre est réservée aux comptes entreprise/recruteur.</div>;
-  if (!isEmployerCheckout && items.length === 0) return <div className="container-app py-20 text-center text-gray-500">Votre panier est vide.</div>;
-  if (isEmployerCheckout && !employerProduct) return <div className="container-app py-20 text-center text-gray-500">Offre recruteur invalide.</div>;
+  if (isLearnerCheckout && user.role !== "student") return <div className="container-app py-20 text-center text-gray-500">KalanPro Premium apprenant est réservé aux comptes étudiants.</div>;
+  if (!isDedicatedCheckout && items.length === 0) return <div className="container-app py-20 text-center text-gray-500">Votre panier est vide.</div>;
+  if (productParam && !employerProduct) return <div className="container-app py-20 text-center text-gray-500">Offre recruteur invalide.</div>;
+  if (learnerParam && !learnerProduct) return <div className="container-app py-20 text-center text-gray-500">Offre Premium invalide.</div>;
+  if (isLearnerCheckout && employerPricing && !employerPricing.learner_premium_enabled) return <div className="container-app py-20 text-center text-gray-500">KalanPro Premium est temporairement indisponible.</div>;
 
   return (
     <div className="container-app grid grid-cols-1 gap-8 py-10 lg:grid-cols-[1fr_380px]">
@@ -250,11 +286,11 @@ export default function CheckoutPage() {
             <p className="mt-5 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">{provider === "cinetpay" ? "Vous serez redirigé vers CinetPay pour choisir le wallet Mobile Money disponible dans votre pays. Le montant CFA est arrondi au multiple de 5 requis par CinetPay." : "KalanPro ne stocke jamais les numéros de carte. Les paiements externes sont finalisés sur la page sécurisée du prestataire activé."}</p>
           )}
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-          <button onClick={handlePay} disabled={loading || configLoading || (!isFreeCart && !provider) || (isEmployerCheckout && !employerPricing)} className="btn-primary mt-5 w-full">
+          <button onClick={handlePay} disabled={loading || configLoading || (!isFreeCart && !provider) || (isDedicatedCheckout && !employerPricing)} className="btn-primary mt-5 w-full">
             {loading ? <Loader2 className="animate-spin" size={18} /> : <ShieldCheck size={18} />}
             {isFreeCart ? "Obtenir gratuitement" : provider === "__test__" ? <>Simuler le paiement · {selectedCurrency ? formatDisplayPrice(checkoutTotal, selectedCurrency) : <CurrencyPrice value={checkoutTotal} />}</> : <>Payer {providerDisplayTotal || (selectedCurrency ? formatDisplayPrice(checkoutTotal, selectedCurrency) : <CurrencyPrice value={checkoutTotal} />)}</>}
           </button>
-          <p className="mt-2 text-center text-xs text-gray-400">Paiement chiffré et sécurisé. Le prix de l’offre recruteur est recalculé côté serveur.</p>
+          <p className="mt-2 text-center text-xs text-gray-400">Paiement chiffré et sécurisé. Les montants et droits d’accès sont recalculés côté serveur.</p>
         </div>
       </div>
 
@@ -262,6 +298,8 @@ export default function CheckoutPage() {
         <h2 className="mb-4 font-bold">Récapitulatif</h2>
         {employerProduct ? (
           <div className="text-sm"><div className="flex justify-between gap-3"><div><span className="font-semibold">{employerTitles[employerProduct]}</span><p className="mt-1 text-xs text-gray-500">{employerDetail}</p></div><span className="font-semibold"><CurrencyPrice value={employerAmount} /></span></div></div>
+        ) : learnerProduct ? (
+          <div className="text-sm"><div className="flex justify-between gap-3"><div><span className="font-semibold">KalanPro Premium apprenant</span><p className="mt-1 text-xs text-gray-500">Catalogue Premium cours + PDF · 30 jours · renouvellement chaîné</p></div><span className="font-semibold"><CurrencyPrice value={learnerAmount} /></span></div></div>
         ) : (
           <div className="flex flex-col gap-2 text-sm">{items.map((item) => <div key={`${item.type}-${item.id}`} className="flex justify-between gap-3"><span className="line-clamp-1">{item.title}</span><span className="font-semibold"><CurrencyPrice value={item.price} /></span></div>)}</div>
         )}

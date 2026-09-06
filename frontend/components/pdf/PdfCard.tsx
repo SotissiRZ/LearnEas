@@ -20,6 +20,7 @@ export default function PdfCard({ pdf }: { pdf: PDFProduct }) {
           <FileText size={48} className="text-amber-300" />
         )}
         {pdf.is_free && <span className="badge absolute left-3 top-3 bg-white/95 text-brand-700 shadow">Gratuit</span>}
+        {pdf.premium_included && !pdf.is_free && <span className="badge absolute left-3 top-3 bg-violet-600 text-white shadow">Premium</span>}
         <span className="badge absolute right-3 top-3 bg-white/95 text-amber-700 shadow">PDF</span>
       </div>
 

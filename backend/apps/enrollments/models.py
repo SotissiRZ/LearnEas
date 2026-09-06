@@ -1,12 +1,14 @@
 import uuid
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class ActiveEntitlementManager(models.Manager):
     """Manager par défaut : seuls les droits encore actifs sont visibles par les contrôles d'accès."""
     def get_queryset(self):
-        return super().get_queryset().filter(revoked_at__isnull=True)
+        now = timezone.now()
+        return super().get_queryset().filter(revoked_at__isnull=True).filter(models.Q(access_expires_at__isnull=True) | models.Q(access_expires_at__gt=now))
 
 
 class CourseEnrollment(models.Model):
@@ -24,6 +26,10 @@ class CourseEnrollment(models.Model):
     source_order = models.ForeignKey(
         "payments.Order", on_delete=models.SET_NULL, null=True, blank=True, related_name="course_entitlements"
     )
+    source_subscription = models.ForeignKey(
+        "payments.LearnerSubscription", on_delete=models.SET_NULL, null=True, blank=True, related_name="course_entitlements"
+    )
+    access_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
     revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
     revocation_reason = models.CharField(max_length=255, blank=True)
 
@@ -59,6 +65,10 @@ class PDFPurchase(models.Model):
     source_order = models.ForeignKey(
         "payments.Order", on_delete=models.SET_NULL, null=True, blank=True, related_name="pdf_entitlements"
     )
+    source_subscription = models.ForeignKey(
+        "payments.LearnerSubscription", on_delete=models.SET_NULL, null=True, blank=True, related_name="pdf_entitlements"
+    )
+    access_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
     revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
     revocation_reason = models.CharField(max_length=255, blank=True)
 

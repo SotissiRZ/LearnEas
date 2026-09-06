@@ -1,10 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-
-const root = process.cwd();
-const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+import { readLegacyRelative as read } from "./test-paths.mjs";
 
 test("v79 CI couvre backend frontend migrations et build", () => {
   const ci = read("../.github/workflows/ci.yml");

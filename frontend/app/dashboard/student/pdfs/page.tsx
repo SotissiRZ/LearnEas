@@ -13,6 +13,7 @@ interface PDFPurchase {
   id: number;
   pdf_product: { id: number; title: string; slug: string; file?: string | null; cover_image: string | null; page_count: number };
   purchased_at: string;
+  access_expires_at?: string | null;
 }
 
 export default function StudentPdfsPage() {
@@ -32,12 +33,12 @@ export default function StudentPdfsPage() {
   return (
     <div className="container-app py-10">
       <DashboardNav role="student" />
-      <h2 className="mb-4 text-xl font-bold">Mes PDF achetés</h2>
+      <h2 className="mb-4 text-xl font-bold">Mes PDF accessibles</h2>
       {loading ? (
         <p className="text-gray-500">Chargement...</p>
       ) : purchases.length === 0 ? (
         <div className="card p-10 text-center text-gray-500">
-          Aucun PDF acheté. <Link href="/pdfs" className="font-semibold text-brand-700">Explorer le catalogue</Link>
+          Aucun PDF accessible. <Link href="/pdfs" className="font-semibold text-brand-700">Explorer le catalogue</Link>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -49,6 +50,7 @@ export default function StudentPdfsPage() {
               <div className="flex-1">
                 <p className="line-clamp-2 font-semibold">{p.pdf_product.title}</p>
                 <p className="text-xs text-gray-400">{p.pdf_product.page_count} pages</p>
+                {p.access_expires_at && <p className="mt-1 text-[11px] font-semibold text-violet-700">Premium · jusqu’au {new Date(p.access_expires_at).toLocaleDateString("fr-FR")}</p>}
               </div>
               {p.pdf_product.file && <PdfViewer url={p.pdf_product.file} title={p.pdf_product.title} />}
             </div>

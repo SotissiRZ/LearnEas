@@ -900,96 +900,6 @@ def action_label(name: str, args: dict) -> str:
         return f"Enregistrer le plan de compétences « {str(args.get('title') or 'Plan de progression')[:120]} »"
     if name == "save_candidate_interview_prep_draft":
         return f"Enregistrer la préparation d’entretien « {str(args.get('title') or 'Préparation entretien')[:120]} »"
-    if name in {"save_candidate_interview_score_draft", "save_candidate_followup_draft"}:
-        try:
-            opportunity_id = int(args.get("opportunity_id"))
-        except (TypeError, ValueError):
-            raise ValueError("Opportunité invalide.")
-        opportunity = Opportunity.objects.select_related("employer").filter(pk=opportunity_id, status=Opportunity.Status.PUBLISHED).first()
-        if not opportunity or opportunity.employer.status != EmployerProfile.Status.APPROVED:
-            raise ValueError("Opportunité publiée introuvable.")
-        if opportunity.employer.user_id == user.id:
-            raise PermissionError("Cette action candidat ne peut pas cibler votre propre offre.")
-        title = " ".join(str(args.get("title") or "").split())[:220]
-        if not title:
-            raise ValueError("Titre requis.")
-        if name == "save_candidate_interview_score_draft":
-            scores = {}
-            for key in ("relevance_score", "evidence_score", "clarity_score", "role_fit_score", "communication_score"):
-                try:
-                    value = int(args.get(key))
-                except (TypeError, ValueError):
-                    raise ValueError("Sous-score d'entretien invalide.")
-                scores[key] = min(max(value, 0), 100)
-            overall = round(
-                scores["relevance_score"] * 0.30 + scores["evidence_score"] * 0.25 +
-                scores["clarity_score"] * 0.20 + scores["role_fit_score"] * 0.15 +
-                scores["communication_score"] * 0.10
-            )
-            return {
-                "opportunity_id": opportunity.id, "opportunity_title": opportunity.title, "title": title,
-                "response_summary": str(args.get("response_summary") or "").strip()[:5000],
-                **scores, "overall_score": overall,
-                "strengths": _clean_string_list(args.get("strengths"), maximum=12, item_max=700),
-                "improvements": _clean_string_list(args.get("improvements"), maximum=12, item_max=700),
-                "recommended_actions": _clean_string_list(args.get("recommended_actions"), maximum=12, item_max=700),
-            }
-        message = str(args.get("message") or "").strip()[:7000]
-        if not message:
-            raise ValueError("Le message de suivi est requis.")
-        return {
-            "opportunity_id": opportunity.id, "opportunity_title": opportunity.title, "title": title,
-            "subject": " ".join(str(args.get("subject") or "").split())[:220],
-            "message": message,
-            "next_actions": _clean_string_list(args.get("next_actions"), maximum=10, item_max=700),
-            "recommended_send_window": " ".join(str(args.get("recommended_send_window") or "").split())[:200],
-        }
-
-    if name == "save_recruiter_scorecard_draft":
-        try:
-            application_id = int(args.get("application_id"))
-        except (TypeError, ValueError):
-            raise ValueError("Candidature invalide.")
-        application = _recruiter_application(user, application_id)
-        title = " ".join(str(args.get("title") or "").split())[:220]
-        raw_criteria = args.get("criteria") or []
-        if not title or not isinstance(raw_criteria, list) or not raw_criteria:
-            raise ValueError("Titre et critères d'entretien requis.")
-        clean_criteria = []
-        total_weight = Decimal("0")
-        weighted = Decimal("0")
-        for raw in raw_criteria[:15]:
-            if not isinstance(raw, dict):
-                continue
-            name_value = " ".join(str(raw.get("name") or "").split())[:180]
-            if not name_value:
-                continue
-            try:
-                weight = Decimal(str(raw.get("weight")))
-                score = Decimal(str(raw.get("score")))
-            except (InvalidOperation, TypeError, ValueError):
-                raise ValueError("Poids ou score invalide dans la scorecard.")
-            weight = min(max(weight, Decimal("1")), Decimal("100"))
-            score = min(max(score, Decimal("0")), Decimal("100"))
-            clean_criteria.append({
-                "name": name_value, "weight": float(weight), "score": float(score),
-                "evidence": str(raw.get("evidence") or "").strip()[:1200],
-            })
-            total_weight += weight
-            weighted += weight * score
-        if not clean_criteria or total_weight <= 0:
-            raise ValueError("Aucun critère de scorecard valide.")
-        overall = int(round(float(weighted / total_weight)))
-        return {
-            "application_id": application.id, "opportunity_id": application.opportunity_id,
-            "opportunity_title": application.opportunity.title, "candidate": application.candidate_name_snapshot,
-            "title": title, "criteria": clean_criteria, "overall_score": overall,
-            "strengths": _clean_string_list(args.get("strengths"), maximum=12, item_max=700),
-            "risks": _clean_string_list(args.get("risks"), maximum=12, item_max=700),
-            "next_steps": _clean_string_list(args.get("next_steps"), maximum=10, item_max=700),
-            "interview_notes": str(args.get("interview_notes") or "").strip()[:6000],
-        }
-
     if name == "update_candidate_profile":
         return "Mettre à jour mon profil candidat avec les suggestions IA"
     if name == "save_candidate_interview_score_draft":
@@ -1201,6 +1111,102 @@ def validate_write_tool(user, name: str, args: dict) -> dict:
             "star_examples": _clean_string_list(args.get("star_examples"), maximum=10, item_max=1400),
             "questions_to_ask": _clean_string_list(args.get("questions_to_ask"), maximum=10, item_max=900),
             "checklist": _clean_string_list(args.get("checklist"), maximum=12, item_max=500),
+        }
+
+    if name in {"save_candidate_interview_score_draft", "save_candidate_followup_draft"}:
+        try:
+            opportunity_id = int(args.get("opportunity_id"))
+        except (TypeError, ValueError):
+            raise ValueError("Opportunité invalide.")
+        opportunity = Opportunity.objects.select_related("employer").filter(pk=opportunity_id, status=Opportunity.Status.PUBLISHED).first()
+        if not opportunity or opportunity.employer.status != EmployerProfile.Status.APPROVED:
+            raise ValueError("Opportunité publiée introuvable.")
+        if opportunity.employer.user_id == user.id:
+            raise PermissionError("Cette action candidat ne peut pas cibler votre propre offre.")
+        title = " ".join(str(args.get("title") or "").split())[:220]
+        if not title:
+            raise ValueError("Titre requis.")
+        if name == "save_candidate_interview_score_draft":
+            scores = {}
+            for key in ("relevance_score", "evidence_score", "clarity_score", "role_fit_score", "communication_score"):
+                try:
+                    value = int(args.get(key))
+                except (TypeError, ValueError):
+                    raise ValueError("Sous-score d'entretien invalide.")
+                scores[key] = min(max(value, 0), 100)
+            # Score entier déterministe : les fractions de point sont volontairement
+            # tronquées. Cela évite le banker's rounding de Python (ex. 75.5 -> 76)
+            # et conserve la règle métier historique attendue par les tests.
+            weighted_points = (
+                scores["relevance_score"] * 30
+                + scores["evidence_score"] * 25
+                + scores["clarity_score"] * 20
+                + scores["role_fit_score"] * 15
+                + scores["communication_score"] * 10
+            )
+            overall = weighted_points // 100
+            return {
+                "opportunity_id": opportunity.id, "opportunity_title": opportunity.title, "title": title,
+                "response_summary": str(args.get("response_summary") or "").strip()[:5000],
+                **scores, "overall_score": overall,
+                "strengths": _clean_string_list(args.get("strengths"), maximum=12, item_max=700),
+                "improvements": _clean_string_list(args.get("improvements"), maximum=12, item_max=700),
+                "recommended_actions": _clean_string_list(args.get("recommended_actions"), maximum=12, item_max=700),
+            }
+        message = str(args.get("message") or "").strip()[:7000]
+        if not message:
+            raise ValueError("Le message de suivi est requis.")
+        return {
+            "opportunity_id": opportunity.id, "opportunity_title": opportunity.title, "title": title,
+            "subject": " ".join(str(args.get("subject") or "").split())[:220],
+            "message": message,
+            "next_actions": _clean_string_list(args.get("next_actions"), maximum=10, item_max=700),
+            "recommended_send_window": " ".join(str(args.get("recommended_send_window") or "").split())[:200],
+        }
+
+    if name == "save_recruiter_scorecard_draft":
+        try:
+            application_id = int(args.get("application_id"))
+        except (TypeError, ValueError):
+            raise ValueError("Candidature invalide.")
+        application = _recruiter_application(user, application_id)
+        title = " ".join(str(args.get("title") or "").split())[:220]
+        raw_criteria = args.get("criteria") or []
+        if not title or not isinstance(raw_criteria, list) or not raw_criteria:
+            raise ValueError("Titre et critères d'entretien requis.")
+        clean_criteria = []
+        total_weight = Decimal("0")
+        weighted = Decimal("0")
+        for raw in raw_criteria[:15]:
+            if not isinstance(raw, dict):
+                continue
+            name_value = " ".join(str(raw.get("name") or "").split())[:180]
+            if not name_value:
+                continue
+            try:
+                weight = Decimal(str(raw.get("weight")))
+                score = Decimal(str(raw.get("score")))
+            except (InvalidOperation, TypeError, ValueError):
+                raise ValueError("Poids ou score invalide dans la scorecard.")
+            weight = min(max(weight, Decimal("1")), Decimal("100"))
+            score = min(max(score, Decimal("0")), Decimal("100"))
+            clean_criteria.append({
+                "name": name_value, "weight": float(weight), "score": float(score),
+                "evidence": str(raw.get("evidence") or "").strip()[:1200],
+            })
+            total_weight += weight
+            weighted += weight * score
+        if not clean_criteria or total_weight <= 0:
+            raise ValueError("Aucun critère de scorecard valide.")
+        overall = int(round(float(weighted / total_weight)))
+        return {
+            "application_id": application.id, "opportunity_id": application.opportunity_id,
+            "opportunity_title": application.opportunity.title, "candidate": application.candidate_name_snapshot,
+            "title": title, "criteria": clean_criteria, "overall_score": overall,
+            "strengths": _clean_string_list(args.get("strengths"), maximum=12, item_max=700),
+            "risks": _clean_string_list(args.get("risks"), maximum=12, item_max=700),
+            "next_steps": _clean_string_list(args.get("next_steps"), maximum=10, item_max=700),
+            "interview_notes": str(args.get("interview_notes") or "").strip()[:6000],
         }
 
     if name == "update_candidate_profile":

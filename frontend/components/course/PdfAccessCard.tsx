@@ -6,6 +6,7 @@ import CurrencyPrice from "@/components/ui/CurrencyPrice";
 import { useAuthenticatedResource } from "@/hooks/useAuthenticatedResource";
 import { AddPdfToCartButton } from "@/components/course/AddToCartButtons";
 import PdfViewer from "@/components/ui/PdfViewer";
+import PremiumAccessAction from "@/components/course/PremiumAccessAction";
 
 export default function PdfAccessCard({ initialPdf }: { initialPdf: PDFProduct }) {
   const pdf = useAuthenticatedResource<PDFProduct>(`/catalog/pdfs/${initialPdf.slug}/`, initialPdf);
@@ -27,7 +28,10 @@ export default function PdfAccessCard({ initialPdf }: { initialPdf: PDFProduct }
           {unlocked ? (
             pdf.file ? <PdfViewer url={pdf.file} title={pdf.title} /> : <p className="text-sm text-gray-500">Fichier indisponible.</p>
           ) : (
-            <AddPdfToCartButton pdf={pdf} />
+            <>
+              <AddPdfToCartButton pdf={pdf} />
+              <PremiumAccessAction kind="pdf" id={pdf.id} available={pdf.premium_included} />
+            </>
           )}
         </div>
         {!unlocked && pdf.preview_file && (

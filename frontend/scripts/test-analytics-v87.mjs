@@ -1,14 +1,14 @@
-import fs from "node:fs";
+import { readFrontend, readRepo } from "./test-paths.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-const backendModels = fs.readFileSync("../backend/apps/analytics/models.py", "utf8");
-const backendServices = fs.readFileSync("../backend/apps/analytics/services.py", "utf8");
-const backendViews = fs.readFileSync("../backend/apps/analytics/views.py", "utf8");
-const backendThrottles = fs.readFileSync("../backend/apps/common/throttles.py", "utf8");
-const adminPage = fs.readFileSync("app/dashboard/admin/page.tsx", "utf8");
-const tracker = fs.readFileSync("lib/analytics.ts", "utf8");
-const layoutTracker = fs.readFileSync("components/layout/ProductAnalytics.tsx", "utf8");
+const backendModels = readRepo("backend/apps/analytics/models.py");
+const backendServices = readRepo("backend/apps/analytics/services.py");
+const backendViews = readRepo("backend/apps/analytics/views.py");
+const backendThrottles = readRepo("backend/apps/common/throttles.py");
+const adminPage = readFrontend("app/dashboard/admin/page.tsx");
+const tracker = readFrontend("lib/analytics.ts");
+const layoutTracker = readFrontend("components/layout/ProductAnalytics.tsx");
 
  test("v87 stocke des evenements produit minimises sans requete sensible", () => {
   assert.match(backendModels, /class ProductEvent/);
@@ -41,7 +41,7 @@ test("v87 navigation et recherche emettent des signaux sans stocker la query", (
   assert.match(layoutTracker, /trackProductEvent/);
   assert.doesNotMatch(layoutTracker, /searchParams|window\.location\.search/);
   assert.match(layoutTracker, /PRIVATE_PREFIXES/);
-  const search = fs.readFileSync("components/discovery/SearchClient.tsx", "utf8");
+  const search = readFrontend("components/discovery/SearchClient.tsx");
   assert.match(search, /query_length/);
   assert.doesNotMatch(search, /trackProductEvent\([^\n]+query:/);
 });

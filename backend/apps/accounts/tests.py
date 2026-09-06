@@ -1,3 +1,4 @@
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.test import APITestCase, APIClient
 
@@ -5,6 +6,14 @@ from .models import User
 
 
 class RegistrationRegressionTests(APITestCase):
+    def setUp(self):
+        # Les throttles DRF utilisent le cache partagé entre méthodes de test.
+        # On isole chaque scénario sans affaiblir les limites de production.
+        cache.clear()
+
+    def tearDown(self):
+        cache.clear()
+
     def test_registration_normalizes_email_and_returns_tokens(self):
         response = self.client.post(
             "/api/auth/register/",

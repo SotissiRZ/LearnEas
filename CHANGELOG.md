@@ -1,5 +1,20 @@
+# KalanPro v88 — Premium apprenant
+
+- Nouveau pass apprenant optionnel de 30 jours, en complément de l'achat à l'unité.
+- Prix/activation Premium administrables et catalogue cours/PDF explicitement marqué par l'administrateur.
+- Instructeurs empêchés de s'auto-inclure dans Premium ; filtre Premium ajouté aux catalogues.
+- Checkout Premium dédié avec `Idempotency-Key`, périodes chaînées et replays idempotents.
+- Droits cours/PDF temporaires avec `access_expires_at`; les achats à l'unité restent permanents.
+- Conversion propre d'un droit Premium en achat permanent sans perdre la progression.
+- Remboursement d'une période Premium avec révocation et recalage des périodes futures.
+- Dashboard étudiant avec statut Premium, échéance, navigation vers le catalogue et prolongation.
+- Cohortes live et mentorat volontairement exclus du pass Premium.
+- Migrations additives `accounts.0012`, `catalog.0008`, `payments.0016`, `enrollments.0008`.
+- Suite structurelle portée à 78 tests.
+
 # KalanPro v87 — Analytics produit & dashboard administrateur
 
+- Correctif runtime de clôture : le score d'entretien candidat est désormais calculé en arithmétique entière déterministe (pondérations 30/25/20/15/10) avec troncature des fractions, évitant le banker's rounding Python qui produisait 76 au lieu du score métier attendu 75 sur un total pondéré de 75,5.
 - Nouvelle app `apps.analytics` avec événements produit minimisés et indexés ; aucune donnée de recherche libre n'est persistée.
 - Tracking interne des pages, recherches, clics de découverte/recommandation et démarrage/fin de vidéo.
 - Routes sensibles exclues du tracking et query strings supprimées côté serveur ; identifiants de session hachés SHA-256.
@@ -1317,3 +1332,23 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Utilise désormais `python-decouple` (`config(..., cast=...)`) de façon cohérente avec le reste des settings.
 - Aucun changement de schéma ou de données.
 
+
+
+### Correctifs runtime v87 après suite Docker complète (2026-09-06)
+- Corrige les actions IA candidat `save_candidate_interview_score_draft` / `save_candidate_followup_draft` et la scorecard recruteur : leur validation métier avait été placée par erreur dans `action_label()` puis tombait sur le garde-fou instructeur.
+- Les fixtures recruteur des tests utilisent désormais explicitement le rôle `employer`, conformément au contrôle de sécurité réel du Talent/ATS.
+- Isole le cache de throttling dans les tests d'inscription afin que les scénarios successifs ne se contaminent pas entre eux ; les limites de production restent inchangées.
+- Désactive `URL_FORMAT_OVERRIDE` de DRF afin que `?format=pdf` / `?format=docx` soit réservé aux exports métier au lieu d'être interprété comme négociation de renderer.
+- Rend les tests catalogue compatibles avec les domaines seedés par migration via `get_or_create`, sans modifier les données de production.
+- Corrige le verrou PostgreSQL lors du recrédit d'un pass mentorat : la relation nullable `mentorship_pass` n'est plus incluse dans un `FOR UPDATE` via outer join et est verrouillée séparément.
+- Corrige les fixtures de multipart direct (liste `parts` JSON valide) et de fichier de salle (signature PDF réelle), tout en conservant les validations serveur renforcées.
+- Renforce la clé JWT du Docker de développement (clé locale uniquement, >= 32 octets) pour supprimer `InsecureKeyLengthWarning`; une reconnexion peut être nécessaire après rebuild, sans impact sur les données.
+- Aucun changement de schéma ni nouvelle migration.
+
+### Correctif v87 — harness de tests Docker reproductible (2026-09-06)
+- Corrige les `ENOENT` de la suite frontend exécutée dans Docker : les tests ne résolvent plus `../backend`, `../.github` ou `../docker-compose*.yml` depuis `/app` vers la racine `/` du conteneur.
+- Ajoute `frontend/scripts/test-paths.mjs` pour distinguer explicitement la racine frontend et la racine du dépôt.
+- Le frontend Docker reçoit `KALANPRO_REPO_ROOT=/workspace` et uniquement les sources nécessaires aux tests sous `/workspace`, en lecture seule.
+- Évite volontairement le montage global `.:/workspace:ro` afin de ne pas exposer un éventuel `backend/.env` au processus Next de développement.
+- Les suites v79–v87 concernées utilisent désormais le resolver commun ; validation structurelle de référence : **71/71 tests réussis**.
+- Aucun changement métier, schéma ou donnée.

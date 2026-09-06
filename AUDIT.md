@@ -1,5 +1,6 @@
 # Audit v87 — Analytics produit & pilotage
 
+- Validation Docker utilisateur : `manage.py check` OK, `makemigrations --check --dry-run` = aucun changement ; le sous-ensemble `apps.accounts apps.assistant_ai apps.catalog apps.formations` est passé de 15 incidents à un seul échec de score (76 vs 75), corrigé par calcul pondéré entier déterministe dans `assistant_ai/tools.py`.
 - Les indicateurs financiers, pédagogiques et recrutement restent calculés depuis les tables métier : `ProductEvent` n'est jamais la source de vérité pour un paiement, une inscription ou une embauche.
 - Le collecteur refuse les événements inconnus, whiteliste les propriétés, supprime query strings et routes sensibles et hache les identifiants de session.
 - Les endpoints dashboard/export sont strictement admin ; l'ingestion publique est throttlée.
@@ -343,3 +344,10 @@ Le code financier dispose désormais d’un historique persistant de tentative/�
 - Contrôles hors Docker : 57/57 tests frontend statiques, audit mobile 129 fichiers, Python compilable, TS/TSX sans erreur de parsing, scan secrets/Compose/entrypoint OK, 73 migrations sans collision/cycle/dépendance manquante.
 - Les tests Django et le build Next complet restent à exécuter dans Docker/CI.
 
+
+
+## Validation runtime v87 — correction après retour Docker (2026-09-06)
+
+Le premier passage runtime utilisateur a confirmé `manage.py check`, `makemigrations --check --dry-run` et les 3 tests `apps.analytics`, mais la suite globale de 231 tests a révélé 6 échecs et 9 erreurs historiques/transverses. Les causes ont été corrigées sans affaiblir les contrôles production : isolation des throttles uniquement dans les tests, validation IA replacée dans `validate_write_tool`, fixtures seed/multipart/PDF mises en conformité, export métier `?format=` libéré de la négociation DRF et verrou mentorat nullable corrigé.
+
+Release gates disponibles dans cet environnement après correction : `compileall`/AST Python OK (268 fichiers), 71/71 tests frontend statiques OK, audit mobile 132 fichiers OK, scan secrets OK, Compose dev/prod YAML OK, entrypoint shell OK, 75 migrations et aucune dépendance locale manquante. Le typecheck/build Next complet et la suite Django doivent être rerun dans Docker avant de fermer v87.

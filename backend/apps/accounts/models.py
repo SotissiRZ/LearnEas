@@ -54,6 +54,8 @@ class PlatformSettings(models.Model):
     # Modèle économique / tarifs publics. Les montants sont stockés en EUR, devise
     # comptable de référence, puis convertis côté frontend via la devise choisie.
     pricing_enabled = models.BooleanField(default=True)
+    learner_premium_monthly_eur = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("9.99"))
+    learner_premium_enabled = models.BooleanField(default=True)
     instructor_pro_monthly_eur = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("15.09"))
     instructor_pro_commission_percent = models.PositiveSmallIntegerField(default=8)
     mentor_commission_percent = models.PositiveSmallIntegerField(default=15)

@@ -223,7 +223,7 @@ def confirm_booking(booking: MentorshipBooking) -> MentorshipBooking:
 
 @transaction.atomic
 def restore_pass_credit(booking: MentorshipBooking) -> bool:
-    booking = MentorshipBooking.objects.select_for_update().select_related("mentorship_pass").get(pk=booking.pk)
+    booking = MentorshipBooking.objects.select_for_update().get(pk=booking.pk)
     if not booking.mentorship_pass_id:
         return False
     pass_obj = MentorshipPass.objects.select_for_update().get(pk=booking.mentorship_pass_id)

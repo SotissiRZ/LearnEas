@@ -92,7 +92,7 @@ def revoke_order_entitlements(order: Order, *, actor=None, reason: str = "Comman
     """
     order = Order.objects.select_for_update().get(pk=order.pk)
     now = timezone.now()
-    revoked = {"courses": 0, "pdfs": 0, "formations": 0, "mentorships": 0, "mentorship_passes": 0, "certificates": 0, "employer_entitlements": 0}
+    revoked = {"courses": 0, "pdfs": 0, "formations": 0, "mentorships": 0, "mentorship_passes": 0, "certificates": 0, "employer_entitlements": 0, "learner_subscriptions": 0}
 
     freed_formation_ids = set()
     for item in order.items.select_related(
@@ -179,6 +179,11 @@ def revoke_order_entitlements(order: Order, *, actor=None, reason: str = "Comman
         from apps.opportunities.services import revoke_employer_entitlement
         if revoke_employer_entitlement(order, reason=reason):
             revoked["employer_entitlements"] = 1
+
+    if order.items.filter(item_type=OrderItem.ItemType.LEARNER_SUBSCRIPTION).exists():
+        from .subscriptions import revoke_learner_subscription
+        if revoke_learner_subscription(order, reason=reason):
+            revoked["learner_subscriptions"] = 1
 
     FormationSeatReservation.objects.filter(order=order).delete()
     for formation_id in freed_formation_ids:

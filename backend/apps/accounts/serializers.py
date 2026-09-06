@@ -244,7 +244,7 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "site_name", "support_email", "registration_enabled",
             "instructor_applications_enabled", "platform_commission_percent",
             "minimum_payout_amount",
-            "pricing_enabled", "instructor_pro_monthly_eur",
+            "pricing_enabled", "learner_premium_enabled", "learner_premium_monthly_eur", "instructor_pro_monthly_eur",
             "instructor_pro_commission_percent", "mentor_commission_percent",
             "employer_free_active_jobs", "employer_single_post_eur",
             "employer_pro_monthly_eur", "employer_pro_active_jobs",
@@ -294,7 +294,7 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
         for field in (
-            "instructor_pro_monthly_eur", "employer_single_post_eur",
+            "learner_premium_monthly_eur", "instructor_pro_monthly_eur", "employer_single_post_eur",
             "employer_pro_monthly_eur", "employer_business_monthly_eur",
         ):
             if field in attrs and attrs[field] < 0:

@@ -642,6 +642,8 @@ class PublicPlatformSettingsView(APIView):
             "registration_enabled": config.registration_enabled,
             "instructor_applications_enabled": config.instructor_applications_enabled,
             "pricing_enabled": config.pricing_enabled,
+            "learner_premium_enabled": config.learner_premium_enabled,
+            "learner_premium_monthly_eur": config.learner_premium_monthly_eur,
             "platform_commission_percent": config.platform_commission_percent,
             "instructor_pro_monthly_eur": config.instructor_pro_monthly_eur,
             "instructor_pro_commission_percent": config.instructor_pro_commission_percent,

@@ -92,6 +92,7 @@ class Course(models.Model):
 
     price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     is_free = models.BooleanField(default=False)
+    premium_included = models.BooleanField(default=False, db_index=True, help_text="Inclus dans le catalogue KalanPro Premium lorsqu’un pass apprenant est actif.")
     discount_price = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
 
     thumbnail = models.ImageField(upload_to="courses/thumbnails/", blank=True, null=True)
@@ -247,6 +248,7 @@ class PDFProduct(models.Model):
 
     price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     is_free = models.BooleanField(default=False)
+    premium_included = models.BooleanField(default=False, db_index=True, help_text="Inclus dans le catalogue KalanPro Premium lorsqu’un pass apprenant est actif.")
 
     cover_image = models.ImageField(upload_to="pdfs/covers/", blank=True, null=True)
     file = models.FileField(upload_to="pdfs/files/")

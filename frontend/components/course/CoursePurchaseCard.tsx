@@ -7,6 +7,7 @@ import { formatDuration } from "@/lib/api";
 import CurrencyPrice from "@/components/ui/CurrencyPrice";
 import { useAuthenticatedResource } from "@/hooks/useAuthenticatedResource";
 import { AddCourseToCartButton } from "@/components/course/AddToCartButtons";
+import PremiumAccessAction from "@/components/course/PremiumAccessAction";
 
 export default function CoursePurchaseCard({ initialCourse }: { initialCourse: Course }) {
   const course = useAuthenticatedResource<Course>(`/catalog/courses/${initialCourse.slug}/`, initialCourse);
@@ -38,7 +39,10 @@ export default function CoursePurchaseCard({ initialCourse }: { initialCourse: C
             <PlayCircle size={18} /> Continuer le cours
           </Link>
         ) : (
-          <AddCourseToCartButton course={course} />
+          <>
+            <AddCourseToCartButton course={course} />
+            <PremiumAccessAction kind="course" id={course.id} available={course.premium_included} destination={`/learn/${course.slug}`} />
+          </>
         )}
 
         <p className="mt-3 text-center text-xs text-gray-400">Accès complet à la playlist · garantie satisfait ou remboursé 14 jours</p>

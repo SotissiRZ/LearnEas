@@ -43,7 +43,7 @@ services:
     command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
     restart: unless-stopped
     environment:
-      SECRET_KEY: dev-secret-key
+      SECRET_KEY: dev-secret-key-kalanpro-local-only-2026
       DEBUG: "True"
       LOG_FORMAT: ${LOG_FORMAT:-console}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -150,7 +150,7 @@ services:
     command: ["celery", "-A", "learneas", "worker", "--loglevel=info", "-Q", "default,notifications"]
     restart: unless-stopped
     environment:
-      SECRET_KEY: dev-secret-key
+      SECRET_KEY: dev-secret-key-kalanpro-local-only-2026
       DEBUG: "True"
       SKIP_BOOTSTRAP: "true"
       DATABASE_URL: postgresql://learneas:learneas@db:5432/learneas
@@ -187,7 +187,7 @@ services:
     command: ["celery", "-A", "learneas", "worker", "--loglevel=info", "-Q", "media", "--concurrency=1", "--prefetch-multiplier=1"]
     restart: unless-stopped
     environment:
-      SECRET_KEY: dev-secret-key
+      SECRET_KEY: dev-secret-key-kalanpro-local-only-2026
       DEBUG: "True"
       SKIP_BOOTSTRAP: "true"
       DATABASE_URL: postgresql://learneas:learneas@db:5432/learneas
@@ -228,7 +228,7 @@ services:
     command: ["celery", "-A", "learneas", "beat", "--loglevel=info"]
     restart: unless-stopped
     environment:
-      SECRET_KEY: dev-secret-key
+      SECRET_KEY: dev-secret-key-kalanpro-local-only-2026
       DEBUG: "True"
       SKIP_BOOTSTRAP: "true"
       DATABASE_URL: postgresql://learneas:learneas@db:5432/learneas
@@ -277,8 +277,19 @@ services:
       # Comme en production : côté serveur (SSR), "localhost" désignerait ce conteneur
       # lui-même. On utilise le nom du service Docker pour joindre le backend en interne.
       INTERNAL_API_URL: http://backend:8000/api
+      # Racine logique utilisée par les tests structurels. Seuls les chemins
+      # nécessaires sont montés en lecture seule (pas de backend/.env ni de secrets).
+      KALANPRO_REPO_ROOT: /workspace
     volumes:
       - ./frontend:/app
+      - ./backend/apps:/workspace/backend/apps:ro
+      - ./backend/learneas:/workspace/backend/learneas:ro
+      - ./backend/Dockerfile:/workspace/backend/Dockerfile:ro
+      - ./docker:/workspace/docker:ro
+      - ./.github:/workspace/.github:ro
+      - ./.gitignore:/workspace/.gitignore:ro
+      - ./docker-compose.dev.yml:/workspace/docker-compose.dev.yml:ro
+      - ./docker-compose.yml:/workspace/docker-compose.yml:ro
       - frontend_node_modules:/app/node_modules
       # Isole les artefacts Next du bind-mount Windows. Le build de validation utilise
       # un autre distDir et ne peut donc plus corrompre le serveur `next dev`.

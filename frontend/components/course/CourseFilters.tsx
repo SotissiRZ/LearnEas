@@ -62,14 +62,14 @@ export default function CourseFilters({
 
   function clearAll() {
     const params = new URLSearchParams(searchParams.toString());
-    ["domain", "category", "level", "is_free", "ordering", "page"].forEach((key) => params.delete(key));
+    ["domain", "category", "level", "is_free", "premium_included", "ordering", "page"].forEach((key) => params.delete(key));
     navigate(params);
   }
 
   const visibleCategories = current.domain
     ? categories.filter((category) => category.domain?.slug === current.domain)
     : categories;
-  const hasFilters = Boolean(current.domain || current.category || current.level || current.is_free || current.ordering);
+  const hasFilters = Boolean(current.domain || current.category || current.level || current.is_free || current.premium_included || current.ordering);
 
   return (
     <div className="flex flex-col gap-6 text-sm">
@@ -142,6 +142,18 @@ export default function CourseFilters({
           </label>
         </div>
       )}
+
+      <div>
+        <p className="mb-2 font-semibold text-gray-700">KalanPro Premium</p>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={current.premium_included === "true"}
+            onChange={(e) => update("premium_included", e.target.checked ? "true" : "")}
+          />
+          Inclus dans Premium
+        </label>
+      </div>
 
       {showSort && (
         <div>

@@ -1,16 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFrontend, readRepo } from "./test-paths.mjs";
 
-const root = new URL("../../", import.meta.url);
-const read = (path) => readFileSync(new URL(path, root), "utf8");
-
-const models = read("backend/apps/opportunities/models.py");
-const services = read("backend/apps/opportunities/services.py");
-const views = read("backend/apps/opportunities/views.py");
-const tasks = read("backend/apps/notifications/tasks.py");
-const dashboard = read("frontend/app/dashboard/employer/page.tsx");
-const company = read("frontend/app/companies/[slug]/page.tsx");
+const models = readRepo("backend/apps/opportunities/models.py");
+const services = readRepo("backend/apps/opportunities/services.py");
+const views = readRepo("backend/apps/opportunities/views.py");
+const tasks = readRepo("backend/apps/notifications/tasks.py");
+const dashboard = readFrontend("app/dashboard/employer/page.tsx");
+const company = readFrontend("app/companies/[slug]/page.tsx");
 
 test("v85 matching talent est explicable et rattache a une offre du recruteur", () => {
   assert.match(services, /def match_opportunity_breakdown/);
@@ -43,8 +40,8 @@ test("v85 ATS permet un deplacement drag and drop tout en gardant la validation 
 });
 
 test("v85 justificatifs entreprise restent hors des medias publics", () => {
-  const nginx = read("docker/nginx/nginx.conf");
-  const admin = read("backend/apps/opportunities/admin.py");
+  const nginx = readRepo("docker/nginx/nginx.conf");
+  const admin = readRepo("backend/apps/opportunities/admin.py");
   assert.match(nginx, /\/media\/employers\/verification\//);
   assert.match(admin, /sign_private_media_name/);
   assert.match(admin, /verification_document_secure/);

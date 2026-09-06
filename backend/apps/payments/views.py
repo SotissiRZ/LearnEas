@@ -331,13 +331,19 @@ class CheckoutView(APIView):
         data = serializer.validated_data
         user = request.user
         employer_product = str(data.get("employer_product") or "").strip()
+        learner_product = str(data.get("learner_product") or "").strip()
         idempotency_key = str(request.headers.get("Idempotency-Key") or "").strip()
         if len(idempotency_key) > 128 or any(ord(ch) < 33 or ord(ch) > 126 for ch in idempotency_key):
             return Response({"detail": "Clé d'idempotence invalide."}, status=400)
-        if employer_product and not idempotency_key:
+        if (employer_product or learner_product) and not idempotency_key:
             return Response(
-                {"detail": "Une clé d'idempotence est obligatoire pour tout achat recruteur."},
+                {"detail": "Une clé d'idempotence est obligatoire pour tout abonnement ou achat recruteur."},
                 status=400,
+            )
+        if learner_product and user.role != "student":
+            return Response(
+                {"detail": "KalanPro Premium apprenant est réservé aux comptes étudiants."},
+                status=403,
             )
         if employer_product:
             from apps.opportunities.models import EmployerProfile
@@ -384,9 +390,10 @@ class CheckoutView(APIView):
         formations = []
         mentorship_bookings = []
         mentorship_packs = []
-        if not employer_product:
-            owned_course_ids = set(CourseEnrollment.objects.filter(user=user).values_list("course_id", flat=True))
-            owned_pdf_ids = set(PDFPurchase.objects.filter(user=user).values_list("pdf_product_id", flat=True))
+        if not employer_product and not learner_product:
+            # Les droits Premium temporaires ne bloquent jamais un achat définitif du contenu.
+            owned_course_ids = set(CourseEnrollment.objects.filter(user=user, access_expires_at__isnull=True).values_list("course_id", flat=True))
+            owned_pdf_ids = set(PDFPurchase.objects.filter(user=user, access_expires_at__isnull=True).values_list("pdf_product_id", flat=True))
             owned_formation_ids = set(FormationEnrollment.objects.filter(user=user).values_list("formation_id", flat=True))
             courses = list(Course.objects.filter(id__in=[pk for pk in data["course_ids"] if pk not in owned_course_ids], published=True).select_related("instructor"))
             pdfs = list(PDFProduct.objects.filter(id__in=[pk for pk in data["pdf_ids"] if pk not in owned_pdf_ids], published=True).select_related("instructor"))
@@ -406,7 +413,7 @@ class CheckoutView(APIView):
                 published=True,
                 offering__published=True,
             ).select_related("offering", "offering__instructor"))
-        if not employer_product and not courses and not pdfs and not formations and not mentorship_bookings and not mentorship_packs:
+        if not employer_product and not learner_product and not courses and not pdfs and not formations and not mentorship_bookings and not mentorship_packs:
             return Response({"detail": "Tous les éléments du panier sont déjà acquis, expirés ou indisponibles."}, status=400)
 
         now = timezone.now()
@@ -441,6 +448,11 @@ class CheckoutView(APIView):
                 "business": pricing.employer_business_monthly_eur,
             }
             base_total = Decimal(employer_prices[employer_product])
+        elif learner_product:
+            pricing = PlatformSettings.load()
+            if not pricing.learner_premium_enabled:
+                return Response({"detail": "KalanPro Premium est temporairement indisponible."}, status=409)
+            base_total = Decimal(pricing.learner_premium_monthly_eur)
         else:
             base_total = sum((Decimal("0") if c.is_free else (c.discount_price if c.discount_price is not None else c.price) for c in courses), Decimal("0"))
             base_total += sum((Decimal("0") if item.is_free else item.price for item in pdfs), Decimal("0"))
@@ -531,6 +543,15 @@ class CheckoutView(APIView):
                 order=order,
                 item_type=OrderItem.ItemType.EMPLOYER,
                 entitlement_code=employer_product,
+                unit_price=base_total,
+                platform_fee_amount=base_total,
+                instructor_earning_amount=Decimal("0"),
+            )
+        if learner_product:
+            OrderItem.objects.create(
+                order=order,
+                item_type=OrderItem.ItemType.LEARNER_SUBSCRIPTION,
+                entitlement_code=learner_product,
                 unit_price=base_total,
                 platform_fee_amount=base_total,
                 instructor_earning_amount=Decimal("0"),
@@ -637,16 +658,24 @@ class CheckoutView(APIView):
                 if item.entitlement_code not in EmployerEntitlement.Kind.values:
                     raise ValueError("Produit recruteur invalide sur la commande.")
                 activate_employer_entitlement(order, kind=item.entitlement_code)
+            if item.item_type == OrderItem.ItemType.LEARNER_SUBSCRIPTION:
+                if item.entitlement_code != "premium":
+                    raise ValueError("Produit apprenant invalide sur la commande.")
+                from .subscriptions import activate_learner_subscription
+                activate_learner_subscription(order)
             if item.course:
                 enrollment, created = CourseEnrollment.all_objects.get_or_create(
                     user=order.user, course=item.course, defaults={"source_order": order}
                 )
-                if not created and enrollment.revoked_at is not None:
+                if not created and (enrollment.revoked_at is not None or enrollment.source_subscription_id or enrollment.access_expires_at):
+                    # Un achat à l'unité convertit proprement un accès Premium temporaire en droit permanent.
                     enrollment.revoked_at = None
                     enrollment.revocation_reason = ""
                     enrollment.source_order = order
+                    enrollment.source_subscription = None
+                    enrollment.access_expires_at = None
                     enrollment.certificate_issued = False
-                    enrollment.save(update_fields=["revoked_at", "revocation_reason", "source_order", "certificate_issued"])
+                    enrollment.save(update_fields=["revoked_at", "revocation_reason", "source_order", "source_subscription", "access_expires_at", "certificate_issued"])
                 elif not created and enrollment.source_order_id is None:
                     # Réparation d'un ancien droit créé avant le rattachement aux commandes.
                     enrollment.source_order = order
@@ -659,11 +688,13 @@ class CheckoutView(APIView):
                     user=order.user, pdf_product=item.pdf_product, defaults={"source_order": order}
                 )
                 reactivated = False
-                if not created and purchase.revoked_at is not None:
+                if not created and (purchase.revoked_at is not None or purchase.source_subscription_id or purchase.access_expires_at):
                     purchase.revoked_at = None
                     purchase.revocation_reason = ""
                     purchase.source_order = order
-                    purchase.save(update_fields=["revoked_at", "revocation_reason", "source_order"])
+                    purchase.source_subscription = None
+                    purchase.access_expires_at = None
+                    purchase.save(update_fields=["revoked_at", "revocation_reason", "source_order", "source_subscription", "access_expires_at"])
                     reactivated = True
                 elif not created and purchase.source_order_id is None:
                     purchase.source_order = order
@@ -741,6 +772,41 @@ class CheckoutView(APIView):
             except Exception:
                 logger.exception("Impossible de planifier la notification WhatsApp de la commande %s", order.id)
         return order
+
+
+class PremiumAccessView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [CheckoutRateThrottle]
+
+    def get(self, request):
+        from .subscriptions import premium_status
+        return Response(premium_status(request.user))
+
+    def post(self, request):
+        from .subscriptions import claim_premium_course, claim_premium_pdf, premium_status
+        course_id = request.data.get("course_id")
+        pdf_id = request.data.get("pdf_id")
+        if bool(course_id) == bool(pdf_id):
+            return Response({"detail": "Choisissez exactement un cours ou un PDF Premium."}, status=400)
+        try:
+            if course_id:
+                obj, created = claim_premium_course(request.user, int(course_id))
+                kind = "course"
+            else:
+                obj, created = claim_premium_pdf(request.user, int(pdf_id))
+                kind = "pdf"
+        except (TypeError, ValueError):
+            return Response({"detail": "Identifiant de contenu invalide."}, status=400)
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=403)
+        except LookupError as exc:
+            return Response({"detail": str(exc)}, status=404)
+        return Response({
+            "kind": kind,
+            "entitlement_id": obj.id,
+            "created": created,
+            **premium_status(request.user),
+        }, status=201 if created else 200)
 
 
 class ConfirmPaymentView(APIView):

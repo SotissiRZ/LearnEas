@@ -28,6 +28,9 @@ export default function CourseCard({ course }: { course: Course }) {
         {course.discount_price && (
           <span className="badge absolute right-3 top-3 bg-rose-600 text-white">Promo</span>
         )}
+        {course.premium_included && !course.is_free && !course.discount_price && (
+          <span className="badge absolute right-3 top-3 bg-violet-600 text-white">Premium</span>
+        )}
       </div>
 
       <div className="flex flex-1 flex-col gap-1.5 p-3.5 sm:p-4">

@@ -21,6 +21,7 @@ class PlatformSettingsAdmin(admin.ModelAdmin):
         ("Finance", {"fields": ("platform_commission_percent", "minimum_payout_amount")}),
         ("Tarifs & modèle économique", {"fields": (
             "pricing_enabled",
+            "learner_premium_enabled", "learner_premium_monthly_eur",
             "instructor_pro_monthly_eur", "instructor_pro_commission_percent",
             "mentor_commission_percent",
             "employer_free_active_jobs", "employer_single_post_eur",

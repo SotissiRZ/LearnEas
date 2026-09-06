@@ -205,7 +205,7 @@ class CourseListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "title", "slug", "subtitle", "category", "instructor",
             "level", "language", "price", "discount_price", "effective_price",
-            "is_free", "thumbnail", "total_duration_minutes", "total_hours",
+            "is_free", "premium_included", "thumbnail", "total_duration_minutes", "total_hours",
             "total_lessons", "students_count", "rating_avg", "rating_count",
             "featured", "published", "created_at",
         ]
@@ -268,7 +268,7 @@ class CourseWriteSerializer(serializers.ModelSerializer):
             "id", "category", "title", "subtitle", "description",
             "what_you_will_learn", "requirements", "target_audience",
             "level", "language", "price", "is_free", "discount_price",
-            "thumbnail", "promo_video_url", "published", "featured", "slug",
+            "thumbnail", "promo_video_url", "published", "featured", "premium_included", "slug",
             "certificate_enabled", "certificate_auto_issue", "certificate_threshold_percent",
             "certificate_validity_months", "certificate_title", "certificate_subtitle",
             "certificate_description", "certificate_signatory_name", "certificate_signatory_title",
@@ -297,6 +297,7 @@ class CourseWriteSerializer(serializers.ModelSerializer):
         # néanmoins envoyer `featured=false` avec un formulaire générique : on l'ignore.
         if request and request.user.role != "admin":
             attrs.pop("featured", None)
+            attrs.pop("premium_included", None)
         return attrs
 
     def validate_certificate_threshold_percent(self, value):
@@ -470,7 +471,7 @@ class PDFProductListSerializer(serializers.ModelSerializer):
         model = PDFProduct
         fields = [
             "id", "title", "slug", "category", "instructor", "level", "language",
-            "price", "is_free", "cover_image", "page_count", "downloads_count",
+            "price", "is_free", "premium_included", "cover_image", "page_count", "downloads_count",
             "rating_avg", "rating_count", "featured", "published", "created_at",
         ]
 
@@ -506,7 +507,7 @@ class PDFProductWriteSerializer(serializers.ModelSerializer):
         fields = [
             "id", "category", "title", "description", "level", "language",
             "price", "is_free", "cover_image", "file", "preview_file",
-            "page_count", "published", "featured", "slug",
+            "page_count", "published", "featured", "premium_included", "slug",
         ]
         read_only_fields = ["id", "slug", "page_count"]
 
@@ -528,6 +529,7 @@ class PDFProductWriteSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if request and request.user.role != "admin":
             attrs.pop("featured", None)
+            attrs.pop("premium_included", None)
         return attrs
 
     def create(self, validated_data):

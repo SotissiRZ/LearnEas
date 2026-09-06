@@ -1,10 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-
-const root = process.cwd();
-const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+import { readLegacyRelative as read } from "./test-paths.mjs";
 
 test("assistant IA lourd charge uniquement a la demande", () => {
   const layout = read("app/layout.tsx");
@@ -32,10 +28,15 @@ test("requêtes API interactives ont timeout et deduplication GET", () => {
   assert.match(api, /get: <T>\(path: string\) => dedupedGet<T>\(path\)/);
 });
 
-test("docker dev utilise API same-origin", () => {
+test("docker dev utilise API same-origin et expose le depot aux tests structurels", () => {
   const compose = read("../docker-compose.dev.yml");
   assert.match(compose, /NEXT_PUBLIC_API_URL: \/api/);
   assert.match(compose, /API_PROXY_TARGET: http:\/\/backend:8000/);
+  assert.match(compose, /KALANPRO_REPO_ROOT: \/workspace/);
+  assert.match(compose, /backend\/apps:\/workspace\/backend\/apps:ro/);
+  assert.match(compose, /backend\/learneas:\/workspace\/backend\/learneas:ro/);
+  assert.match(compose, /docker-compose\.dev\.yml:\/workspace\/docker-compose\.dev\.yml:ro/);
+  assert.doesNotMatch(compose, /- \.\:\/workspace:ro/);
 });
 
 

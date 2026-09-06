@@ -200,7 +200,7 @@ class CatalogAccessRegressionTests(APITestCase):
                 "object_key": object_key,
                 "upload_id": "upload-123",
                 "expected_size": "1234",
-                "parts": '[{"PartNumber":1,"ETag":"\"etag\""}]',
+                "parts": '[{"PartNumber":1,"ETag":"etag"}]',
             },
             format="multipart",
         )
@@ -528,8 +528,14 @@ class CatalogDomainFilterTests(APITestCase):
         self.instructor = User.objects.create_user(
             username="domaintrainer", email="domaintrainer@example.com", password="passpass123", role=User.Role.INSTRUCTOR
         )
-        self.tech = Domain.objects.create(name="Technologie & Numérique", slug="technologie-numerique", order=10)
-        self.design = Domain.objects.create(name="Design & Création", slug="design-creation", order=20)
+        self.tech, _ = Domain.objects.get_or_create(
+            name="Technologie & Numérique",
+            defaults={"slug": "technologie-numerique", "order": 10},
+        )
+        self.design, _ = Domain.objects.get_or_create(
+            name="Design & Création",
+            defaults={"slug": "design-creation", "order": 20},
+        )
         self.web = Category.objects.create(name="Développement Web Domain", domain=self.tech)
         self.ui = Category.objects.create(name="Design UI Domain", domain=self.design)
         self.course_web = Course.objects.create(

@@ -44,6 +44,7 @@ export interface Course {
   discount_price: string | null;
   effective_price: number;
   is_free: boolean;
+  premium_included?: boolean;
   thumbnail: string | null;
   total_duration_minutes: number;
   total_hours: number;
@@ -134,6 +135,7 @@ export interface PDFProduct {
   language: string;
   price: string;
   is_free: boolean;
+  premium_included?: boolean;
   cover_image: string | null;
   page_count: number;
   downloads_count: number;
@@ -183,6 +185,7 @@ export interface CourseEnrollment {
   id: number;
   course: Course;
   purchased_at: string;
+  access_expires_at?: string | null;
   progress_percent: number;
   completed: boolean;
   certificate_issued: boolean;

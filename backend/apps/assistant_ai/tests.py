@@ -279,7 +279,7 @@ class AssistantAITests(TestCase):
         from apps.opportunities.services import build_application_snapshot
         from .models import AIMessage
         from .tools import create_action_proposal
-        recruiter = User.objects.create_user(username="recruiter-ai", email="recruiter-ai@example.com", password="pass1234")
+        recruiter = User.objects.create_user(username="recruiter-ai", email="recruiter-ai@example.com", password="pass1234", role=User.Role.EMPLOYER)
         employer = EmployerProfile.objects.create(user=recruiter, company_name="Talent K", country="Maroc", status=EmployerProfile.Status.APPROVED)
         opportunity = Opportunity.objects.create(employer=employer, title="Analyste", description="Analyse de données", status=Opportunity.Status.PUBLISHED)
         snapshot = build_application_snapshot(self.student, opportunity, share_portfolio=False)
@@ -510,7 +510,7 @@ class AssistantAITests(TestCase):
         from apps.opportunities.services import build_application_snapshot
         from .models import AIMessage, AIDraft
         from .tools import create_action_proposal
-        recruiter = User.objects.create_user(username="scorecard-recruiter", email="scorecard-recruiter@example.com", password="pass1234")
+        recruiter = User.objects.create_user(username="scorecard-recruiter", email="scorecard-recruiter@example.com", password="pass1234", role=User.Role.EMPLOYER)
         employer = EmployerProfile.objects.create(user=recruiter, company_name="Scorecard K", country="Côte d'Ivoire", status=EmployerProfile.Status.APPROVED)
         opportunity = Opportunity.objects.create(employer=employer, title="Ingénieur API", description="Python", status=Opportunity.Status.PUBLISHED)
         snapshot = build_application_snapshot(self.student, opportunity, share_portfolio=False)
