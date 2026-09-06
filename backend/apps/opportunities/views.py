@@ -14,17 +14,18 @@ from rest_framework.response import Response
 
 from .models import (
     EmployerProfile, CandidateProfile, Opportunity, OpportunityApplication, TalentBookmark,
-    TalentAccessLog, EmployerEntitlement, ApplicationHistoryEvent, RecruitmentInterview, EmploymentOffer,
+    TalentAccessLog, EmployerEntitlement, ApplicationHistoryEvent, RecruitmentInterview, EmploymentOffer, SavedTalentSearch,
 )
 from .serializers import (
     EmployerPublicSerializer, EmployerProfileSerializer, CandidateProfileSerializer, OpportunitySerializer,
     OpportunityApplicationSerializer, ApplicationReviewSerializer, TalentSerializer, TalentBookmarkSerializer,
     TalentAccessLogSerializer, EmployerEntitlementSerializer, ApplicationHistoryEventSerializer,
-    RecruitmentInterviewSerializer, EmploymentOfferSerializer,
+    RecruitmentInterviewSerializer, EmploymentOfferSerializer, SavedTalentSearchSerializer,
 )
 from .services import (
     employer_has_talent_pool_access, employer_active_job_limit, current_employer_plan,
     active_employer_entitlements, claim_publication_right, record_application_event,
+    match_opportunity_breakdown, apply_talent_search_filters,
 )
 from apps.notifications.models import InAppNotification
 from apps.notifications.services import queue_recruitment_update
@@ -52,6 +53,28 @@ class EmployerProfileViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     http_method_names = ["get", "post", "patch", "head", "options"]
 
+    @staticmethod
+    def _verification_reset_for_changes(instance, validated_data, *, is_admin=False):
+        if is_admin:
+            return {}
+        identity_fields = {
+            "company_name", "country", "legal_name", "registration_number",
+            "registration_country", "verification_document",
+        }
+        changed = any(
+            field in validated_data and validated_data[field] != getattr(instance, field)
+            for field in identity_fields
+        )
+        if not changed:
+            return {}
+        return {
+            "verification_status": EmployerProfile.VerificationStatus.UNVERIFIED,
+            "verification_note": "",
+            "verification_submitted_at": None,
+            "identity_verified_at": None,
+            "identity_verified_by": None,
+        }
+
     def get_queryset(self):
         if self.request.user.role == "admin":
             return EmployerProfile.objects.select_related("user", "reviewed_by").all()
@@ -76,7 +99,13 @@ class EmployerProfileViewSet(viewsets.ModelViewSet):
                 return Response({"detail": "Une demande recruteur est déjà en attente."}, status=409)
             serializer = self.get_serializer(existing, data=request.data, partial=True)
             serializer.is_valid(raise_exception=True)
-            instance = serializer.save(status=EmployerProfile.Status.PENDING, review_note="", reviewed_by=None, reviewed_at=None)
+            verification_reset = self._verification_reset_for_changes(
+                existing, serializer.validated_data, is_admin=request.user.role == "admin"
+            )
+            instance = serializer.save(
+                status=EmployerProfile.Status.PENDING, review_note="", reviewed_by=None, reviewed_at=None,
+                **verification_reset,
+            )
             return Response(self.get_serializer(instance).data)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -90,12 +119,15 @@ class EmployerProfileViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        sensitive_fields = {"company_name", "country"}
         identity_changed = any(
             field in serializer.validated_data
             and serializer.validated_data[field] != getattr(instance, field)
-            for field in sensitive_fields
+            for field in {"company_name", "country"}
         )
+        verification_reset = self._verification_reset_for_changes(
+            instance, serializer.validated_data, is_admin=request.user.role == "admin"
+        )
+
         if request.user.role != "admin" and instance.status == EmployerProfile.Status.REJECTED:
             # Une entreprise refusée peut corriger son dossier puis le renvoyer.
             serializer.save(
@@ -103,6 +135,7 @@ class EmployerProfileViewSet(viewsets.ModelViewSet):
                 review_note="",
                 reviewed_by=None,
                 reviewed_at=None,
+                **verification_reset,
             )
         elif request.user.role != "admin" and instance.status == EmployerProfile.Status.APPROVED and identity_changed:
             # Un recruteur approuvé ne peut pas remplacer son identité par celle d'une autre
@@ -113,9 +146,10 @@ class EmployerProfileViewSet(viewsets.ModelViewSet):
                 review_note="",
                 reviewed_by=None,
                 reviewed_at=None,
+                **verification_reset,
             )
         else:
-            serializer.save()
+            serializer.save(**verification_reset)
         return Response(serializer.data)
 
     @action(detail=True, methods=["post"])
@@ -153,6 +187,57 @@ class EmployerProfileViewSet(viewsets.ModelViewSet):
         profile.reviewed_at = timezone.now()
         profile.save(update_fields=["status", "review_note", "reviewed_by", "reviewed_at", "updated_at"])
         Opportunity.objects.filter(employer=profile, status=Opportunity.Status.PUBLISHED).update(status=Opportunity.Status.CLOSED)
+        return Response(self.get_serializer(profile).data)
+
+
+    @action(detail=True, methods=["post"], url_path="submit-verification")
+    def submit_verification(self, request, pk=None):
+        profile = self.get_object()
+        if request.user.role != "admin" and profile.user_id != request.user.id:
+            return Response({"detail": "Accès refusé."}, status=403)
+        if not profile.legal_name or not profile.registration_number or not profile.registration_country or not profile.verification_document:
+            return Response({
+                "detail": "Renseignez la raison sociale, le numéro d'immatriculation, le pays et un justificatif avant l'envoi."
+            }, status=400)
+        profile.verification_status = EmployerProfile.VerificationStatus.PENDING
+        profile.verification_note = ""
+        profile.verification_submitted_at = timezone.now()
+        profile.identity_verified_at = None
+        profile.identity_verified_by = None
+        profile.save(update_fields=[
+            "verification_status", "verification_note", "verification_submitted_at",
+            "identity_verified_at", "identity_verified_by", "updated_at",
+        ])
+        return Response(self.get_serializer(profile).data)
+
+    @action(detail=True, methods=["post"], url_path="verify-identity")
+    def verify_identity(self, request, pk=None):
+        if request.user.role != "admin":
+            return Response({"detail": "Administrateur requis."}, status=403)
+        profile = self.get_object()
+        if not profile.legal_name or not profile.registration_number or not profile.registration_country or not profile.verification_document:
+            return Response({"detail": "Le dossier légal est incomplet et ne peut pas être vérifié."}, status=400)
+        profile.verification_status = EmployerProfile.VerificationStatus.VERIFIED
+        profile.verification_note = str(request.data.get("verification_note") or "").strip()
+        profile.identity_verified_at = timezone.now()
+        profile.identity_verified_by = request.user
+        profile.save(update_fields=[
+            "verification_status", "verification_note", "identity_verified_at", "identity_verified_by", "updated_at"
+        ])
+        return Response(self.get_serializer(profile).data)
+
+    @action(detail=True, methods=["post"], url_path="reject-identity")
+    def reject_identity(self, request, pk=None):
+        if request.user.role != "admin":
+            return Response({"detail": "Administrateur requis."}, status=403)
+        profile = self.get_object()
+        profile.verification_status = EmployerProfile.VerificationStatus.REJECTED
+        profile.verification_note = str(request.data.get("verification_note") or "").strip()
+        profile.identity_verified_at = None
+        profile.identity_verified_by = None
+        profile.save(update_fields=[
+            "verification_status", "verification_note", "identity_verified_at", "identity_verified_by", "updated_at"
+        ])
         return Response(self.get_serializer(profile).data)
 
 
@@ -743,8 +828,34 @@ class TalentViewSet(viewsets.ReadOnlyModelViewSet):
         return employer
 
     def list(self, request, *args, **kwargs):
-        if request.user.role != "admin" and not self._paid_employer():
+        employer = None if request.user.role == "admin" else self._paid_employer()
+        if request.user.role != "admin" and not employer:
             return Response({"detail": "Le vivier de talents est réservé aux plans recruteur Pro et Business."}, status=403)
+        opportunity = None
+        opportunity_id = str(request.query_params.get("opportunity") or "").strip()
+        if opportunity_id.isdigit():
+            opportunity_qs = Opportunity.objects.select_related("employer").filter(pk=int(opportunity_id))
+            if request.user.role != "admin":
+                opportunity_qs = opportunity_qs.filter(employer=employer)
+            opportunity = opportunity_qs.first()
+            if not opportunity:
+                return Response({"detail": "Opportunité de matching introuvable."}, status=404)
+
+        qs = self.filter_queryset(self.get_queryset())
+        if opportunity:
+            rows = list(qs[:500])
+            scored = []
+            minimum = str(request.query_params.get("min_match_score") or "0").strip()
+            minimum = int(minimum) if minimum.isdigit() else 0
+            for talent in rows:
+                breakdown = match_opportunity_breakdown(opportunity, talent.user, profile=talent)
+                if breakdown["total"] >= minimum:
+                    scored.append((breakdown["total"], talent))
+            scored.sort(key=lambda pair: (pair[0], pair[1].updated_at), reverse=True)
+            page = self.paginate_queryset([talent for _score, talent in scored])
+            context = {**self.get_serializer_context(), "match_opportunity": opportunity}
+            serializer = self.get_serializer(page if page is not None else [talent for _score, talent in scored], many=True, context=context)
+            return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
         return super().list(request, *args, **kwargs)
 
     def retrieve(self, request, *args, **kwargs):
@@ -770,16 +881,13 @@ class TalentViewSet(viewsets.ReadOnlyModelViewSet):
         if not allowed:
             return CandidateProfile.objects.none()
         qs = CandidateProfile.objects.select_related("user").filter(is_searchable=True)
-        country = str(self.request.query_params.get("country") or "").strip()
-        availability = str(self.request.query_params.get("availability") or "").strip()
-        min_experience = str(self.request.query_params.get("min_experience") or "").strip()
-        if country:
-            qs = qs.filter(user__country=country)
-        if availability:
-            qs = qs.filter(availability=availability)
-        if min_experience.isdigit():
-            qs = qs.filter(years_experience__gte=int(min_experience))
-        return qs
+        return apply_talent_search_filters(
+            qs,
+            search_text=self.request.query_params.get("search") or "",
+            country=self.request.query_params.get("country") or "",
+            availability=self.request.query_params.get("availability") or "",
+            min_experience=self.request.query_params.get("min_experience") or 0,
+        )
 
 
 class TalentBookmarkViewSet(viewsets.ModelViewSet):
@@ -834,3 +942,40 @@ class TalentBookmarkViewSet(viewsets.ModelViewSet):
             from rest_framework.exceptions import ValidationError
             raise ValidationError({"talent": "Ce talent est déjà présent dans vos favoris."})
         serializer.save(employer=employer, talent=talent)
+
+class SavedTalentSearchViewSet(viewsets.ModelViewSet):
+    serializer_class = SavedTalentSearchSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def _employer(self):
+        employer = approved_employer_for(self.request.user)
+        if not employer or not employer_has_talent_pool_access(employer):
+            return None
+        return employer
+
+    def get_queryset(self):
+        employer = self._employer()
+        if not employer:
+            return SavedTalentSearch.objects.none()
+        return SavedTalentSearch.objects.select_related("opportunity").filter(employer=employer)
+
+    def list(self, request, *args, **kwargs):
+        if not self._employer():
+            return Response({"detail": "Les recherches sauvegardées sont réservées aux plans recruteur Pro et Business."}, status=403)
+        return super().list(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        employer = self._employer()
+        if not employer:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Un plan recruteur Pro ou Business est requis.")
+        serializer.save(employer=employer, last_checked_at=timezone.now())
+
+    def perform_update(self, serializer):
+        employer = self._employer()
+        if not employer:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Un plan recruteur Pro ou Business est requis.")
+        serializer.save(employer=employer)
+

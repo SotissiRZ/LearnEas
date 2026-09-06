@@ -20,6 +20,14 @@ export type EmployerProfile = {
   hiring_regions?: string[];
   country?: string;
   city?: string;
+  legal_name?: string;
+  registration_number?: string;
+  registration_country?: string;
+  verification_status?: "unverified" | "pending" | "verified" | "rejected";
+  verification_note?: string;
+  verification_submitted_at?: string | null;
+  identity_verified_at?: string | null;
+  is_identity_verified?: boolean;
   open_opportunities_count?: number;
   status: EmployerStatus;
   review_note?: string;
@@ -142,6 +150,32 @@ export type Talent = {
   availability: string;
   years_experience: number;
   portfolio_slug: string;
+  match_score?: number | null;
+  match_breakdown?: {
+    total: number;
+    components: Record<string, number>;
+    matched_required_skills: string[];
+    missing_required_skills: string[];
+    matched_optional_skills: string[];
+    strengths: string[];
+  } | null;
+  updated_at: string;
+};
+
+export type SavedTalentSearch = {
+  id: number;
+  name: string;
+  search_text: string;
+  country: string;
+  availability: string;
+  min_experience: number;
+  opportunity: number | null;
+  opportunity_title: string;
+  min_match_score: number;
+  alerts_enabled: boolean;
+  last_checked_at: string | null;
+  last_match_count: number;
+  created_at: string;
   updated_at: string;
 };
 

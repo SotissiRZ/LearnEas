@@ -226,3 +226,87 @@ def dispatch_recruitment_interview_reminders():
         )
         count += sum(int(v is not None) for v in result.values())
     return count
+
+
+@shared_task
+def dispatch_saved_talent_search_alerts():
+    """Alerte les recruteurs Pro/Business lorsqu'un talent visible correspond à une recherche sauvegardée."""
+    from apps.opportunities.models import CandidateProfile, EmployerProfile, SavedTalentSearch
+    from apps.opportunities.services import (
+        apply_talent_search_filters,
+        employer_has_talent_pool_access,
+        match_opportunity_breakdown,
+    )
+
+    now = timezone.now()
+    searches = SavedTalentSearch.objects.filter(
+        alerts_enabled=True,
+        employer__status=EmployerProfile.Status.APPROVED,
+    ).select_related("employer__user", "opportunity")[:500]
+    notified = 0
+    for saved in searches:
+        employer = saved.employer
+        if not employer_has_talent_pool_access(employer, now=now):
+            continue
+        since = saved.last_checked_at or saved.created_at
+        cursor_id = int(saved.last_checked_candidate_id or 0)
+        qs = CandidateProfile.objects.select_related("user").filter(
+            is_searchable=True,
+            updated_at__lte=now,
+        ).filter(
+            Q(updated_at__gt=since) | Q(updated_at=since, id__gt=cursor_id)
+        )
+        qs = apply_talent_search_filters(
+            qs,
+            search_text=saved.search_text,
+            country=saved.country,
+            availability=saved.availability,
+            min_experience=saved.min_experience,
+        )
+        matches = []
+        last_processed = None
+        # Curseur composite (updated_at, id) : aucun talent n'est perdu lorsque plusieurs
+        # profils partagent exactement le même timestamp ou lorsqu'un lot dépasse 300 lignes.
+        for talent in qs.order_by("updated_at", "id")[:300]:
+            last_processed = talent
+            score = None
+            if saved.opportunity_id:
+                score = match_opportunity_breakdown(saved.opportunity, talent.user, profile=talent)["total"]
+                if score < saved.min_match_score:
+                    continue
+            matches.append((talent, score))
+
+        if last_processed is not None:
+            saved.last_checked_at = last_processed.updated_at
+            saved.last_checked_candidate_id = last_processed.id
+        else:
+            # Aucun candidat dans la fenêtre : avancer jusqu'à maintenant et remettre l'id à zéro.
+            saved.last_checked_at = now
+            saved.last_checked_candidate_id = 0
+        saved.last_match_count = len(matches)
+        saved.save(update_fields=[
+            "last_checked_at", "last_checked_candidate_id", "last_match_count", "updated_at"
+        ])
+        if not matches:
+            continue
+
+        sample = ", ".join((row[0].user.get_full_name() or row[0].user.username) for row in matches[:3])
+        suffix = "" if len(matches) <= 3 else f" et {len(matches) - 3} autre(s)"
+        action_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/employer"
+        score_label = f" · score ≥ {saved.min_match_score}%" if saved.opportunity_id and saved.min_match_score else ""
+        key_stamp = f"{int((last_processed.updated_at if last_processed else now).timestamp())}:{getattr(last_processed, 'id', 0)}"
+        result = queue_recruitment_update(
+            user=employer.user,
+            event_key=f"saved-talent-search:{saved.id}:{key_stamp}",
+            title=f"Nouveaux talents · {saved.name}",
+            body=f"{len(matches)} nouveau(x) profil(s) correspondent{score_label} : {sample}{suffix}.",
+            action_url=action_url,
+            variables=[employer.user.first_name or employer.user.username, saved.name, f"{len(matches)} nouveau(x) talent(s)", action_url],
+            metadata={
+                "saved_talent_search_id": saved.id,
+                "match_count": len(matches),
+                "opportunity_id": saved.opportunity_id,
+            },
+        )
+        notified += int(any(value is not None for value in result.values()))
+    return notified

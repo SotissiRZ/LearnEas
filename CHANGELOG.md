@@ -1,3 +1,15 @@
+# KalanPro v85 — ATS & recrutement avancé
+
+- Matching talents explicable par compétences, rôle, mode de travail, localisation, type et expérience ; compétences requises manquantes visibles au recruteur.
+- Matching rattachable à une offre appartenant strictement à l'entreprise courante, avec seuil minimum de score.
+- Recherches talents sauvegardées privées, alertes activables et refus propre des noms dupliqués.
+- Alertes Celery avec curseur composite `(updated_at, candidate_id)` pour ne perdre aucun profil lors des gros lots.
+- Pipeline ATS en glisser-déposer avec mutation toujours validée côté serveur et alternative par sélecteur.
+- Vérification légale d'entreprise distincte de l'approbation du profil : dossier, soumission, validation/rejet administrateur et badge public minimal.
+- Toute modification d'identité par le recruteur révoque automatiquement la vérification ; changement nom/pays conserve le workflow de réapprobation existant.
+- Justificatifs légaux exclus des serializers publics et bloqués en accès nginx direct ; lecture back-office via média signé.
+- Migration additive `opportunities.0006_ats_v85`.
+
 # KalanPro v84 — Portfolio & certificats avancés
 
 - Portfolio enrichi : rôle, problème, objectif, résultat/impact, stack, vidéo de démonstration et période du projet.

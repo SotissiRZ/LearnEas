@@ -1,3 +1,16 @@
+# Audit v85 — ATS & recrutement avancé
+
+- Matching explicable calculé côté serveur et utilisable contre une offre appartenant au recruteur.
+- Recherches sauvegardées privées par entreprise, seuil de score, alertes multicanal et curseur composite anti-perte.
+- Pipeline ATS drag-and-drop sans contournement des protections serveur sur les états finaux/retraits.
+- Vérification légale séparée de l'approbation du profil ; aucune donnée d'immatriculation dans l'API publique.
+- Justificatifs légaux bloqués sous `/media/employers/verification/` en nginx et ouverts dans l'admin par jeton privé signé.
+- Migration `opportunities.0006_ats_v85` additive.
+- Contrôles hors Docker : 63/63 tests frontend statiques, audit mobile 129 fichiers, 251 Python compilables, 143 TS/TSX sans erreur de parsing, scan secrets OK, Compose/entrypoint OK, 74 migrations sans cycle/branche locale manquante.
+- Le typecheck/build Next et les tests Django runtime restent à exécuter dans Docker ; `npm ci` n'a pas pu être terminé dans l'environnement de génération à cause d'une résolution npm indisponible.
+
+---
+
 # Audit v75 — Recruiter Workspace, ATS & marque employeur
 
 - Refonte de l'espace entreprise en workspace recruteur multi-onglets : vue d'ensemble, offres, candidatures, vivier et marque employeur.

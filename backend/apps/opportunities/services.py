@@ -68,8 +68,8 @@ def candidate_skills_for(user, profile=None):
     return unique[:60]
 
 
-def match_opportunity(opportunity, user, profile=None, candidate_skills=None):
-    """Score explicable (0–100) : compétences, métier visé, mobilité et expérience."""
+def match_opportunity_breakdown(opportunity, user, profile=None, candidate_skills=None):
+    """Retourne un matching explicable et stable, sans exposer de logique sensible côté client."""
     if profile is None:
         try:
             profile = user.candidate_profile
@@ -77,51 +77,105 @@ def match_opportunity(opportunity, user, profile=None, candidate_skills=None):
             profile = None
 
     source_skills = candidate_skills if candidate_skills is not None else candidate_skills_for(user, profile)
-    candidate_skills = {normalize_skill(s) for s in source_skills if normalize_skill(s)}
-    required = {normalize_skill(s) for s in (opportunity.skills_required or []) if normalize_skill(s)}
-    optional = {normalize_skill(s) for s in (opportunity.skills_optional or []) if normalize_skill(s)}
+    candidate_map = {normalize_skill(s): str(s) for s in source_skills if normalize_skill(s)}
+    candidate_set = set(candidate_map)
+    required_raw = [str(s) for s in (opportunity.skills_required or []) if normalize_skill(s)]
+    optional_raw = [str(s) for s in (opportunity.skills_optional or []) if normalize_skill(s)]
+    required = {normalize_skill(s) for s in required_raw}
+    optional = {normalize_skill(s) for s in optional_raw}
 
-    score = Decimal("0")
-    # Les compétences restent le facteur principal du matching.
+    components = {"skills": 0, "role": 0, "work_mode": 0, "location": 0, "kind": 0, "experience": 0}
     if required:
-        score += Decimal("55") * Decimal(len(required & candidate_skills)) / Decimal(len(required))
+        components["skills"] += int(round(55 * len(required & candidate_set) / len(required)))
     else:
-        score += Decimal("40")
+        components["skills"] += 40
     if optional:
-        score += Decimal("10") * Decimal(len(optional & candidate_skills)) / Decimal(len(optional))
+        components["skills"] += int(round(10 * len(optional & candidate_set) / len(optional)))
     else:
-        score += Decimal("5")
+        components["skills"] += 5
 
     if profile:
         desired = [normalize_skill(role) for role in (profile.desired_roles or []) if normalize_skill(role)]
         title = normalize_skill(opportunity.title)
         if not desired:
-            score += Decimal("5")
+            components["role"] = 5
         elif any(role in title or title in role for role in desired):
-            score += Decimal("10")
+            components["role"] = 10
         elif any(token in title.split() for role in desired for token in role.split() if len(token) >= 4):
-            score += Decimal("6")
+            components["role"] = 6
 
         if not profile.preferred_work_modes or opportunity.work_mode in profile.preferred_work_modes:
-            score += Decimal("8")
+            components["work_mode"] = 8
         if opportunity.remote_worldwide or not profile.preferred_countries or opportunity.country in profile.preferred_countries:
-            score += Decimal("7")
+            components["location"] = 7
         if not profile.preferred_kinds or opportunity.kind in profile.preferred_kinds:
-            score += Decimal("5")
+            components["kind"] = 5
 
         experience_floor = {"entry": 0, "junior": 1, "mid": 3, "senior": 5, "lead": 7}.get(opportunity.experience_level, 0)
         years = int(profile.years_experience or 0)
         if years >= experience_floor:
-            score += Decimal("5")
+            components["experience"] = 5
         elif years + 1 >= experience_floor:
-            score += Decimal("3")
+            components["experience"] = 3
     else:
-        # Sans profil candidat, on ne prétend pas connaître l'adéquation métier.
         if opportunity.remote_worldwide or not opportunity.country or opportunity.country == getattr(user, "country", ""):
-            score += Decimal("7")
+            components["location"] = 7
 
-    return max(0, min(100, int(round(score))))
+    matched_required = [s for s in required_raw if normalize_skill(s) in candidate_set]
+    missing_required = [s for s in required_raw if normalize_skill(s) not in candidate_set]
+    matched_optional = [s for s in optional_raw if normalize_skill(s) in candidate_set]
+    total = max(0, min(100, int(sum(components.values()))))
+    strengths = []
+    if matched_required:
+        strengths.append(f"{len(matched_required)}/{len(required_raw)} compétence(s) requise(s) correspondante(s)")
+    if components["work_mode"] == 8:
+        strengths.append("Mode de travail compatible")
+    if components["location"] == 7:
+        strengths.append("Localisation compatible")
+    if components["experience"] >= 5:
+        strengths.append("Expérience compatible")
 
+    return {
+        "total": total,
+        "components": components,
+        "matched_required_skills": matched_required,
+        "missing_required_skills": missing_required,
+        "matched_optional_skills": matched_optional,
+        "strengths": strengths[:5],
+    }
+
+
+def match_opportunity(opportunity, user, profile=None, candidate_skills=None):
+    return match_opportunity_breakdown(
+        opportunity, user, profile=profile, candidate_skills=candidate_skills
+    )["total"]
+
+
+def apply_talent_search_filters(qs, *, search_text="", country="", availability="", min_experience=0):
+    """Filtrage commun API + alertes de recherches sauvegardées."""
+    search_text = str(search_text or "").strip()
+    country = str(country or "").strip()
+    availability = str(availability or "").strip()
+    try:
+        min_experience = max(0, int(min_experience or 0))
+    except (TypeError, ValueError):
+        min_experience = 0
+    if search_text:
+        qs = qs.filter(
+            models.Q(headline__icontains=search_text)
+            | models.Q(summary__icontains=search_text)
+            | models.Q(skills__icontains=search_text)
+            | models.Q(desired_roles__icontains=search_text)
+            | models.Q(user__first_name__icontains=search_text)
+            | models.Q(user__last_name__icontains=search_text)
+        )
+    if country:
+        qs = qs.filter(user__country=country)
+    if availability:
+        qs = qs.filter(availability=availability)
+    if min_experience:
+        qs = qs.filter(years_experience__gte=min_experience)
+    return qs
 
 def build_application_snapshot(user, opportunity, *, share_portfolio=True):
     from apps.enrollments.models import Certificate

@@ -40,6 +40,28 @@ class EmployerProfile(models.Model):
     hiring_regions = models.JSONField(default=list, blank=True)
     country = models.CharField(max_length=100)
     city = models.CharField(max_length=120, blank=True)
+
+    class VerificationStatus(models.TextChoices):
+        UNVERIFIED = "unverified", "Non vérifiée"
+        PENDING = "pending", "Vérification en cours"
+        VERIFIED = "verified", "Vérifiée"
+        REJECTED = "rejected", "Vérification refusée"
+
+    legal_name = models.CharField(max_length=220, blank=True)
+    registration_number = models.CharField(max_length=120, blank=True)
+    registration_country = models.CharField(max_length=100, blank=True)
+    verification_document = models.FileField(upload_to="employers/verification/%Y/%m/", blank=True, null=True)
+    verification_status = models.CharField(
+        max_length=20, choices=VerificationStatus.choices, default=VerificationStatus.UNVERIFIED, db_index=True
+    )
+    verification_note = models.TextField(blank=True)
+    verification_submitted_at = models.DateTimeField(null=True, blank=True)
+    identity_verified_at = models.DateTimeField(null=True, blank=True)
+    identity_verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="identity_verified_employer_profiles",
+    )
+
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
     review_note = models.TextField(blank=True)
     reviewed_by = models.ForeignKey(
@@ -444,3 +466,35 @@ class TalentBookmark(models.Model):
 
     def __str__(self):
         return f"{self.employer.company_name} ★ {self.talent.user}"
+
+class SavedTalentSearch(models.Model):
+    employer = models.ForeignKey(EmployerProfile, on_delete=models.CASCADE, related_name="saved_talent_searches")
+    name = models.CharField(max_length=120)
+    search_text = models.CharField(max_length=180, blank=True)
+    country = models.CharField(max_length=100, blank=True)
+    availability = models.CharField(max_length=20, choices=CandidateProfile.Availability.choices, blank=True)
+    min_experience = models.PositiveSmallIntegerField(default=0)
+    opportunity = models.ForeignKey(
+        Opportunity, on_delete=models.SET_NULL, null=True, blank=True, related_name="saved_talent_searches"
+    )
+    min_match_score = models.PositiveSmallIntegerField(default=0)
+    alerts_enabled = models.BooleanField(default=True, db_index=True)
+    last_checked_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    last_checked_candidate_id = models.PositiveBigIntegerField(default=0)
+    last_match_count = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["employer", "name"], name="uniq_employer_saved_talent_search_name"),
+            models.CheckConstraint(condition=models.Q(min_match_score__lte=100), name="saved_talent_match_lte_100"),
+        ]
+        indexes = [
+            models.Index(fields=["employer", "alerts_enabled", "-updated_at"], name="opp_saved_search_alert_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.employer.company_name} · {self.name}"
+

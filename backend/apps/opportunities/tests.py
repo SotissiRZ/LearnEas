@@ -709,3 +709,148 @@ class EmployerEntitlementLifecycleV78Tests(APITestCase):
         self.assertEqual(first.data["order"]["id"], second.data["order"]["id"])
         self.assertTrue(second.data.get("idempotent_replay"))
         self.assertEqual(EmployerEntitlement.objects.filter(employer=self.employer, kind="pro").count(), 1)
+
+
+class RecruiterATSV85Tests(APITestCase):
+    def setUp(self):
+        from apps.payments.models import Currency, Order
+        from .models import CandidateProfile
+        from .services import activate_employer_entitlement
+
+        self.recruiter = User.objects.create_user(
+            username="v85-recruiter", email="v85-recruiter@example.com",
+            password="StrongPass123!", country="Sénégal", role="employer",
+        )
+        self.other_recruiter = User.objects.create_user(
+            username="v85-other", email="v85-other@example.com",
+            password="StrongPass123!", country="Sénégal", role="employer",
+        )
+        self.student = User.objects.create_user(
+            username="v85-talent", email="v85-talent@example.com",
+            password="StrongPass123!", country="Sénégal", role="student",
+            first_name="Awa", last_name="Data",
+        )
+        self.employer = EmployerProfile.objects.create(
+            user=self.recruiter, company_name="V85 Talent SARL", country="Sénégal",
+            status=EmployerProfile.Status.APPROVED,
+        )
+        self.other_employer = EmployerProfile.objects.create(
+            user=self.other_recruiter, company_name="Autre SARL", country="Sénégal",
+            status=EmployerProfile.Status.APPROVED,
+        )
+        self.job = Opportunity.objects.create(
+            employer=self.employer, title="Data Analyst", description="Analyse",
+            skills_required=["Excel", "SQL"], skills_optional=["Power BI"],
+            work_mode=Opportunity.WorkMode.REMOTE, remote_worldwide=True,
+            experience_level=Opportunity.ExperienceLevel.JUNIOR,
+            status=Opportunity.Status.PUBLISHED,
+        )
+        self.other_job = Opportunity.objects.create(
+            employer=self.other_employer, title="Autre poste", description="Test",
+            status=Opportunity.Status.PUBLISHED,
+        )
+        self.talent = CandidateProfile.objects.create(
+            user=self.student, headline="Data analyst", summary="Excel et reporting",
+            skills=["Excel", "Power BI"], desired_roles=["Data Analyst"],
+            preferred_work_modes=["remote"], preferred_countries=["Sénégal"],
+            years_experience=2, is_searchable=True,
+        )
+        Currency.objects.get_or_create(
+            code="EUR", defaults={"name": "Euro", "symbol": "€", "exchange_rate": 1, "is_active": True}
+        )
+        order = Order.objects.create(
+            user=self.recruiter, status=Order.Status.PAID, provider=Order.Provider.MANUAL,
+            provider_sandbox=True, base_total_amount="30.34", total_amount="30.34",
+            currency="EUR", paid_at=timezone.now(),
+        )
+        activate_employer_entitlement(order, kind="pro")
+
+    def test_talent_matching_returns_explainable_breakdown(self):
+        self.client.force_authenticate(self.recruiter)
+        response = self.client.get(
+            f"/api/opportunities/talents/?opportunity={self.job.id}&min_match_score=1&page_size=20"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        rows = response.data.get("results", response.data)
+        row = next(item for item in rows if item["id"] == self.talent.id)
+        self.assertGreater(row["match_score"], 0)
+        self.assertEqual(row["match_breakdown"]["total"], row["match_score"])
+        self.assertIn("SQL", row["match_breakdown"]["missing_required_skills"])
+        self.assertIn("Excel", row["match_breakdown"]["matched_required_skills"])
+
+    def test_saved_talent_search_is_private_and_cannot_target_other_company_job(self):
+        self.client.force_authenticate(self.recruiter)
+        created = self.client.post(
+            "/api/opportunities/saved-talent-searches/",
+            {
+                "name": "Data Sénégal",
+                "search_text": "Data",
+                "country": "Sénégal",
+                "min_experience": 1,
+                "opportunity": self.job.id,
+                "min_match_score": 60,
+                "alerts_enabled": True,
+            },
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data["opportunity_title"], "Data Analyst")
+
+        denied = self.client.post(
+            "/api/opportunities/saved-talent-searches/",
+            {"name": "Intrusion", "opportunity": self.other_job.id},
+            format="json",
+        )
+        self.assertEqual(denied.status_code, 400, denied.data)
+
+        duplicate = self.client.post(
+            "/api/opportunities/saved-talent-searches/",
+            {"name": "data sénégal", "country": "Sénégal"},
+            format="json",
+        )
+        self.assertEqual(duplicate.status_code, 400, duplicate.data)
+        self.assertIn("name", duplicate.data)
+
+    def test_company_identity_verification_has_separate_status_and_public_data_is_minimal(self):
+        self.employer.legal_name = "V85 Talent SARL"
+        self.employer.registration_number = "SN-DKR-2026-001"
+        self.employer.registration_country = "Sénégal"
+        self.employer.verification_document = SimpleUploadedFile(
+            "registre.pdf", b"%PDF-1.4\n% verification fixture\n", content_type="application/pdf"
+        )
+        self.employer.save()
+
+        self.client.force_authenticate(self.recruiter)
+        response = self.client.post(
+            f"/api/opportunities/employer-profile/{self.employer.id}/submit-verification/", {}, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.employer.refresh_from_db()
+        self.assertEqual(self.employer.verification_status, EmployerProfile.VerificationStatus.PENDING)
+
+        self.client.force_authenticate(user=None)
+        public = self.client.get(f"/api/opportunities/companies/{self.employer.slug}/")
+        self.assertEqual(public.status_code, 200, public.data)
+        self.assertFalse(public.data["is_identity_verified"])
+        self.assertNotIn("registration_number", public.data)
+        self.assertNotIn("verification_document", public.data)
+
+    def test_verified_identity_is_reset_when_recruiter_changes_company_identity(self):
+        self.employer.verification_status = EmployerProfile.VerificationStatus.VERIFIED
+        self.employer.identity_verified_at = timezone.now()
+        self.employer.legal_name = "V85 Talent SARL"
+        self.employer.registration_number = "SN-001"
+        self.employer.registration_country = "Sénégal"
+        self.employer.save()
+
+        self.client.force_authenticate(self.recruiter)
+        response = self.client.patch(
+            f"/api/opportunities/employer-profile/{self.employer.id}/",
+            {"legal_name": "V85 Talent Nouvelle SARL"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.employer.refresh_from_db()
+        self.assertEqual(self.employer.verification_status, EmployerProfile.VerificationStatus.UNVERIFIED)
+        self.assertIsNone(self.employer.identity_verified_at)
+

@@ -14,9 +14,9 @@ from apps.common.media_metadata import validate_upload_limits
 from apps.payments.models import Currency
 from .models import (
     EmployerProfile, CandidateProfile, Opportunity, OpportunityApplication, TalentBookmark,
-    TalentAccessLog, EmployerEntitlement, ApplicationHistoryEvent, RecruitmentInterview, EmploymentOffer,
+    TalentAccessLog, EmployerEntitlement, ApplicationHistoryEvent, RecruitmentInterview, EmploymentOffer, SavedTalentSearch,
 )
-from .services import clean_strings, match_opportunity, build_application_snapshot, candidate_skills_for
+from .services import clean_strings, match_opportunity, match_opportunity_breakdown, build_application_snapshot, candidate_skills_for
 
 
 def validate_country(value, *, allow_blank=True):
@@ -55,14 +55,18 @@ class EmployerPublicSerializer(serializers.ModelSerializer):
     logo = RelativeImageField(read_only=True)
     banner = RelativeImageField(read_only=True)
     open_opportunities_count = serializers.SerializerMethodField()
+    is_identity_verified = serializers.SerializerMethodField()
 
     class Meta:
         model = EmployerProfile
         fields = [
             "id", "company_name", "slug", "tagline", "description", "industry", "company_size",
             "website_url", "linkedin_url", "logo", "banner", "brand_color", "founded_year",
-            "values", "benefits", "hiring_regions", "country", "city", "open_opportunities_count",
+            "values", "benefits", "hiring_regions", "country", "city", "open_opportunities_count", "is_identity_verified",
         ]
+
+    def get_is_identity_verified(self, obj):
+        return obj.verification_status == EmployerProfile.VerificationStatus.VERIFIED
 
     def get_open_opportunities_count(self, obj):
         annotated = getattr(obj, "open_opportunities_count", None)
@@ -82,15 +86,23 @@ class EmployerProfileSerializer(serializers.ModelSerializer):
     logo = RelativeImageField(required=False, allow_null=True)
     banner = RelativeImageField(required=False, allow_null=True)
     reviewed_by_name = serializers.SerializerMethodField()
+    is_identity_verified = serializers.SerializerMethodField()
+    verification_document = serializers.FileField(required=False, allow_null=True, write_only=True)
 
     class Meta:
         model = EmployerProfile
         fields = [
             "id", "company_name", "slug", "tagline", "description", "industry", "company_size", "website_url",
             "linkedin_url", "contact_email", "founded_year", "brand_color", "logo", "banner", "values", "benefits",
-            "hiring_regions", "country", "city", "status", "review_note", "reviewed_by_name", "reviewed_at", "created_at", "updated_at",
+            "hiring_regions", "country", "city", "legal_name", "registration_number", "registration_country",
+            "verification_document", "verification_status", "verification_note", "verification_submitted_at", "identity_verified_at",
+            "is_identity_verified", "status", "review_note", "reviewed_by_name", "reviewed_at", "created_at", "updated_at",
         ]
-        read_only_fields = ["slug", "status", "review_note", "reviewed_by_name", "reviewed_at", "created_at", "updated_at"]
+        read_only_fields = [
+            "slug", "status", "review_note", "reviewed_by_name", "reviewed_at",
+            "verification_status", "verification_note", "verification_submitted_at", "identity_verified_at", "is_identity_verified",
+            "created_at", "updated_at",
+        ]
 
     def to_internal_value(self, data):
         data = _shallow_mutable_input(data)
@@ -114,8 +126,22 @@ class EmployerProfileSerializer(serializers.ModelSerializer):
     def get_reviewed_by_name(self, obj):
         return (obj.reviewed_by.get_full_name() or obj.reviewed_by.username) if obj.reviewed_by else ""
 
+    def get_is_identity_verified(self, obj):
+        return obj.verification_status == EmployerProfile.VerificationStatus.VERIFIED
+
     def validate_country(self, value):
         return validate_country(value, allow_blank=False)
+
+    def validate_registration_country(self, value):
+        return validate_country(value, allow_blank=True)
+
+    def validate_verification_document(self, value):
+        if value:
+            validate_upload_limits(
+                value, max_bytes=10 * 1024 * 1024,
+                extensions={".pdf", ".jpg", ".jpeg", ".png", ".webp"}, field="verification_document",
+            )
+        return value
 
     def validate_logo(self, value):
         if value:
@@ -597,10 +623,15 @@ class TalentSerializer(serializers.ModelSerializer):
     country = serializers.CharField(source="user.country", read_only=True)
     avatar = RelativeImageField(source="user.avatar", read_only=True)
     portfolio_slug = serializers.SerializerMethodField()
+    match_score = serializers.SerializerMethodField()
+    match_breakdown = serializers.SerializerMethodField()
 
     class Meta:
         model = CandidateProfile
-        fields = ["id", "full_name", "avatar", "country", "headline", "summary", "skills", "desired_roles", "availability", "years_experience", "portfolio_slug", "updated_at"]
+        fields = [
+            "id", "full_name", "avatar", "country", "headline", "summary", "skills", "desired_roles",
+            "availability", "years_experience", "portfolio_slug", "match_score", "match_breakdown", "updated_at",
+        ]
 
     def get_full_name(self, obj):
         return obj.user.get_full_name() or obj.user.username
@@ -611,6 +642,22 @@ class TalentSerializer(serializers.ModelSerializer):
             return portfolio.slug if portfolio.is_public else ""
         except Exception:
             return ""
+
+    def _breakdown(self, obj):
+        opportunity = self.context.get("match_opportunity")
+        if not opportunity:
+            return None
+        cache = self.context.setdefault("_talent_match_breakdowns", {})
+        if obj.pk not in cache:
+            cache[obj.pk] = match_opportunity_breakdown(opportunity, obj.user, profile=obj)
+        return cache[obj.pk]
+
+    def get_match_score(self, obj):
+        row = self._breakdown(obj)
+        return row["total"] if row else None
+
+    def get_match_breakdown(self, obj):
+        return self._breakdown(obj)
 
 
 class TalentBookmarkSerializer(serializers.ModelSerializer):
@@ -626,6 +673,57 @@ class TalentBookmarkSerializer(serializers.ModelSerializer):
             return clean_strings(value, max_items=20, max_length=60)
         except ValueError as exc:
             raise serializers.ValidationError(str(exc))
+
+
+class SavedTalentSearchSerializer(serializers.ModelSerializer):
+    opportunity_title = serializers.CharField(source="opportunity.title", read_only=True)
+
+    class Meta:
+        model = SavedTalentSearch
+        fields = [
+            "id", "name", "search_text", "country", "availability", "min_experience", "opportunity",
+            "opportunity_title", "min_match_score", "alerts_enabled", "last_checked_at", "last_match_count",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["last_checked_at", "last_match_count", "created_at", "updated_at", "opportunity_title"]
+
+    def validate_name(self, value):
+        value = " ".join(str(value or "").strip().split())
+        if not value:
+            raise serializers.ValidationError("Donnez un nom à la recherche.")
+        return value[:120]
+
+    def validate_min_match_score(self, value):
+        if not 0 <= int(value) <= 100:
+            raise serializers.ValidationError("Le score minimum doit être compris entre 0 et 100.")
+        return value
+
+    def validate_country(self, value):
+        return validate_country(value, allow_blank=True)
+
+    def validate(self, attrs):
+        opportunity = attrs.get("opportunity") or getattr(self.instance, "opportunity", None)
+        request = self.context.get("request")
+        if opportunity and request and request.user.role != "admin":
+            try:
+                employer = request.user.employer_profile
+            except Exception:
+                employer = None
+            if not employer or opportunity.employer_id != employer.id:
+                raise serializers.ValidationError({"opportunity": "Cette opportunité n'appartient pas à votre entreprise."})
+        if request and request.user.is_authenticated:
+            try:
+                employer = request.user.employer_profile
+            except Exception:
+                employer = None
+            name = attrs.get("name") or getattr(self.instance, "name", "")
+            if employer and name:
+                duplicate = SavedTalentSearch.objects.filter(employer=employer, name__iexact=name)
+                if self.instance:
+                    duplicate = duplicate.exclude(pk=self.instance.pk)
+                if duplicate.exists():
+                    raise serializers.ValidationError({"name": "Une recherche sauvegardée porte déjà ce nom."})
+        return attrs
 
 
 class TalentAccessLogSerializer(serializers.ModelSerializer):

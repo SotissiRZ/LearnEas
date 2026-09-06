@@ -1,5 +1,7 @@
 # KalanPro
 
+> **v85 — ATS & recrutement avancé :** pipeline drag-and-drop, matching explicable par offre, recherches de talents sauvegardées avec alertes, vérification légale d'entreprise séparée et justificatifs protégés. Voir [`docs/V85_ATS_RECRUITMENT.md`](./docs/V85_ATS_RECRUITMENT.md).
+
 > **v84 — portfolio & certificats avancés :** réalisations structurées (rôle, problème, objectif, impact, stack, vidéo, dates), contact public opt-in, sélection explicite des certificats, PDF serveur avec QR et entrée CV structurée. Voir [`docs/V84_PORTFOLIO_CERTIFICATES.md`](./docs/V84_PORTFOLIO_CERTIFICATES.md).
 
 > **v83 — cohortes & mentorat avancés :** liste d'attente avec priorité temporaire et capacité transactionnelle, packs de mentorat, reprogrammation, disponibilités récurrentes, prévention des rendez-vous qui se chevauchent et pilotage instructeur. Voir [`docs/V83_COHORT_MENTORSHIP.md`](./docs/V83_COHORT_MENTORSHIP.md).

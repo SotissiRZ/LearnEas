@@ -462,6 +462,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.notifications.tasks.dispatch_recruitment_interview_reminders",
         "schedule": 300.0,
     },
+    "saved-talent-search-alerts-hourly": {
+        "task": "apps.notifications.tasks.dispatch_saved_talent_search_alerts",
+        "schedule": 3600.0,
+    },
     "certificate-expiration-hourly": {
         "task": "apps.enrollments.tasks.expire_certificates",
         "schedule": 3600.0,

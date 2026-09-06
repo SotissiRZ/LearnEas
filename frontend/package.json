@@ -13,7 +13,7 @@
     "test:roles": "node --test scripts/test-employer-role.mjs",
     "build:check": "node scripts/build-check.mjs",
     "typecheck": "tsc --noEmit",
-    "test:unit": "node --test scripts/test-security.mjs scripts/test-performance.mjs scripts/test-employer-role.mjs scripts/test-foundation.mjs",
+    "test:unit": "node --test scripts/test-security.mjs scripts/test-performance.mjs scripts/test-employer-role.mjs scripts/test-foundation.mjs scripts/test-ats-v85.mjs",
     "test:ci": "npm run test:unit && npm run audit:mobile && npm run typecheck"
   },
   "dependencies": {

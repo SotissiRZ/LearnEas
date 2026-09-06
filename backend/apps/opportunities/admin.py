@@ -1,17 +1,31 @@
 from django.contrib import admin
+from django.utils.html import format_html
+from apps.common.fields import sign_private_media_name
 from .models import (
     EmployerProfile, CandidateProfile, Opportunity, OpportunityApplication, TalentBookmark,
-    TalentAccessLog, EmployerEntitlement, ApplicationHistoryEvent, RecruitmentInterview, EmploymentOffer,
+    TalentAccessLog, EmployerEntitlement, ApplicationHistoryEvent, RecruitmentInterview, EmploymentOffer, SavedTalentSearch,
 )
 
 
 @admin.register(EmployerProfile)
 class EmployerProfileAdmin(admin.ModelAdmin):
-    list_display = ("company_name", "country", "industry", "company_size", "status", "created_at")
-    list_filter = ("status", "country", "company_size")
+    list_display = ("company_name", "country", "industry", "company_size", "status", "verification_status", "created_at")
+    list_filter = ("status", "verification_status", "country", "company_size")
     search_fields = ("company_name", "user__email", "industry", "city")
-    readonly_fields = ("slug", "reviewed_at", "created_at", "updated_at")
-    fieldsets = (("Identité", {"fields": ("user", "company_name", "slug", "tagline", "description", "industry", "company_size", "founded_year")}), ("Branding", {"fields": ("logo", "banner", "brand_color")}), ("Contact", {"fields": ("website_url", "linkedin_url", "contact_email", "country", "city")}), ("Marque employeur", {"fields": ("values", "benefits", "hiring_regions")}), ("Validation", {"fields": ("status", "review_note", "reviewed_by", "reviewed_at", "created_at", "updated_at")}))
+    readonly_fields = (
+        "slug", "reviewed_at", "verification_submitted_at", "identity_verified_at",
+        "verification_document_secure", "created_at", "updated_at",
+    )
+    fieldsets = (("Identité", {"fields": ("user", "company_name", "slug", "tagline", "description", "industry", "company_size", "founded_year")}), ("Branding", {"fields": ("logo", "banner", "brand_color")}), ("Contact", {"fields": ("website_url", "linkedin_url", "contact_email", "country", "city")}), ("Marque employeur", {"fields": ("values", "benefits", "hiring_regions")}), ("Vérification entreprise", {"fields": ("legal_name", "registration_number", "registration_country", "verification_document_secure", "verification_status", "verification_note", "verification_submitted_at", "identity_verified_by", "identity_verified_at")}), ("Validation du profil", {"fields": ("status", "review_note", "reviewed_by", "reviewed_at", "created_at", "updated_at")}))
+
+    @admin.display(description="Justificatif")
+    def verification_document_secure(self, obj):
+        if not obj or not obj.verification_document:
+            return "Aucun justificatif"
+        url = sign_private_media_name(obj.verification_document.name)
+        if not url:
+            return "Justificatif indisponible"
+        return format_html('<a href="{}" target="_blank" rel="noopener noreferrer">Ouvrir le justificatif</a>', url)
 
 
 @admin.register(CandidateProfile)
@@ -83,3 +97,11 @@ class EmploymentOfferAdmin(admin.ModelAdmin):
     list_display = ("application", "status", "salary_amount", "salary_currency", "expires_at", "responded_at")
     list_filter = ("status", "salary_currency")
     search_fields = ("application__candidate_email_snapshot", "application__opportunity__title", "title")
+
+@admin.register(SavedTalentSearch)
+class SavedTalentSearchAdmin(admin.ModelAdmin):
+    list_display = ("name", "employer", "opportunity", "min_match_score", "alerts_enabled", "last_checked_at", "last_match_count")
+    list_filter = ("alerts_enabled", "availability", "country")
+    search_fields = ("name", "employer__company_name", "search_text", "opportunity__title")
+    readonly_fields = ("last_checked_at", "last_match_count", "created_at", "updated_at")
+
