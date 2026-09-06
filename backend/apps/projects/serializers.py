@@ -13,7 +13,7 @@ from apps.common.media_metadata import validate_upload_limits
 from apps.enrollments.models import CourseEnrollment
 from .models import (
     ProjectAssignment, ProjectSubmission, ProjectSubmissionRevision,
-    PortfolioProfile, PortfolioItem,
+    PortfolioProfile, PortfolioItem, PortfolioCertificate,
 )
 from .services import ensure_portfolio_profile
 
@@ -33,6 +33,13 @@ def _clean_string_list(value, *, max_items=30, max_length=80):
 
 def _reviewer_can_manage(user, assignment):
     return bool(user.role == "admin" or assignment.course.instructor_id == user.id)
+
+
+class _NullableDateField(serializers.DateField):
+    def to_internal_value(self, value):
+        if value in ("", None):
+            return None
+        return super().to_internal_value(value)
 
 
 class ProjectAssignmentSerializer(serializers.ModelSerializer):
@@ -281,13 +288,15 @@ class PortfolioProfileSerializer(serializers.ModelSerializer):
     country = serializers.CharField(source="user.country", read_only=True)
     user_headline = serializers.CharField(source="user.headline", read_only=True)
     public_url = serializers.SerializerMethodField()
+    selected_certificate_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, write_only=True)
+    certificates = serializers.SerializerMethodField()
 
     class Meta:
         model = PortfolioProfile
         fields = [
             "id", "slug", "is_public", "title", "about", "skills", "website_url", "linkedin_url", "github_url",
-            "open_to_work", "show_country", "show_project_scores", "full_name", "avatar", "country", "user_headline",
-            "public_url", "updated_at",
+            "open_to_work", "show_country", "show_project_scores", "show_certificates", "public_contact_email", "show_contact_email",
+            "full_name", "avatar", "country", "user_headline", "public_url", "selected_certificate_ids", "certificates", "updated_at",
         ]
         read_only_fields = ["updated_at"]
 
@@ -310,15 +319,66 @@ class PortfolioProfileSerializer(serializers.ModelSerializer):
     def validate_skills(self, value):
         return _clean_string_list(value, max_items=40, max_length=80)
 
+    def validate_selected_certificate_ids(self, value):
+        from apps.enrollments.models import Certificate
+        ordered = []
+        seen = set()
+        for raw in value:
+            certificate_id = int(raw)
+            if certificate_id not in seen:
+                ordered.append(certificate_id)
+                seen.add(certificate_id)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        owned = set(Certificate.objects.filter(user=user, id__in=ordered).values_list("id", flat=True)) if user else set()
+        if owned != set(ordered):
+            raise serializers.ValidationError("Un certificat sélectionné ne vous appartient pas ou n'existe pas.")
+        return ordered
+
+    def get_certificates(self, obj):
+        selections = obj.certificate_selections.select_related("certificate").order_by("-featured", "order", "-created_at")
+        result = []
+        for selection in selections:
+            cert = selection.certificate
+            result.append({
+                "id": cert.id,
+                "certificate_number": cert.certificate_number,
+                "content_title": cert.content_title,
+                "effective_status": cert.effective_status,
+                "issued_at": cert.issued_at,
+                "expires_at": cert.expires_at,
+                "featured": selection.featured,
+                "order": selection.order,
+                "is_public": selection.is_public,
+            })
+        return result
+
+    def update(self, instance, validated_data):
+        selected_ids = validated_data.pop("selected_certificate_ids", None)
+        instance = super().update(instance, validated_data)
+        if selected_ids is not None:
+            PortfolioCertificate.objects.filter(profile=instance).exclude(certificate_id__in=selected_ids).delete()
+            existing = set(PortfolioCertificate.objects.filter(profile=instance, certificate_id__in=selected_ids).values_list("certificate_id", flat=True))
+            PortfolioCertificate.objects.bulk_create([
+                PortfolioCertificate(profile=instance, certificate_id=certificate_id, order=index)
+                for index, certificate_id in enumerate(selected_ids) if certificate_id not in existing
+            ])
+            for index, certificate_id in enumerate(selected_ids):
+                PortfolioCertificate.objects.filter(profile=instance, certificate_id=certificate_id).update(order=index, is_public=True)
+        return instance
+
 
 class PortfolioItemSerializer(serializers.ModelSerializer):
+    started_at = _NullableDateField(required=False, allow_null=True)
+    completed_at = _NullableDateField(required=False, allow_null=True)
     cover_image = RelativeImageField(required=False, allow_null=True)
     verified_score_display = serializers.SerializerMethodField()
 
     class Meta:
         model = PortfolioItem
         fields = [
-            "id", "source_submission", "title", "description", "cover_image", "external_url", "repository_url", "skills",
+            "id", "source_submission", "title", "description", "role", "problem", "objective", "outcome", "stack", "video_url",
+            "started_at", "completed_at", "cover_image", "external_url", "repository_url", "skills",
             "is_public", "featured", "order", "is_verified", "verified_course_title", "verified_assignment_title",
             "verified_instructor_name", "verified_at", "verified_score", "verified_max_score", "verified_score_display", "created_at", "updated_at",
         ]
@@ -335,6 +395,16 @@ class PortfolioItemSerializer(serializers.ModelSerializer):
 
     def validate_skills(self, value):
         return _clean_string_list(value, max_items=30, max_length=80)
+
+    def validate_stack(self, value):
+        return _clean_string_list(value, max_items=30, max_length=80)
+
+    def validate(self, attrs):
+        started = attrs.get("started_at", getattr(self.instance, "started_at", None))
+        completed = attrs.get("completed_at", getattr(self.instance, "completed_at", None))
+        if started and completed and completed < started:
+            raise serializers.ValidationError({"completed_at": "La date de fin doit être postérieure à la date de début."})
+        return attrs
 
     def validate_cover_image(self, value):
         if value:
@@ -357,7 +427,8 @@ class PublicPortfolioItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = PortfolioItem
         fields = [
-            "id", "title", "description", "cover_image", "external_url", "repository_url", "skills", "featured",
+            "id", "title", "description", "role", "problem", "objective", "outcome", "stack", "video_url",
+            "started_at", "completed_at", "cover_image", "external_url", "repository_url", "skills", "featured",
             "is_verified", "verified_course_title", "verified_assignment_title", "verified_instructor_name", "verified_at", "score",
         ]
 
@@ -371,16 +442,46 @@ class PublicPortfolioItemSerializer(serializers.ModelSerializer):
 class PublicPortfolioSerializer(PortfolioProfileSerializer):
     country = serializers.SerializerMethodField()
     items = serializers.SerializerMethodField()
+    certificates = serializers.SerializerMethodField()
+    contact_email = serializers.SerializerMethodField()
 
     class Meta(PortfolioProfileSerializer.Meta):
         fields = [
             "slug", "title", "about", "skills", "website_url", "linkedin_url", "github_url", "open_to_work",
-            "full_name", "avatar", "country", "user_headline", "items", "updated_at",
+            "full_name", "avatar", "country", "user_headline", "contact_email", "items", "certificates", "updated_at",
         ]
 
     def get_country(self, obj):
         return obj.user.country if obj.show_country else ""
 
+    def get_contact_email(self, obj):
+        return obj.public_contact_email if obj.show_contact_email and obj.public_contact_email else ""
+
     def get_items(self, obj):
         qs = obj.user.portfolio_items.filter(is_public=True).order_by("-featured", "order", "-updated_at")
         return PublicPortfolioItemSerializer(qs, many=True, context={"profile": obj}).data
+
+    def get_certificates(self, obj):
+        if not obj.show_certificates:
+            return []
+        selections = obj.certificate_selections.filter(is_public=True).select_related("certificate").order_by("-featured", "order", "-created_at")
+        result = []
+        from django.conf import settings as django_settings
+        for selection in selections:
+            cert = selection.certificate
+            if cert.effective_status != cert.Status.ACTIVE:
+                continue
+            result.append({
+                "id": cert.id,
+                "certificate_number": cert.certificate_number,
+                "content_title": cert.content_title,
+                "instructor_name": cert.instructor_name,
+                "issuer_name": cert.issuer_name or "KalanPro",
+                "issued_at": cert.issued_at,
+                "expires_at": cert.expires_at,
+                "achievement_percent": cert.achievement_percent,
+                "skills": cert.skills_snapshot or [],
+                "verification_url": f"{django_settings.FRONTEND_URL.rstrip('/')}/certificates/verify/{cert.verification_code}",
+                "featured": selection.featured,
+            })
+        return result

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import InteractiveFormation, FormationSession, FormationEnrollment, FormationAttendance, FormationSignal, FormationRoomFile, FormationSessionInvite, MentorshipOffering, MentorshipSlot, MentorshipBooking
+from .models import InteractiveFormation, FormationSession, FormationEnrollment, FormationAttendance, FormationSignal, FormationRoomFile, FormationSessionInvite, FormationWaitlistEntry, MentorshipOffering, MentorshipSlot, MentorshipBooking, MentorshipPack, MentorshipPass, MentorshipAvailabilityRule
 
 
 class FormationSessionInline(admin.TabularInline):
@@ -79,3 +79,33 @@ class MentorshipBookingAdmin(admin.ModelAdmin):
     list_filter = ("status", "offering__instructor")
     search_fields = ("user__email", "offering__title", "offering__instructor__email")
     readonly_fields = ("price_snapshot", "expires_at", "confirmed_at", "cancelled_at", "created_at", "updated_at")
+
+
+@admin.register(FormationWaitlistEntry)
+class FormationWaitlistEntryAdmin(admin.ModelAdmin):
+    list_display = ("formation", "user", "status", "offered_at", "offer_expires_at", "created_at")
+    list_filter = ("status", "formation")
+    search_fields = ("formation__title", "user__email", "user__username")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(MentorshipPack)
+class MentorshipPackAdmin(admin.ModelAdmin):
+    list_display = ("offering", "sessions_count", "price", "validity_days", "published")
+    list_filter = ("published", "offering__instructor")
+    search_fields = ("offering__title", "offering__instructor__email")
+
+
+@admin.register(MentorshipPass)
+class MentorshipPassAdmin(admin.ModelAdmin):
+    list_display = ("user", "pack", "remaining_sessions", "total_sessions", "expires_at", "revoked_at")
+    list_filter = ("revoked_at", "pack__offering__instructor")
+    search_fields = ("user__email", "pack__offering__title")
+    readonly_fields = ("source_order", "created_at")
+
+
+@admin.register(MentorshipAvailabilityRule)
+class MentorshipAvailabilityRuleAdmin(admin.ModelAdmin):
+    list_display = ("offering", "weekday", "start_time", "end_time", "interval_minutes", "valid_from", "valid_until", "is_active")
+    list_filter = ("is_active", "weekday", "offering__instructor")
+    search_fields = ("offering__title", "offering__instructor__email")

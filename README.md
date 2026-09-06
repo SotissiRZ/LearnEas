@@ -1,5 +1,11 @@
 # KalanPro
 
+> **v84 — portfolio & certificats avancés :** réalisations structurées (rôle, problème, objectif, impact, stack, vidéo, dates), contact public opt-in, sélection explicite des certificats, PDF serveur avec QR et entrée CV structurée. Voir [`docs/V84_PORTFOLIO_CERTIFICATES.md`](./docs/V84_PORTFOLIO_CERTIFICATES.md).
+
+> **v83 — cohortes & mentorat avancés :** liste d'attente avec priorité temporaire et capacité transactionnelle, packs de mentorat, reprogrammation, disponibilités récurrentes, prévention des rendez-vous qui se chevauchent et pilotage instructeur. Voir [`docs/V83_COHORT_MENTORSHIP.md`](./docs/V83_COHORT_MENTORSHIP.md).
+
+> **v82 — notifications multicanal :** centre de notifications interne, email/WhatsApp opt-in, rappels live et recrutement, Celery worker/beat également en Docker dev. Voir [`docs/V82_NOTIFICATIONS.md`](./docs/V82_NOTIFICATIONS.md).
+
 > **v81 — faible connexion / HLS / hors connexion contrôlé :** modes Auto/Éco/Normal selon le réseau, master HLS privé filtré ≤360p y compris Safari, audio seul ~48 kb/s, validation vidéo fondée sur le temps réellement regardé, téléchargement MP4 basse définition par leçon autorisée, bibliothèque locale IndexedDB/PWA et resynchronisation de progression. Voir [`docs/V81_LOW_BANDWIDTH.md`](./docs/V81_LOW_BANDWIDTH.md).
 
 > **v80 — Mobile Money / gouvernance financière :** journal persistant des tentatives/événements/anomalies, idempotence webhook durable, validation référence/montant/devise, réconciliation et audit financier admin. Voir [`docs/V80_MOBILE_MONEY_FINANCE.md`](./docs/V80_MOBILE_MONEY_FINANCE.md).

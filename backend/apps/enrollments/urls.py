@@ -2,7 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 from .views import (
     CourseEnrollmentViewSet, LessonNoteViewSet, WishlistViewSet, MyPDFsViewSet, CertificateViewSet,
-    CertificateVerifyView, CertificateLookupView, CertificateQRView,
+    CertificateVerifyView, CertificateLookupView, CertificateQRView, CertificatePDFView,
 )
 
 router = DefaultRouter()
@@ -15,5 +15,6 @@ router.register("certificates", CertificateViewSet, basename="certificates")
 urlpatterns = [
     path("certificates/lookup/", CertificateLookupView.as_view(), name="certificate-lookup"),
     path("certificates/verify/<uuid:code>/qr/", CertificateQRView.as_view(), name="certificate-qr"),
+    path("certificates/verify/<uuid:code>/pdf/", CertificatePDFView.as_view(), name="certificate-pdf"),
     path("certificates/verify/<uuid:code>/", CertificateVerifyView.as_view(), name="certificate-verify"),
 ] + router.urls

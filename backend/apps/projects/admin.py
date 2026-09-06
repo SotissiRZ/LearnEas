@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import ProjectAssignment, ProjectSubmission, ProjectSubmissionRevision, PortfolioProfile, PortfolioItem
+from .models import ProjectAssignment, ProjectSubmission, ProjectSubmissionRevision, PortfolioProfile, PortfolioItem, PortfolioCertificate
 
 
 @admin.register(ProjectAssignment)
@@ -18,3 +18,10 @@ class ProjectSubmissionAdmin(admin.ModelAdmin):
 admin.site.register(ProjectSubmissionRevision)
 admin.site.register(PortfolioProfile)
 admin.site.register(PortfolioItem)
+
+
+@admin.register(PortfolioCertificate)
+class PortfolioCertificateAdmin(admin.ModelAdmin):
+    list_display = ("profile", "certificate", "is_public", "featured", "order", "updated_at")
+    list_filter = ("is_public", "featured")
+    search_fields = ("profile__slug", "profile__user__email", "certificate__certificate_number", "certificate__content_title")

@@ -15,14 +15,15 @@ test("v79 CI couvre backend frontend migrations et build", () => {
   assert.match(ci, /npm run build:check/);
 });
 
-test("v79 separe liveness et readiness et Docker sonde readiness", () => {
+test("v79 separe liveness et readiness et Docker sonde uniquement la liveness", () => {
   const urls = read("../backend/learneas/urls.py");
   const dev = read("../docker-compose.dev.yml");
   const prod = read("../docker-compose.yml");
   assert.match(urls, /api\/health\/live\//);
   assert.match(urls, /api\/health\/ready\//);
-  assert.match(dev, /api\/health\/ready\//);
-  assert.match(prod, /api\/health\/ready\//);
+  assert.match(dev, /api\/health\/live\//);
+  assert.match(prod, /api\/health\/live\//);
+  assert.match(dev, /redis-cli["', ]+ping/);
 });
 
 test("v79 request-id et logs structures sont configures", () => {
@@ -119,4 +120,117 @@ test("v80 ne marque jamais une tentative payee avant validation montant devise",
   assert.match(lifecycle, /return "currency_mismatch"/);
   assert.match(lifecycle, /def mark_attempt_paid/);
   assert.doesNotMatch(lifecycle, /status = PaymentAttempt\.Status\.PAID if verification\.get\("paid"\)/);
+});
+
+test("v83 cohortes gerent une liste d'attente avec priorite temporaire", () => {
+  const cohorts = read("../backend/apps/formations/cohorts.py");
+  const models = read("../backend/apps/formations/models.py");
+  const access = read("components/formation/FormationAccessCard.tsx");
+  assert.match(models, /class FormationWaitlistEntry/);
+  assert.match(cohorts, /def refresh_waitlist/);
+  assert.match(cohorts, /COHORT_WAITLIST_OFFER_HOURS/);
+  assert.match(cohorts, /FormationSeatReservation/);
+  assert.match(access, /join_waitlist/);
+  assert.match(access, /waitlist_position/);
+  assert.match(access, /place vous est réservée temporairement/i);
+});
+
+test("v83 packs mentorat sont achetables et consommes transactionnellement", () => {
+  const models = read("../backend/apps/formations/models.py");
+  const payments = read("../backend/apps/payments/views.py");
+  const service = read("../backend/apps/formations/mentorship.py");
+  const card = read("components/mentorship/MentorshipBookingCard.tsx");
+  assert.match(models, /class MentorshipPack/);
+  assert.match(models, /class MentorshipPass/);
+  assert.match(payments, /MENTOR_PACK/);
+  assert.match(payments, /MentorshipPass\.objects\.get_or_create/);
+  assert.match(service, /MentorshipPass\.objects\.select_for_update/);
+  assert.match(card, /addMentorshipPack/);
+  assert.match(card, /pass_id/);
+});
+
+test("v83 mentorat permet reprogrammation et disponibilites recurrentes sans slots fantomes", () => {
+  const models = read("../backend/apps/formations/models.py");
+  const service = read("../backend/apps/formations/mentorship.py");
+  const views = read("../backend/apps/formations/views.py");
+  assert.match(models, /class MentorshipAvailabilityRule/);
+  assert.match(models, /availability_rule = models\.ForeignKey/);
+  assert.match(service, /def reschedule_booking/);
+  assert.match(service, /def generate_rule_slots/);
+  assert.match(service, /should_be_active/);
+  assert.match(views, /Règle désactivée car elle possède déjà un historique/);
+});
+
+test("v83 taches periodiques rafraichissent cohortes et disponibilites mentorat", () => {
+  const tasks = read("../backend/apps/formations/tasks.py");
+  const settings = read("../backend/learneas/settings.py");
+  assert.match(tasks, /def refresh_cohort_waitlists/);
+  assert.match(tasks, /def generate_recurring_mentorship_slots/);
+  assert.match(settings, /cohort-waitlist-refresh/);
+  assert.match(settings, /mentorship-recurring-slots/);
+});
+
+
+test("v83 corrige les dependances runtime mentorat et liste formation", () => {
+  const mentorship = read("../backend/apps/formations/mentorship.py");
+  const serializers = read("../backend/apps/formations/serializers.py");
+  assert.match(mentorship, /from django\.contrib\.auth import get_user_model/);
+  assert.match(mentorship, /from zoneinfo import ZoneInfo, ZoneInfoNotFoundError/);
+  assert.match(serializers, /from django\.utils import timezone/);
+});
+
+test("v83 Docker dev execute aussi la file media et expose le TTL waitlist", () => {
+  const dev = read("../docker-compose.dev.yml");
+  const prod = read("../docker-compose.yml");
+  assert.match(dev, /celery_media_worker:/);
+  assert.match(dev, /-Q", "media"/);
+  assert.match(dev, /COHORT_WAITLIST_OFFER_HOURS/);
+  assert.match(prod, /COHORT_WAITLIST_OFFER_HOURS/);
+});
+
+test("v83 settings offline ne dependent pas d'un os global non importe", () => {
+  const settings = read("../backend/learneas/settings.py");
+  assert.match(settings, /OFFLINE_VIDEO_ENABLED = config\(/);
+  assert.match(settings, /OFFLINE_VIDEO_MAX_HEIGHT = config\(/);
+  assert.match(settings, /OFFLINE_VIDEO_MAX_MB = config\(/);
+  assert.match(settings, /OFFLINE_PROGRESS_TOKEN_MAX_AGE = config\(/);
+  assert.doesNotMatch(settings, /OFFLINE_VIDEO_ENABLED = os\.getenv/);
+});
+
+
+test("v84 portfolio expose preuves riches et certificats explicitement selectionnes", () => {
+  const models = read("../backend/apps/projects/models.py");
+  const serializers = read("../backend/apps/projects/serializers.py");
+  const editor = read("app/dashboard/student/portfolio/page.tsx");
+  const publicPage = read("app/portfolio/[slug]/page.tsx");
+  assert.match(models, /class PortfolioCertificate/);
+  assert.match(models, /role = models\.CharField/);
+  assert.match(models, /outcome = models\.TextField/);
+  assert.match(models, /stack = models\.JSONField/);
+  assert.match(serializers, /selected_certificate_ids/);
+  assert.match(serializers, /show_contact_email/);
+  assert.match(editor, /Certificats publics/);
+  assert.match(editor, /Résultat \/ impact/);
+  assert.match(publicPage, /Certificats vérifiables/);
+  assert.match(publicPage, /Démo vidéo/);
+});
+
+test("v84 certificats fournissent PDF officiel et entree CV structuree", () => {
+  const views = read("../backend/apps/enrollments/views.py");
+  const serializers = read("../backend/apps/enrollments/serializers.py");
+  const card = read("components/ui/CertificateCard.tsx");
+  assert.match(views, /class CertificatePDFView/);
+  assert.match(views, /application\/pdf/);
+  assert.match(views, /reportlab\.pdfgen/);
+  assert.match(serializers, /pdf_url/);
+  assert.match(serializers, /cv_entry/);
+  assert.match(card, /Télécharger PDF/);
+  assert.match(card, /Copier pour mon CV/);
+});
+
+test("v84 preserve la preuve verifiee tout en autorisant la presentation riche", () => {
+  const views = read("../backend/apps/projects/views.py");
+  assert.match(views, /instance\.is_verified/);
+  assert.match(views, /"problem", "objective", "outcome", "stack", "video_url"/);
+  assert.match(views, /Les informations vérifiées d'un projet KalanPro ne peuvent pas être altérées/);
 });

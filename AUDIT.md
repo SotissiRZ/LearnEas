@@ -280,3 +280,29 @@ Le code financier dispose désormais d’un historique persistant de tentative/�
 - Rappel entretien à ~60 minutes via Celery Beat.
 - Docker dev inclut désormais worker et beat afin que les tâches asynchrones soient testables localement.
 - Deux migrations additives uniquement (`accounts.0011`, `notifications.0003`).
+
+---
+
+# Audit v83 — Cohortes et mentorat avancés
+
+- Liste d'attente de cohorte protégée contre la survente : inscriptions actives, checkout `pending` et offres temporaires sont comptés ensemble.
+- Réattribution automatique des places avec TTL configurable et réinscription explicite possible après expiration.
+- Vue instructeur de la file limitée aux informations publiques du profil ; aucun email n'est exposé.
+- Packs de mentorat reliés au checkout et à la révocation financière ; pass verrouillé lors du débit, solde borné et délivrance payée idempotente.
+- Reprogrammation et réservation sérialisées par mentor afin d'éviter les rendez-vous concurrents entre plusieurs offres.
+- Créneaux récurrents traçables par règle ; les disponibilités devenues obsolètes sont désactivées sans toucher aux réservations actives ni aux créneaux manuels.
+- Contrôles hors Docker : 53/53 tests frontend statiques, audit mobile 129 fichiers, 146 TS/TSX sans erreur de parsing, 249 Python compilables, scan secrets/Compose/entrypoint OK, 72 migrations sans collision/cycle/dépendance manquante.
+- 219 fonctions de tests backend présentes. La suite Django runtime reste à exécuter dans Docker car Django n'est pas installé dans l'environnement de génération.
+
+---
+
+# Audit v84 — Portfolio & certificats avancés
+
+- Les nouveaux champs portfolio sont purement additifs et les snapshots de preuve KalanPro restent en lecture seule.
+- Les certificats publics du portfolio nécessitent une sélection explicite du propriétaire et sont filtrés sur leur statut effectif actif.
+- L’email public est un champ distinct et n’est exposé que si `show_contact_email=true`.
+- Le PDF est généré à partir du snapshot immuable du certificat et pointe vers la vérification publique via QR.
+- Les PDF de certificats révoqués/expirés restent historiquement téléchargeables mais portent un filigrane de statut.
+- Contrôles hors Docker : 57/57 tests frontend statiques, audit mobile 129 fichiers, Python compilable, TS/TSX sans erreur de parsing, scan secrets/Compose/entrypoint OK, 73 migrations sans collision/cycle/dépendance manquante.
+- Les tests Django et le build Next complet restent à exécuter dans Docker/CI.
+

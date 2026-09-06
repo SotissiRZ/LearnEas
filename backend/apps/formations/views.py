@@ -17,12 +17,14 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.catalog.permissions import IsInstructorOrAdmin
+from apps.accounts.serializers import UserPublicCompactSerializer
 from apps.common.throttles import LiveRateThrottle
 from apps.common.media_metadata import validate_upload_limits
 from .models import (
     InteractiveFormation, FormationSession, FormationEnrollment,
     FormationAttendance, FormationSignal, FormationStatus, FormationRoomFile, FormationSessionInvite,
-    FormationKind, MentorshipOffering, MentorshipSlot, MentorshipBooking,
+    FormationKind, FormationWaitlistEntry, MentorshipOffering, MentorshipSlot, MentorshipBooking,
+    MentorshipPack, MentorshipPass, MentorshipAvailabilityRule,
 )
 from .rtc import ice_servers_for_user
 from .realtime import (
@@ -34,7 +36,8 @@ from .serializers import (
     InteractiveFormationWriteSerializer, FormationSessionSerializer, FormationSessionWriteSerializer,
     FormationEnrollmentSerializer, AttendanceSerializer,
     MentorshipOfferingListSerializer, MentorshipOfferingWriteSerializer,
-    MentorshipSlotSerializer, MentorshipBookingSerializer,
+    MentorshipSlotSerializer, MentorshipBookingSerializer, MentorshipPackSerializer,
+    MentorshipPassSerializer, MentorshipAvailabilityRuleSerializer,
 )
 
 User = get_user_model()
@@ -110,7 +113,20 @@ class InteractiveFormationViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = InteractiveFormation.objects.select_related(
             "instructor", "co_instructor", "category", "category__domain"
-        ).annotate(_students_count=Count("enrollments", distinct=True)).filter(kind=FormationKind.COHORT)
+        ).annotate(
+            _students_count=Count("enrollments", filter=Q(enrollments__revoked_at__isnull=True), distinct=True),
+            _waitlist_count=Count(
+                "waitlist_entries", filter=Q(waitlist_entries__status=FormationWaitlistEntry.Status.WAITING), distinct=True
+            ),
+            _waitlist_offered_count=Count(
+                "waitlist_entries",
+                filter=Q(
+                    waitlist_entries__status=FormationWaitlistEntry.Status.OFFERED,
+                    waitlist_entries__offer_expires_at__gt=timezone.now(),
+                ),
+                distinct=True,
+            ),
+        ).filter(kind=FormationKind.COHORT)
         if self.action in ("retrieve", "my_formations"):
             qs = qs.prefetch_related("sessions")
         user = self.request.user
@@ -139,6 +155,61 @@ class InteractiveFormationViewSet(viewsets.ModelViewSet):
         qs = self.get_queryset()
         serializer = InteractiveFormationDetailSerializer(qs, many=True, context=self.get_serializer_context())
         return Response(serializer.data)
+
+    @action(detail=True, methods=["get"], permission_classes=[permissions.IsAuthenticated], url_path="waitlist")
+    def waitlist(self, request, slug=None):
+        formation = self.get_object()
+        if not _is_organizer(request.user, formation):
+            return Response({"detail": "Action réservée aux responsables de cette cohorte."}, status=403)
+        # Met à jour les offres expirées avant d'afficher la file opérationnelle.
+        from .cohorts import refresh_waitlist
+        refresh_waitlist(formation.id)
+        entries = list(
+            FormationWaitlistEntry.objects.filter(formation=formation)
+            .select_related("user")
+            .exclude(status=FormationWaitlistEntry.Status.CANCELLED)
+            .order_by("created_at", "id")
+        )
+        waiting_position = 0
+        rows = []
+        for entry in entries:
+            position = None
+            if entry.status == FormationWaitlistEntry.Status.WAITING:
+                waiting_position += 1
+                position = waiting_position
+            rows.append({
+                "id": entry.id,
+                "status": entry.status,
+                "position": position,
+                "user": UserPublicCompactSerializer(entry.user, context={"request": request}).data,
+                "offered_at": entry.offered_at,
+                "offer_expires_at": entry.offer_expires_at,
+                "joined_at": entry.joined_at,
+                "created_at": entry.created_at,
+            })
+        return Response({
+            "waiting": sum(1 for row in rows if row["status"] == FormationWaitlistEntry.Status.WAITING),
+            "offered": sum(1 for row in rows if row["status"] == FormationWaitlistEntry.Status.OFFERED),
+            "results": rows,
+        })
+
+    @action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated])
+    def join_waitlist(self, request, slug=None):
+        formation = self.get_object()
+        try:
+            from .cohorts import join_waitlist
+            entry = join_waitlist(request.user, formation)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=409)
+        from .cohorts import waitlist_snapshot
+        return Response(waitlist_snapshot(request.user, formation), status=201)
+
+    @action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated])
+    def leave_waitlist(self, request, slug=None):
+        formation = self.get_object()
+        from .cohorts import leave_waitlist, waitlist_snapshot
+        leave_waitlist(request.user, formation)
+        return Response(waitlist_snapshot(request.user, formation))
 
     @action(detail=True, methods=["get"])
     def calendar(self, request, slug=None):
@@ -831,7 +902,7 @@ class MentorshipOfferingViewSet(viewsets.ModelViewSet):
             "bookings__order_items__order"
         )
         qs = MentorshipOffering.objects.select_related("instructor", "room_formation").prefetch_related(
-            Prefetch("slots", queryset=mentorship_slots)
+            Prefetch("slots", queryset=mentorship_slots), "packs", "availability_rules"
         )
         user = self.request.user
         if self.action == "mine" and user.is_authenticated:
@@ -984,7 +1055,7 @@ class MentorshipBookingViewSet(viewsets.ModelViewSet):
         if self.request.user.role == "admin":
             return qs
         if self.request.user.role == "instructor":
-            if self.action in {"retrieve", "cancel", "complete"}:
+            if self.action in {"retrieve", "cancel", "complete", "reschedule"}:
                 return qs.filter(Q(user=self.request.user) | Q(offering__instructor=self.request.user)).distinct()
             if self.request.query_params.get("as_mentor") == "1":
                 return qs.filter(offering__instructor=self.request.user)
@@ -1002,6 +1073,7 @@ class MentorshipBookingViewSet(viewsets.ModelViewSet):
                 user=request.user,
                 slot=slot,
                 learner_note=request.data.get("learner_note", ""),
+                mentorship_pass=request.data.get("pass_id") or None,
             )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=409)
@@ -1052,10 +1124,43 @@ class MentorshipBookingViewSet(viewsets.ModelViewSet):
         booking.cancelled_at = timezone.now()
         booking.expires_at = None
         booking.save(update_fields=["status", "cancelled_at", "expires_at", "updated_at"])
+        if booking.mentorship_pass_id:
+            from .mentorship import restore_pass_credit
+            restore_pass_credit(booking)
         if booking.slot.session_id and booking.user.email:
             FormationSessionInvite.objects.filter(
                 session_id=booking.slot.session_id, email__iexact=booking.user.email, revoked_at__isnull=True
             ).update(revoked_at=timezone.now())
+        return Response(self.get_serializer(booking).data)
+
+    @action(detail=True, methods=["post"])
+    def reschedule(self, request, pk=None):
+        booking = self.get_object()
+        if request.user.role != "admin" and booking.user_id != request.user.id and booking.offering.instructor_id != request.user.id:
+            return Response({"detail": "Action interdite."}, status=403)
+        new_slot = MentorshipSlot.objects.select_related("offering").filter(pk=request.data.get("slot_id")).first()
+        if not new_slot:
+            return Response({"slot_id": ["Créneau introuvable."]}, status=404)
+        try:
+            from .mentorship import reschedule_booking
+            booking = reschedule_booking(booking=booking, new_slot=new_slot)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=409)
+        try:
+            from apps.notifications.models import InAppNotification
+            from apps.notifications.services import queue_in_app_event
+            transaction.on_commit(lambda: queue_in_app_event(
+                user=booking.user,
+                event_key=f"inapp:mentorship-rescheduled:{booking.id}:{booking.reschedule_count}",
+                category=InAppNotification.Category.MENTORSHIP,
+                event_type="mentorship_rescheduled",
+                title="Rendez-vous reprogrammé",
+                body=f"Votre séance {booking.offering.title} a été déplacée.",
+                action_url=f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/student/mentorship",
+                metadata={"booking_id": booking.id, "slot_id": booking.slot_id},
+            ))
+        except Exception:
+            pass
         return Response(self.get_serializer(booking).data)
 
     @action(detail=True, methods=["post"])
@@ -1070,3 +1175,111 @@ class MentorshipBookingViewSet(viewsets.ModelViewSet):
         booking.save(update_fields=["status", "mentor_note", "updated_at"])
         return Response(self.get_serializer(booking).data)
 
+
+
+class MentorshipPackViewSet(viewsets.ModelViewSet):
+    serializer_class = MentorshipPackSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["offering", "published"]
+    ordering_fields = ["sessions_count", "price"]
+    ordering = ["sessions_count"]
+
+    def get_queryset(self):
+        qs = MentorshipPack.objects.select_related("offering", "offering__instructor")
+        user = self.request.user
+        if user.is_authenticated and user.role == "admin":
+            return qs
+        if user.is_authenticated and user.role == "instructor":
+            return qs.filter(Q(published=True) | Q(offering__instructor=user)).distinct()
+        return qs.filter(published=True, offering__published=True)
+
+    def perform_create(self, serializer):
+        offering = serializer.validated_data["offering"]
+        if self.request.user.role != "admin" and offering.instructor_id != self.request.user.id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Vous ne pouvez créer des packs que pour vos propres offres.")
+        serializer.save()
+
+    def perform_update(self, serializer):
+        obj = self.get_object()
+        if self.request.user.role != "admin" and obj.offering.instructor_id != self.request.user.id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Action interdite.")
+        serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        if request.user.role != "admin" and obj.offering.instructor_id != request.user.id:
+            return Response({"detail": "Action interdite."}, status=403)
+        if obj.passes.exists() or obj.order_items.exists():
+            obj.published = False
+            obj.save(update_fields=["published"])
+            return Response({"detail": "Pack dépublié car il possède déjà un historique."}, status=200)
+        return super().destroy(request, *args, **kwargs)
+
+
+class MentorshipPassViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = MentorshipPassSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["pack__offering"]
+    ordering_fields = ["created_at", "expires_at", "remaining_sessions"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        qs = MentorshipPass.objects.select_related("pack", "pack__offering")
+        if self.request.user.role == "admin":
+            return qs
+        return qs.filter(user=self.request.user)
+
+
+class MentorshipAvailabilityRuleViewSet(viewsets.ModelViewSet):
+    serializer_class = MentorshipAvailabilityRuleSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["offering", "weekday", "is_active"]
+    ordering = ["weekday", "start_time"]
+
+    def get_queryset(self):
+        qs = MentorshipAvailabilityRule.objects.select_related("offering", "offering__instructor")
+        if self.request.user.role == "admin":
+            return qs
+        return qs.filter(offering__instructor=self.request.user)
+
+    def perform_create(self, serializer):
+        offering = serializer.validated_data["offering"]
+        if self.request.user.role != "admin" and offering.instructor_id != self.request.user.id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Action interdite.")
+        rule = serializer.save()
+        from .mentorship import generate_rule_slots
+        generate_rule_slots(rule)
+
+    def perform_update(self, serializer):
+        rule = serializer.save()
+        from .mentorship import generate_rule_slots
+        generate_rule_slots(rule)
+
+    def destroy(self, request, *args, **kwargs):
+        rule = self.get_object()
+        # Une règle ayant déjà généré des créneaux est conservée comme historique :
+        # on la désactive et on retire seulement ses disponibilités futures libres.
+        if rule.generated_slots.exists():
+            rule.is_active = False
+            rule.save(update_fields=["is_active"])
+            from .mentorship import generate_rule_slots
+            generate_rule_slots(rule)
+            return Response({"detail": "Règle désactivée car elle possède déjà un historique."}, status=200)
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"])
+    def generate(self, request, pk=None):
+        rule = self.get_object()
+        from .mentorship import generate_rule_slots
+        try:
+            horizon_days = int(request.data.get("horizon_days", 45))
+        except (TypeError, ValueError):
+            return Response({"horizon_days": ["Valeur entière invalide."]}, status=400)
+        created = generate_rule_slots(rule, horizon_days=horizon_days)
+        return Response({"created": created})

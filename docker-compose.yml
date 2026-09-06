@@ -66,6 +66,7 @@ x-backend-env: &backend-env
   PAYMENT_RECONCILIATION_BATCH_SIZE: ${PAYMENT_RECONCILIATION_BATCH_SIZE:-100}
   PAYMENT_ORDER_EXPIRY_HOURS: ${PAYMENT_ORDER_EXPIRY_HOURS:-24}
   PAYMENT_STALE_BATCH_SIZE: ${PAYMENT_STALE_BATCH_SIZE:-200}
+  COHORT_WAITLIST_OFFER_HOURS: ${COHORT_WAITLIST_OFFER_HOURS:-24}
   USE_S3: ${USE_S3:-False}
   REQUIRE_REMOTE_MEDIA: ${REQUIRE_REMOTE_MEDIA:-False}
   DIRECT_MEDIA_UPLOADS_ENABLED: ${DIRECT_MEDIA_UPLOADS_ENABLED:-False}
@@ -192,7 +193,8 @@ services:
     expose:
       - "8000"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health/ready/ || exit 1"]
+      # Liveness Docker uniquement ; /api/health/ready/ reste la sonde de dépendances.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/health/live/ >/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10

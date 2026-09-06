@@ -240,6 +240,9 @@ export interface InteractiveFormation {
   seats_left: number;
   is_full: boolean;
   is_enrollment_open?: boolean;
+  is_waitlist_open?: boolean;
+  waitlist_count?: number;
+  waitlist_offered_count?: number;
   cohort_name?: string;
   cohort_timezone?: string;
   enrollment_deadline?: string | null;
@@ -248,6 +251,11 @@ export interface InteractiveFormation {
   description?: string;
   sessions?: FormationSession[];
   is_enrolled?: boolean;
+  waitlist_status?: "" | "waiting" | "offered" | "joined" | "cancelled" | "expired";
+  waitlist_position?: number | null;
+  waitlist_offer_expires_at?: string | null;
+  can_checkout?: boolean;
+  effective_seats_left?: number;
   certificate_enabled?: boolean;
   certificate_auto_issue?: boolean;
   certificate_attendance_percent?: number;
@@ -262,6 +270,17 @@ export interface InteractiveFormation {
   certificate_show_duration?: boolean;
   certificate_show_instructor?: boolean;
   certificate_show_completion_date?: boolean;
+}
+
+export interface FormationWaitlistRow {
+  id: number;
+  status: "waiting" | "offered" | "joined" | "expired";
+  position: number | null;
+  user: Instructor;
+  offered_at: string | null;
+  offer_expires_at: string | null;
+  joined_at: string | null;
+  created_at: string;
 }
 
 export interface FormationEnrollment {
@@ -281,6 +300,44 @@ export interface MentorshipSlot {
   session: number | null;
 }
 
+
+export interface MentorshipPack {
+  id: number;
+  offering: number;
+  sessions_count: number;
+  price: string;
+  validity_days: number;
+  published: boolean;
+  effective_price_per_session: string;
+  created_at: string;
+}
+
+export interface MentorshipPass {
+  id: number;
+  pack: number;
+  offering_id: number;
+  offering_title: string;
+  sessions_count: number;
+  remaining_sessions: number;
+  expires_at: string | null;
+  revoked_at: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface MentorshipAvailabilityRule {
+  id: number;
+  offering: number;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  interval_minutes: number;
+  valid_from: string;
+  valid_until: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
 export interface MentorshipOffering {
   id: number;
   title: string;
@@ -295,6 +352,7 @@ export interface MentorshipOffering {
   cancellation_notice_hours: number;
   published: boolean;
   next_slots: MentorshipSlot[];
+  packs: MentorshipPack[];
   created_at: string;
 }
 
@@ -311,6 +369,9 @@ export interface MentorshipBooking {
   cancelled_at: string | null;
   learner_note: string;
   mentor_note: string;
+  mentorship_pass: number | null;
+  rescheduled_at: string | null;
+  reschedule_count: number;
   created_at: string;
   updated_at: string;
   join_session_id: number | null;
@@ -347,6 +408,16 @@ export interface Certificate {
   course_enrollment: number | null;
   formation_enrollment: number | null;
   qr_url?: string;
+  pdf_url?: string;
+  cv_entry?: {
+    title: string;
+    issuer: string;
+    issued_at: string | null;
+    expires_at: string | null;
+    credential_id: string;
+    verification_url: string;
+    skills: string[];
+  };
   issuer_name?: string;
   issuer_country?: string;
   skills_snapshot?: string[];
@@ -463,11 +534,25 @@ export interface PortfolioProfile {
   open_to_work: boolean;
   show_country: boolean;
   show_project_scores: boolean;
+  show_certificates: boolean;
+  public_contact_email: string;
+  show_contact_email: boolean;
   full_name: string;
   avatar: string | null;
   country: string;
   user_headline: string;
   public_url: string;
+  certificates: Array<{
+    id: number;
+    certificate_number: string;
+    content_title: string;
+    effective_status: "active" | "revoked" | "expired";
+    issued_at: string;
+    expires_at: string | null;
+    featured: boolean;
+    order: number;
+    is_public: boolean;
+  }>;
   updated_at: string;
 }
 
@@ -476,6 +561,14 @@ export interface PortfolioItem {
   source_submission: number | null;
   title: string;
   description: string;
+  role: string;
+  problem: string;
+  objective: string;
+  outcome: string;
+  stack: string[];
+  video_url: string;
+  started_at: string | null;
+  completed_at: string | null;
   cover_image: string | null;
   external_url: string;
   repository_url: string;
@@ -508,11 +601,33 @@ export interface PublicPortfolio {
   avatar: string | null;
   country: string;
   user_headline: string;
+  contact_email: string;
   updated_at: string;
+  certificates: Array<{
+    id: number;
+    certificate_number: string;
+    content_title: string;
+    instructor_name: string;
+    issuer_name: string;
+    issued_at: string;
+    expires_at: string | null;
+    achievement_percent: string;
+    skills: string[];
+    verification_url: string;
+    featured: boolean;
+  }>;
   items: Array<{
     id: number;
     title: string;
     description: string;
+    role: string;
+    problem: string;
+    objective: string;
+    outcome: string;
+    stack: string[];
+    video_url: string;
+    started_at: string | null;
+    completed_at: string | null;
     cover_image: string | null;
     external_url: string;
     repository_url: string;

@@ -175,9 +175,10 @@ export default function CheckoutPage() {
         const pdf_ids = items.filter((i) => i.type === "pdf").map((i) => i.id);
         const formation_ids = items.filter((i) => i.type === "formation").map((i) => i.id);
         const mentorship_booking_ids = items.filter((i) => i.type === "mentoring").map((i) => i.id);
+        const mentorship_pack_ids = items.filter((i) => i.type === "mentor_pack").map((i) => i.id);
         res = await api.post<CheckoutResponse>(
           "/payments/checkout/",
-          { course_ids, pdf_ids, formation_ids, mentorship_booking_ids, provider: isTestPayment ? "manual" : (provider || "manual"), currency, test_payment: isTestPayment },
+          { course_ids, pdf_ids, formation_ids, mentorship_booking_ids, mentorship_pack_ids, provider: isTestPayment ? "manual" : (provider || "manual"), currency, test_payment: isTestPayment },
         );
       }
 
@@ -196,7 +197,7 @@ export default function CheckoutPage() {
         router.push(`/dashboard/employer?billing=updated&order=${res.order.id}`);
         return;
       }
-      const mentoringOnly = items.length > 0 && items.every((i) => i.type === "mentoring");
+      const mentoringOnly = items.length > 0 && items.every((i) => i.type === "mentoring" || i.type === "mentor_pack");
       clear();
       router.push(mentoringOnly ? "/dashboard/student/mentorship?booked=1" : "/dashboard/student?purchased=1");
     } catch (e) {

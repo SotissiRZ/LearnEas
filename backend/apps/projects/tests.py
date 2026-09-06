@@ -4,7 +4,8 @@ from rest_framework.test import APITestCase
 
 from apps.catalog.models import Category, Course
 from apps.enrollments.models import CourseEnrollment
-from .models import ProjectAssignment, ProjectSubmission, PortfolioProfile
+from apps.enrollments.certificates import issue_course_certificate
+from .models import ProjectAssignment, ProjectSubmission, PortfolioProfile, PortfolioItem
 
 User = get_user_model()
 
@@ -94,3 +95,62 @@ class ProjectFlowTests(APITestCase):
         self.client.force_authenticate(None)
         response = self.client.get(f"/api/projects/portfolio/{profile.slug}/")
         self.assertEqual(response.status_code, 404)
+
+    def test_rich_portfolio_fields_and_selected_certificate_are_public(self):
+        self.client.force_authenticate(self.student)
+        item = self.client.post(
+            "/api/projects/portfolio-items/",
+            {
+                "title": "Plateforme data",
+                "description": "Projet complet",
+                "role": "Data analyst",
+                "problem": "Données dispersées",
+                "objective": "Centraliser les KPI",
+                "outcome": "Reporting hebdomadaire automatisé",
+                "stack": ["Excel", "Power BI"],
+                "video_url": "https://example.com/demo",
+                "skills": ["Analyse"],
+                "is_public": True,
+            },
+            format="json",
+        )
+        self.assertEqual(item.status_code, 201, item.data)
+        self.assertEqual(item.data["role"], "Data analyst")
+        self.assertEqual(item.data["stack"], ["Excel", "Power BI"])
+
+        certificate, _ = issue_course_certificate(self.enrollment, issued_by=self.instructor, force=True)
+        profile = PortfolioProfile.objects.get(user=self.student)
+        updated = self.client.patch(
+            "/api/projects/portfolio-profile/me/",
+            {
+                "is_public": True,
+                "show_certificates": True,
+                "selected_certificate_ids": [certificate.id],
+                "public_contact_email": "portfolio@example.com",
+                "show_contact_email": True,
+            },
+            format="json",
+        )
+        self.assertEqual(updated.status_code, 200, updated.data)
+        self.client.force_authenticate(None)
+        public = self.client.get(f"/api/projects/portfolio/{profile.slug}/")
+        self.assertEqual(public.status_code, 200, public.data)
+        self.assertEqual(public.data["contact_email"], "portfolio@example.com")
+        self.assertEqual(public.data["items"][0]["outcome"], "Reporting hebdomadaire automatisé")
+        self.assertEqual(public.data["certificates"][0]["certificate_number"], certificate.certificate_number)
+
+    def test_portfolio_cannot_select_another_users_certificate(self):
+        self.enrollment.progress_percent = 100
+        self.enrollment.save(update_fields=["progress_percent"])
+        other = User.objects.create_user(username="student2", email="student2@example.com", password="x", role="student")
+        other_enrollment = CourseEnrollment.objects.create(user=other, course=self.course, progress_percent=100)
+        foreign_certificate, _ = issue_course_certificate(other_enrollment, issued_by=self.instructor, force=True)
+        self.client.force_authenticate(self.student)
+        response = self.client.patch(
+            "/api/projects/portfolio-profile/me/",
+            {"selected_certificate_ids": [foreign_certificate.id]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("selected_certificate_ids", response.data)
+

@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import time, timedelta
 from decimal import Decimal
 import tempfile
 
@@ -561,3 +561,237 @@ class CohortAndMentorshipRegressionTests(APITestCase):
         )
         self.assertEqual(unpublished.status_code, status.HTTP_200_OK, unpublished.data)
         self.assertFalse(unpublished.data["published"])
+
+    def test_waitlist_offers_oldest_user_when_seat_is_released(self):
+        from .cohorts import join_waitlist, refresh_waitlist
+        from .models import FormationWaitlistEntry
+
+        holder = User.objects.create_user(
+            username="cohort_holder", email="holder@example.com", password="passpass123", role=User.Role.STUDENT
+        )
+        second = User.objects.create_user(
+            username="cohort_second", email="second@example.com", password="passpass123", role=User.Role.STUDENT
+        )
+        formation = InteractiveFormation.objects.create(
+            instructor=self.mentor, category=self.category, title="Cohorte attente", description="Liste",
+            price=Decimal("25.00"), max_students=1, status="scheduled", published=True,
+            start_date=(timezone.now() + timedelta(days=10)).date(),
+        )
+        enrollment = FormationEnrollment.objects.create(user=holder, formation=formation)
+        first_entry = join_waitlist(self.learner, formation)
+        join_waitlist(second, formation)
+        self.assertEqual(first_entry.status, FormationWaitlistEntry.Status.WAITING)
+
+        enrollment.revoked_at = timezone.now()
+        enrollment.save(update_fields=["revoked_at"])
+        refresh_waitlist(formation.id)
+        first_entry.refresh_from_db()
+        second_entry = FormationWaitlistEntry.objects.get(formation=formation, user=second)
+        self.assertEqual(first_entry.status, FormationWaitlistEntry.Status.OFFERED)
+        self.assertEqual(second_entry.status, FormationWaitlistEntry.Status.WAITING)
+        self.assertIsNotNone(first_entry.offer_expires_at)
+
+    def test_expired_waitlist_offer_moves_to_next_user(self):
+        from .cohorts import join_waitlist, refresh_waitlist
+        from .models import FormationWaitlistEntry
+
+        second = User.objects.create_user(
+            username="waitlist_next", email="waitlist-next@example.com", password="passpass123", role=User.Role.STUDENT
+        )
+        formation = InteractiveFormation.objects.create(
+            instructor=self.mentor, category=self.category, title="Cohorte expiration", description="Liste",
+            price=Decimal("0.00"), max_students=1, status="scheduled", published=True,
+            start_date=(timezone.now() + timedelta(days=10)).date(),
+        )
+        first = join_waitlist(self.learner, formation)
+        join_waitlist(second, formation)
+        first.refresh_from_db()
+        self.assertEqual(first.status, FormationWaitlistEntry.Status.OFFERED)
+        FormationWaitlistEntry.objects.filter(pk=first.pk).update(offer_expires_at=timezone.now() - timedelta(minutes=1))
+        refresh_waitlist(formation.id)
+        first.refresh_from_db()
+        second_entry = FormationWaitlistEntry.objects.get(formation=formation, user=second)
+        self.assertEqual(first.status, FormationWaitlistEntry.Status.EXPIRED)
+        self.assertEqual(second_entry.status, FormationWaitlistEntry.Status.OFFERED)
+
+    def test_mentorship_pass_confirms_booking_and_cancel_restores_credit(self):
+        from .models import MentorshipOffering, MentorshipPack, MentorshipPass
+        from .mentorship import create_slot
+
+        offer = MentorshipOffering.objects.create(
+            instructor=self.mentor, title="Pack coaching", description="Pack", price=Decimal("30.00"),
+            published=True, booking_notice_hours=1, cancellation_notice_hours=12,
+        )
+        pack = MentorshipPack.objects.create(offering=offer, sessions_count=3, price=Decimal("75.00"), validity_days=90)
+        pass_obj = MentorshipPass.objects.create(
+            user=self.learner, pack=pack, total_sessions=3, remaining_sessions=3,
+            expires_at=timezone.now() + timedelta(days=90),
+        )
+        slot = create_slot(offer, timezone.now() + timedelta(days=3))
+        self.client.force_authenticate(self.learner)
+        booked = self.client.post(
+            "/api/mentorship/bookings/", {"slot_id": slot.id, "pass_id": pass_obj.id}, format="json"
+        )
+        self.assertEqual(booked.status_code, status.HTTP_201_CREATED, booked.data)
+        self.assertEqual(booked.data["status"], "confirmed")
+        self.assertEqual(booked.data["price_snapshot"], "0.00")
+        pass_obj.refresh_from_db()
+        self.assertEqual(pass_obj.remaining_sessions, 2)
+
+        cancelled = self.client.post(f"/api/mentorship/bookings/{booked.data['id']}/cancel/", {}, format="json")
+        self.assertEqual(cancelled.status_code, status.HTTP_200_OK, cancelled.data)
+        pass_obj.refresh_from_db()
+        self.assertEqual(pass_obj.remaining_sessions, 3)
+
+    def test_confirmed_mentorship_booking_can_be_rescheduled_without_second_payment(self):
+        from .models import MentorshipOffering, MentorshipBooking
+        from .mentorship import create_slot, reserve_booking
+
+        offer = MentorshipOffering.objects.create(
+            instructor=self.mentor, title="Reprogrammation", description="Test", price=Decimal("0.00"),
+            published=True, booking_notice_hours=1, cancellation_notice_hours=12,
+        )
+        first_slot = create_slot(offer, timezone.now() + timedelta(days=3))
+        second_slot = create_slot(offer, timezone.now() + timedelta(days=4))
+        booking = reserve_booking(user=self.learner, slot=first_slot)
+        self.assertEqual(booking.status, MentorshipBooking.Status.CONFIRMED)
+
+        self.client.force_authenticate(self.learner)
+        response = self.client.post(
+            f"/api/mentorship/bookings/{booking.id}/reschedule/", {"slot_id": second_slot.id}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        booking.refresh_from_db()
+        self.assertEqual(booking.slot_id, second_slot.id)
+        self.assertEqual(booking.reschedule_count, 1)
+        self.assertTrue(FormationSessionInvite.objects.filter(
+            session=second_slot.session, invited_user=self.learner, revoked_at__isnull=True
+        ).exists())
+        self.assertFalse(FormationSessionInvite.objects.filter(
+            session=first_slot.session, invited_user=self.learner, revoked_at__isnull=True
+        ).exists())
+
+    def test_recurring_availability_rule_generates_future_slots(self):
+        from zoneinfo import ZoneInfo
+        from .models import MentorshipAvailabilityRule, MentorshipOffering
+        from .mentorship import generate_rule_slots
+
+        offer = MentorshipOffering.objects.create(
+            instructor=self.mentor, title="Récurrent", description="Test", price=Decimal("0.00"),
+            published=True, timezone="UTC", booking_notice_hours=0, duration_minutes=30,
+        )
+        target = timezone.now().astimezone(ZoneInfo("UTC")).date() + timedelta(days=2)
+        while target.weekday() != 0:
+            target += timedelta(days=1)
+        rule = MentorshipAvailabilityRule.objects.create(
+            offering=offer, weekday=0, start_time=time(9, 0), end_time=time(11, 0), interval_minutes=30,
+            valid_from=target, valid_until=target,
+        )
+        created = generate_rule_slots(rule, horizon_days=10)
+        self.assertEqual(created, 4)
+        self.assertEqual(offer.slots.filter(starts_at__date=target).count(), 4)
+        self.assertEqual(offer.slots.filter(availability_rule=rule).count(), 4)
+
+        rule.is_active = False
+        rule.save(update_fields=["is_active"])
+        generate_rule_slots(rule, horizon_days=10)
+        self.assertEqual(offer.slots.filter(availability_rule=rule, is_active=True).count(), 0)
+
+    def test_expired_waitlist_user_can_rejoin_with_one_action(self):
+        from .cohorts import join_waitlist
+        from .models import FormationWaitlistEntry
+
+        formation = InteractiveFormation.objects.create(
+            instructor=self.mentor, category=self.category, title="Cohorte réinscription", description="Liste",
+            price=Decimal("0.00"), max_students=1, status="scheduled", published=True,
+            start_date=(timezone.now() + timedelta(days=10)).date(),
+        )
+        entry = join_waitlist(self.learner, formation)
+        self.assertEqual(entry.status, FormationWaitlistEntry.Status.OFFERED)
+        FormationWaitlistEntry.objects.filter(pk=entry.pk).update(offer_expires_at=timezone.now() - timedelta(minutes=1))
+        rejoined = join_waitlist(self.learner, formation)
+        self.assertIn(rejoined.status, {FormationWaitlistEntry.Status.WAITING, FormationWaitlistEntry.Status.OFFERED})
+        self.assertNotEqual(rejoined.status, FormationWaitlistEntry.Status.EXPIRED)
+
+    def test_mentor_cannot_accept_overlapping_bookings_across_offers(self):
+        from .models import MentorshipOffering
+        from .mentorship import create_slot, reserve_booking
+
+        second_learner = User.objects.create_user(
+            username="mentor_overlap_student", email="overlap@example.com", password="passpass123", role=User.Role.STUDENT
+        )
+        offer_a = MentorshipOffering.objects.create(
+            instructor=self.mentor, title="Overlap A", description="A", duration_minutes=60,
+            price=Decimal("0.00"), published=True, booking_notice_hours=0,
+        )
+        offer_b = MentorshipOffering.objects.create(
+            instructor=self.mentor, title="Overlap B", description="B", duration_minutes=60,
+            price=Decimal("0.00"), published=True, booking_notice_hours=0,
+        )
+        starts = timezone.now() + timedelta(days=2)
+        first = create_slot(offer_a, starts)
+        overlapping = create_slot(offer_b, starts + timedelta(minutes=30))
+        reserve_booking(user=self.learner, slot=first)
+        with self.assertRaisesMessage(ValueError, "plage horaire"):
+            reserve_booking(user=second_learner, slot=overlapping)
+
+    def test_pack_session_must_happen_before_pass_expiry(self):
+        from .models import MentorshipOffering, MentorshipPack, MentorshipPass
+        from .mentorship import create_slot, reserve_booking
+
+        offer = MentorshipOffering.objects.create(
+            instructor=self.mentor, title="Pack validité", description="Pack", duration_minutes=30,
+            price=Decimal("20.00"), published=True, booking_notice_hours=0,
+        )
+        pack = MentorshipPack.objects.create(offering=offer, sessions_count=2, price=Decimal("30.00"), validity_days=7)
+        pass_obj = MentorshipPass.objects.create(
+            user=self.learner, pack=pack, total_sessions=2, remaining_sessions=2,
+            expires_at=timezone.now() + timedelta(days=3),
+        )
+        late_slot = create_slot(offer, timezone.now() + timedelta(days=5))
+        with self.assertRaisesMessage(ValueError, "date de validité"):
+            reserve_booking(user=self.learner, slot=late_slot, mentorship_pass=pass_obj)
+
+    def test_instructor_waitlist_endpoint_is_private_and_exposes_no_email(self):
+        from .cohorts import join_waitlist
+
+        formation = InteractiveFormation.objects.create(
+            instructor=self.mentor, category=self.category, title="Cohorte pilotage", description="Liste",
+            price=Decimal("0.00"), max_students=1, status="scheduled", published=True,
+            start_date=(timezone.now() + timedelta(days=10)).date(),
+        )
+        holder = User.objects.create_user(
+            username="wait_holder", email="wait-holder@example.com", password="passpass123", role=User.Role.STUDENT
+        )
+        FormationEnrollment.objects.create(user=holder, formation=formation)
+        join_waitlist(self.learner, formation)
+
+        self.client.force_authenticate(self.mentor)
+        response = self.client.get(f"/api/formations/{formation.slug}/waitlist/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["waiting"], 1)
+        self.assertEqual(response.data["results"][0]["user"]["id"], self.learner.id)
+        self.assertNotIn("email", response.data["results"][0]["user"])
+
+        self.client.force_authenticate(self.learner)
+        forbidden = self.client.get(f"/api/formations/{formation.slug}/waitlist/")
+        self.assertEqual(forbidden.status_code, status.HTTP_403_FORBIDDEN, forbidden.data)
+
+    def test_availability_rules_cannot_overlap_on_same_offer(self):
+        from .models import MentorshipAvailabilityRule, MentorshipOffering
+        from .serializers import MentorshipAvailabilityRuleSerializer
+
+        offer = MentorshipOffering.objects.create(
+            instructor=self.mentor, title="Règles sans conflit", description="Test", duration_minutes=30,
+            price=Decimal("0.00"), published=True, booking_notice_hours=0,
+        )
+        MentorshipAvailabilityRule.objects.create(
+            offering=offer, weekday=2, start_time=time(9, 0), end_time=time(11, 0), interval_minutes=30,
+        )
+        serializer = MentorshipAvailabilityRuleSerializer(data={
+            "offering": offer.id, "weekday": 2, "start_time": "10:30", "end_time": "12:00",
+            "interval_minutes": 30, "valid_from": timezone.localdate().isoformat(), "is_active": True,
+        })
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("start_time", serializer.errors)
+

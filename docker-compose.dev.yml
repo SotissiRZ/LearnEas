@@ -28,6 +28,11 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     # Redis reste privé au réseau Docker ; aucun port Windows n’est requis.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     networks:
       - learneas_dev_net
 
@@ -111,6 +116,7 @@ services:
       PAYMENT_RECONCILIATION_BATCH_SIZE: ${PAYMENT_RECONCILIATION_BATCH_SIZE:-100}
       PAYMENT_ORDER_EXPIRY_HOURS: ${PAYMENT_ORDER_EXPIRY_HOURS:-24}
       PAYMENT_STALE_BATCH_SIZE: ${PAYMENT_STALE_BATCH_SIZE:-200}
+      COHORT_WAITLIST_OFFER_HOURS: ${COHORT_WAITLIST_OFFER_HOURS:-24}
     volumes:
       - ./backend:/app
       - static_data_dev:/app/staticfiles
@@ -122,9 +128,12 @@ services:
       db:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health/ready/ || exit 1"]
+      # Docker vérifie uniquement la vie du processus Django. La readiness DB/Redis
+      # reste disponible sur /api/health/ready/ pour le monitoring sans créer de
+      # cascade "backend unhealthy" lors d'une panne Redis transitoire.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/health/live/ >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -156,6 +165,7 @@ services:
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
       WHATSAPP_HTTP_TIMEOUT: ${WHATSAPP_HTTP_TIMEOUT:-15}
+      COHORT_WAITLIST_OFFER_HOURS: ${COHORT_WAITLIST_OFFER_HOURS:-24}
     volumes:
       - ./backend:/app
       - media_data_dev:/app/media
@@ -163,7 +173,47 @@ services:
       backend:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
+    networks:
+      - learneas_dev_net
+
+  celery_media_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["celery", "-A", "learneas", "worker", "--loglevel=info", "-Q", "media", "--concurrency=1", "--prefetch-multiplier=1"]
+    restart: unless-stopped
+    environment:
+      SECRET_KEY: dev-secret-key
+      DEBUG: "True"
+      SKIP_BOOTSTRAP: "true"
+      DATABASE_URL: postgresql://learneas:learneas@db:5432/learneas
+      REDIS_URL: redis://redis:6379/0
+      MAX_VIDEO_UPLOAD_MB: ${MAX_VIDEO_UPLOAD_MB:-2048}
+      VIDEO_NORMALIZATION_ENABLED: ${VIDEO_NORMALIZATION_ENABLED:-True}
+      VIDEO_PROBE_TIMEOUT_SECONDS: ${VIDEO_PROBE_TIMEOUT_SECONDS:-120}
+      VIDEO_TRANSCODE_TIMEOUT_SECONDS: ${VIDEO_TRANSCODE_TIMEOUT_SECONDS:-3600}
+      VIDEO_TRANSCODE_PRESET: ${VIDEO_TRANSCODE_PRESET:-veryfast}
+      VIDEO_TRANSCODE_CRF: ${VIDEO_TRANSCODE_CRF:-22}
+      HLS_STREAMING_ENABLED: ${HLS_STREAMING_ENABLED:-True}
+      HLS_MAX_HEIGHT: ${HLS_MAX_HEIGHT:-720}
+      HLS_SEGMENT_SECONDS: ${HLS_SEGMENT_SECONDS:-6}
+      HLS_TRANSCODE_TIMEOUT_SECONDS: ${HLS_TRANSCODE_TIMEOUT_SECONDS:-7200}
+      HLS_TRANSCODE_PRESET: ${HLS_TRANSCODE_PRESET:-veryfast}
+      HLS_AUDIO_ONLY_BITRATE: ${HLS_AUDIO_ONLY_BITRATE:-48k}
+      HLS_DATA_SAVER_MAX_HEIGHT: ${HLS_DATA_SAVER_MAX_HEIGHT:-360}
+      HLS_SEGMENT_CACHE_SECONDS: ${HLS_SEGMENT_CACHE_SECONDS:-600}
+      OFFLINE_VIDEO_ENABLED: ${OFFLINE_VIDEO_ENABLED:-True}
+      OFFLINE_VIDEO_MAX_HEIGHT: ${OFFLINE_VIDEO_MAX_HEIGHT:-360}
+      OFFLINE_VIDEO_MAX_MB: ${OFFLINE_VIDEO_MAX_MB:-250}
+    volumes:
+      - ./backend:/app
+      - media_data_dev:/app/media
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - learneas_dev_net
 
@@ -191,13 +241,14 @@ services:
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
       WHATSAPP_HTTP_TIMEOUT: ${WHATSAPP_HTTP_TIMEOUT:-15}
+      COHORT_WAITLIST_OFFER_HOURS: ${COHORT_WAITLIST_OFFER_HOURS:-24}
     volumes:
       - ./backend:/app
     depends_on:
       backend:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     networks:
       - learneas_dev_net
 

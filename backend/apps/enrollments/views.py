@@ -549,3 +549,120 @@ class CertificateQRView(APIView):
         response["Cache-Control"] = "public, max-age=86400"
         response["Content-Disposition"] = f'inline; filename="{certificate.certificate_number}-qr.png"'
         return response
+
+
+class CertificatePDFView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "certificate_verify"
+
+    def get(self, request, code):
+        from apps.accounts.models import PlatformSettings
+        if not PlatformSettings.load().certificate_verification_enabled:
+            return Response({"detail": "La vérification publique est désactivée."}, status=404)
+        certificate = get_object_or_404(Certificate, verification_code=code)
+        try:
+            import io
+            import qrcode
+            from reportlab.pdfgen import canvas
+            from reportlab.lib.pagesizes import A4, landscape
+            from reportlab.lib.colors import HexColor, Color
+            from reportlab.lib.utils import ImageReader
+        except Exception:
+            return Response({"detail": "Export PDF indisponible."}, status=503)
+
+        buffer = io.BytesIO()
+        page = landscape(A4)
+        width, height = page
+        pdf = canvas.Canvas(buffer, pagesize=page, pageCompression=1)
+        try:
+            accent = HexColor(certificate.accent_color or "#ff641a")
+        except Exception:
+            accent = HexColor("#ff641a")
+
+        # Cadre et en-tête
+        pdf.setStrokeColor(accent)
+        pdf.setLineWidth(5)
+        pdf.rect(24, 24, width - 48, height - 48)
+        pdf.setLineWidth(1)
+        pdf.rect(34, 34, width - 68, height - 68)
+        pdf.setFillColor(accent)
+        pdf.setFont("Helvetica-Bold", 14)
+        pdf.drawCentredString(width / 2, height - 78, (certificate.title or "Certificat de réussite")[:90])
+        pdf.setFillColorRGB(0.25, 0.25, 0.25)
+        pdf.setFont("Helvetica", 10)
+        if certificate.subtitle:
+            pdf.drawCentredString(width / 2, height - 96, certificate.subtitle[:120])
+
+        pdf.setFillColorRGB(0.08, 0.08, 0.08)
+        pdf.setFont("Helvetica-Bold", 27)
+        pdf.drawCentredString(width / 2, height - 150, certificate.student_name[:100])
+        pdf.setFont("Helvetica", 12)
+        pdf.setFillColorRGB(0.35, 0.35, 0.35)
+        pdf.drawCentredString(width / 2, height - 176, "a satisfait aux critères de validation de")
+        pdf.setFillColor(accent)
+        pdf.setFont("Helvetica-Bold", 19)
+        pdf.drawCentredString(width / 2, height - 204, certificate.content_title[:100])
+
+        y = height - 242
+        pdf.setFillColorRGB(0.2, 0.2, 0.2)
+        pdf.setFont("Helvetica", 10)
+        details = [
+            f"Émetteur : {certificate.issuer_name or 'KalanPro'}",
+            f"Instructeur : {certificate.instructor_name or '-'}",
+            f"Résultat : {certificate.achievement_percent}%",
+            f"N° : {certificate.certificate_number}",
+        ]
+        if certificate.completed_at:
+            details.append(f"Validé le : {certificate.completed_at.strftime('%d/%m/%Y')}")
+        if certificate.expires_at:
+            details.append(f"Expiration : {certificate.expires_at.strftime('%d/%m/%Y')}")
+        x0 = 86
+        col_width = (width - 172) / 2
+        for index, line in enumerate(details):
+            col = index % 2
+            row = index // 2
+            pdf.drawString(x0 + col * col_width, y - row * 22, line[:115])
+
+        skills = [str(v).strip() for v in (certificate.skills_snapshot or []) if str(v).strip()][:12]
+        if skills:
+            pdf.setFont("Helvetica-Bold", 9)
+            pdf.setFillColorRGB(0.35, 0.35, 0.35)
+            pdf.drawString(86, y - 82, "Compétences attestées")
+            pdf.setFont("Helvetica", 9)
+            pdf.drawString(86, y - 98, " • ".join(skills)[:170])
+
+        verification_url = f"{settings.FRONTEND_URL.rstrip('/')}/certificates/verify/{certificate.verification_code}"
+        qr = qrcode.QRCode(version=None, box_size=4, border=2)
+        qr.add_data(verification_url)
+        qr.make(fit=True)
+        qr_image = qr.make_image(fill_color="black", back_color="white")
+        qr_buffer = io.BytesIO()
+        qr_image.save(qr_buffer, format="PNG")
+        qr_buffer.seek(0)
+        qr_size = 88
+        pdf.drawImage(ImageReader(qr_buffer), width - 145, 70, qr_size, qr_size, preserveAspectRatio=True, mask="auto")
+        pdf.setFont("Helvetica", 7.5)
+        pdf.setFillColorRGB(0.4, 0.4, 0.4)
+        pdf.drawString(70, 103, f"Code de vérification : {certificate.verification_code}")
+        if certificate.credential_digest:
+            pdf.drawString(70, 87, f"Empreinte SHA-256 : {certificate.credential_digest[:64]}")
+        pdf.drawString(70, 71, "Vérification publique : " + verification_url[:120])
+
+        effective = certificate.effective_status
+        if effective != Certificate.Status.ACTIVE:
+            label = "RÉVOQUÉ" if effective == Certificate.Status.REVOKED else "EXPIRÉ"
+            pdf.saveState()
+            pdf.setFillColor(Color(0.75, 0.1, 0.1, alpha=0.16))
+            pdf.setFont("Helvetica-Bold", 58)
+            pdf.translate(width / 2, height / 2)
+            pdf.rotate(24)
+            pdf.drawCentredString(0, 0, label)
+            pdf.restoreState()
+
+        pdf.showPage()
+        pdf.save()
+        response = HttpResponse(buffer.getvalue(), content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{certificate.certificate_number}.pdf"'
+        response["Cache-Control"] = "private, max-age=300" if certificate.effective_status != Certificate.Status.ACTIVE else "public, max-age=3600"
+        return response

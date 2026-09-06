@@ -141,6 +141,9 @@ class PortfolioProfile(models.Model):
     open_to_work = models.BooleanField(default=False)
     show_country = models.BooleanField(default=True)
     show_project_scores = models.BooleanField(default=False)
+    show_certificates = models.BooleanField(default=True)
+    public_contact_email = models.EmailField(blank=True)
+    show_contact_email = models.BooleanField(default=False)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -157,6 +160,14 @@ class PortfolioItem(models.Model):
     )
     title = models.CharField(max_length=220)
     description = models.TextField(blank=True)
+    role = models.CharField(max_length=180, blank=True)
+    problem = models.TextField(blank=True)
+    objective = models.TextField(blank=True)
+    outcome = models.TextField(blank=True)
+    stack = models.JSONField(default=list, blank=True)
+    video_url = models.URLField(blank=True)
+    started_at = models.DateField(null=True, blank=True)
+    completed_at = models.DateField(null=True, blank=True)
     cover_image = models.ImageField(upload_to="portfolio/items/%Y/%m/", blank=True, null=True)
     external_url = models.URLField(blank=True)
     repository_url = models.URLField(blank=True)
@@ -185,3 +196,27 @@ class PortfolioItem(models.Model):
 
     def __str__(self):
         return f"{self.owner} · {self.title}"
+
+
+class PortfolioCertificate(models.Model):
+    """Sélection explicite des certificats affichés sur le portfolio public."""
+
+    profile = models.ForeignKey(PortfolioProfile, on_delete=models.CASCADE, related_name="certificate_selections")
+    certificate = models.ForeignKey("enrollments.Certificate", on_delete=models.CASCADE, related_name="portfolio_selections")
+    is_public = models.BooleanField(default=True, db_index=True)
+    featured = models.BooleanField(default=False)
+    order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-featured", "order", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["profile", "certificate"], name="uniq_portfolio_profile_certificate"),
+        ]
+        indexes = [
+            models.Index(fields=["profile", "is_public", "featured"], name="portfolio_cert_public_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.profile.slug} · {self.certificate.certificate_number}"

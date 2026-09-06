@@ -1,3 +1,13 @@
+# KalanPro v84 — Portfolio & certificats avancés
+
+- Portfolio enrichi : rôle, problème, objectif, résultat/impact, stack, vidéo de démonstration et période du projet.
+- Les preuves vérifiées KalanPro restent immuables ; seule leur présentation riche est modifiable.
+- Email public de contact strictement opt-in, indépendant de l’email privé du compte.
+- Sélection explicite des certificats affichés sur le portfolio ; les certificats révoqués/expirés sont automatiquement exclus de la vitrine active.
+- Export PDF serveur des certificats avec QR de vérification, identifiant, empreinte et filigrane de statut si nécessaire.
+- Entrée CV structurée exposée par l’API et bouton « Copier pour mon CV ».
+- Migration additive `projects.0002_portfolio_evidence_v84`.
+
 # KalanPro v78 — Gouvernance recruteur, droits payés et embauche
 
 - Le vivier de talents est désormais strictement réservé aux employeurs approuvés disposant d’un droit Pro ou Business payé et actif.
@@ -1202,7 +1212,7 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 
 ## v79 — Fondation production côté code (2026-09-05)
 - CI GitHub Actions complète : scan de secrets, Compose/entrypoint, `pip check`, Django check/migrations/tests, `check --deploy`, tests/typecheck/audit mobile et build Next.
-- Healthchecks séparés `/api/health/live/` et `/api/health/ready/`; Docker sonde la readiness PostgreSQL + Redis/cache.
+- Healthchecks séparés `/api/health/live/` et `/api/health/ready/`; Docker sonde uniquement la liveness Django, tandis que la readiness PostgreSQL + Redis/cache reste disponible pour le monitoring.
 - `X-Request-ID` de bout en bout, logs corrélés avec durée/statut et format JSON en production; les 5xx frontend affichent une référence exploitable.
 - Le refresh JWT ne déconnecte plus artificiellement l'utilisateur lors d'un timeout, d'une coupure réseau ou d'un `5xx`; seuls `401/403` invalident la session.
 - Timeouts configurables pour appels API, uploads XHR, blocs multipart directs et téléchargements privés.
@@ -1250,3 +1260,26 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Docker dev démarre désormais un worker Celery `default,notifications` et Celery Beat, afin que les notifications asynchrones fonctionnent réellement en local.
 - Restauration de `.github/workflows/ci.yml` et `.gitignore` dans l'archive source afin que les release gates v79 restent reproductibles après extraction.
 - Migrations additives : `accounts.0011_whatsapp_recruitment_template` et `notifications.0003_notification_center`.
+
+## v83 — Cohortes et mentorat avancés (2026-09-05)
+
+- Liste d'attente transactionnelle pour les cohortes avec ordre chronologique, priorité temporaire configurable, expiration et réattribution automatique.
+- Capacité réelle calculée avec inscriptions actives, réservations de checkout et offres de waitlist sans double comptage.
+- Dashboard instructeur : compteur et vue privée de la liste d'attente, sans exposition d'email.
+- Packs de mentorat achetables au checkout, pass à solde/expiration, consommation transactionnelle et recrédit lors d'une annulation admissible.
+- Remboursement d'un pack : révocation du pass et annulation des rendez-vous futurs associés.
+- Reprogrammation d'une séance confirmée sans second paiement avec rotation des invitations de salle et journalisation du nombre de changements.
+- Verrou par mentor et contrôle de chevauchement entre offres pour empêcher deux rendez-vous simultanés.
+- Disponibilités récurrentes avec génération Celery, provenance des créneaux, nettoyage des créneaux fantômes et rejet des règles qui se chevauchent sur une même offre.
+- Migrations additives `formations.0012_cohort_waitlist_mentorship_ops` et `payments.0015_mentorship_packs`.
+- Tests de fondation frontend v83 ajoutés ; validations détaillées dans `docs/VALIDATION_V83.md`.
+- Correctif Docker : la santé du backend ne dépend plus directement de Redis ; Redis possède sa propre sonde en dev et les dépendances attendent son état `healthy`, ce qui évite les cascades `dependency backend failed` sur une readiness transitoire.
+- Correctifs runtime v83 : imports explicites `get_user_model`, `ZoneInfo`/`ZoneInfoNotFoundError` dans le mentorat et `timezone` dans le serializer des cohortes.
+- Docker dev démarre désormais aussi `celery_media_worker` sur la file `media`, nécessaire aux transcodages HLS et copies vidéo hors connexion.
+- `COHORT_WAITLIST_OFFER_HOURS` est propagé aux services Docker dev/prod concernés.
+
+### Correctif runtime Docker v83
+- Corrige le crash du backend au chargement de `learneas/settings.py` : les paramètres offline utilisaient `os.getenv(...)` sans importer `os`.
+- Utilise désormais `python-decouple` (`config(..., cast=...)`) de façon cohérente avec le reste des settings.
+- Aucun changement de schéma ou de données.
+

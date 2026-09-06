@@ -439,6 +439,7 @@ PAYMENT_RECONCILIATION_MIN_AGE_SECONDS = config("PAYMENT_RECONCILIATION_MIN_AGE_
 PAYMENT_RECONCILIATION_BATCH_SIZE = config("PAYMENT_RECONCILIATION_BATCH_SIZE", default=100, cast=int)
 PAYMENT_ORDER_EXPIRY_HOURS = config("PAYMENT_ORDER_EXPIRY_HOURS", default=24, cast=int)
 PAYMENT_STALE_BATCH_SIZE = config("PAYMENT_STALE_BATCH_SIZE", default=200, cast=int)
+COHORT_WAITLIST_OFFER_HOURS = config("COHORT_WAITLIST_OFFER_HOURS", default=24, cast=int)
 
 CELERY_BEAT_SCHEDULE = {
     "payment-reconciliation-every-5-minutes": {
@@ -464,6 +465,14 @@ CELERY_BEAT_SCHEDULE = {
     "certificate-expiration-hourly": {
         "task": "apps.enrollments.tasks.expire_certificates",
         "schedule": 3600.0,
+    },
+    "cohort-waitlist-refresh-every-15-minutes": {
+        "task": "apps.formations.tasks.refresh_cohort_waitlists",
+        "schedule": 900.0,
+    },
+    "mentorship-recurring-slots-every-12-hours": {
+        "task": "apps.formations.tasks.generate_recurring_mentorship_slots",
+        "schedule": 43200.0,
     },
 }
 
@@ -566,7 +575,11 @@ if not DEBUG:
     SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
     X_FRAME_OPTIONS = "DENY"
 
-OFFLINE_VIDEO_ENABLED = os.getenv("OFFLINE_VIDEO_ENABLED", "True").lower() == "true"
-OFFLINE_VIDEO_MAX_HEIGHT = int(os.getenv("OFFLINE_VIDEO_MAX_HEIGHT", "360"))
-OFFLINE_VIDEO_MAX_MB = int(os.getenv("OFFLINE_VIDEO_MAX_MB", "250"))
-OFFLINE_PROGRESS_TOKEN_MAX_AGE = int(os.getenv("OFFLINE_PROGRESS_TOKEN_MAX_AGE", str(30 * 24 * 3600)))
+OFFLINE_VIDEO_ENABLED = config("OFFLINE_VIDEO_ENABLED", default=True, cast=bool)
+OFFLINE_VIDEO_MAX_HEIGHT = config("OFFLINE_VIDEO_MAX_HEIGHT", default=360, cast=int)
+OFFLINE_VIDEO_MAX_MB = config("OFFLINE_VIDEO_MAX_MB", default=250, cast=int)
+OFFLINE_PROGRESS_TOKEN_MAX_AGE = config(
+    "OFFLINE_PROGRESS_TOKEN_MAX_AGE",
+    default=30 * 24 * 3600,
+    cast=int,
+)

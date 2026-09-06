@@ -92,6 +92,8 @@ class CertificateSerializer(serializers.ModelSerializer):
     effective_status = serializers.ReadOnlyField()
     verification_url = serializers.SerializerMethodField()
     qr_url = serializers.SerializerMethodField()
+    pdf_url = serializers.SerializerMethodField()
+    cv_entry = serializers.SerializerMethodField()
     replacement_verification_url = serializers.SerializerMethodField()
     supersedes_certificate_number = serializers.CharField(source="supersedes.certificate_number", read_only=True, allow_null=True)
     events = CertificateEventSerializer(many=True, read_only=True)
@@ -99,7 +101,7 @@ class CertificateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Certificate
         fields = [
-            "id", "certificate_number", "verification_code", "verification_url", "qr_url",
+            "id", "certificate_number", "verification_code", "verification_url", "qr_url", "pdf_url", "cv_entry",
             "status", "effective_status", "issued_at", "expires_at", "revoked_at",
             "revocation_reason", "achievement_percent", "student_name", "content_type",
             "content_title", "instructor_name", "title", "subtitle", "description",
@@ -132,18 +134,41 @@ class CertificateSerializer(serializers.ModelSerializer):
         replacement = obj.replacement_certificates.order_by("-issued_at", "-id").first()
         return self._public_url(replacement) if replacement else None
 
+    def get_pdf_url(self, obj):
+        from django.urls import reverse
+        request = self.context.get("request")
+        path = reverse("certificate-pdf", kwargs={"code": obj.verification_code})
+        if request:
+            return request.build_absolute_uri(path)
+        from django.conf import settings
+        base = str(getattr(settings, "BACKEND_PUBLIC_URL", "")).rstrip("/")
+        return f"{base}{path}" if base else path
+
+    def get_cv_entry(self, obj):
+        return {
+            "title": obj.content_title,
+            "issuer": obj.issuer_name or "KalanPro",
+            "issued_at": obj.issued_at.date().isoformat() if obj.issued_at else None,
+            "expires_at": obj.expires_at.date().isoformat() if obj.expires_at else None,
+            "credential_id": obj.certificate_number,
+            "verification_url": self._public_url(obj),
+            "skills": obj.skills_snapshot or [],
+        }
+
 
 class PublicCertificateSerializer(serializers.ModelSerializer):
     effective_status = serializers.ReadOnlyField()
     verification_url = serializers.SerializerMethodField()
     qr_url = serializers.SerializerMethodField()
+    pdf_url = serializers.SerializerMethodField()
+    cv_entry = serializers.SerializerMethodField()
     replacement_verification_url = serializers.SerializerMethodField()
     supersedes_certificate_number = serializers.CharField(source="supersedes.certificate_number", read_only=True, allow_null=True)
 
     class Meta:
         model = Certificate
         fields = [
-            "certificate_number", "verification_code", "verification_url", "qr_url", "effective_status",
+            "certificate_number", "verification_code", "verification_url", "qr_url", "pdf_url", "cv_entry", "effective_status",
             "issued_at", "expires_at", "revoked_at", "achievement_percent", "student_name", "content_type",
             "content_title", "instructor_name", "title", "subtitle", "description",
             "signatory_name", "signatory_title", "accent_color", "duration_minutes",
@@ -172,4 +197,25 @@ class PublicCertificateSerializer(serializers.ModelSerializer):
     def get_replacement_verification_url(self, obj):
         replacement = obj.replacement_certificates.order_by("-issued_at", "-id").first()
         return self._public_url(replacement) if replacement else None
+
+    def get_pdf_url(self, obj):
+        from django.urls import reverse
+        request = self.context.get("request")
+        path = reverse("certificate-pdf", kwargs={"code": obj.verification_code})
+        if request:
+            return request.build_absolute_uri(path)
+        from django.conf import settings
+        base = str(getattr(settings, "BACKEND_PUBLIC_URL", "")).rstrip("/")
+        return f"{base}{path}" if base else path
+
+    def get_cv_entry(self, obj):
+        return {
+            "title": obj.content_title,
+            "issuer": obj.issuer_name or "KalanPro",
+            "issued_at": obj.issued_at.date().isoformat() if obj.issued_at else None,
+            "expires_at": obj.expires_at.date().isoformat() if obj.expires_at else None,
+            "credential_id": obj.certificate_number,
+            "verification_url": self._public_url(obj),
+            "skills": obj.skills_snapshot or [],
+        }
 

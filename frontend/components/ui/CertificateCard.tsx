@@ -5,6 +5,8 @@ import {
   Award,
   CheckCircle2,
   Copy,
+  Download,
+  ClipboardCheck,
   ExternalLink,
   FileCheck2,
   Fingerprint,
@@ -20,6 +22,7 @@ export default function CertificateCard({ certificate, publicMode = false }: { c
   const status = certificate.effective_status || certificate.status;
   const valid = status === "active";
   const [copied, setCopied] = useState(false);
+  const [cvCopied, setCvCopied] = useState(false);
   const verificationUrl = certificate.verification_url || (typeof window !== "undefined" ? `${window.location.origin}/certificates/verify/${certificate.verification_code}` : "");
   const skills = certificate.skills_snapshot || [];
   const projects = certificate.projects_snapshot || [];
@@ -33,6 +36,25 @@ export default function CertificateCard({ certificate, publicMode = false }: { c
     } catch { /* presse-papiers indisponible */ }
   }
 
+
+  async function copyCvEntry() {
+    const entry = certificate.cv_entry;
+    if (!entry) return;
+    const lines = [
+      `${entry.title} — ${entry.issuer}`,
+      `Identifiant : ${entry.credential_id}`,
+      entry.issued_at ? `Émis le : ${new Date(`${entry.issued_at}T00:00:00`).toLocaleDateString("fr-FR")}` : "",
+      entry.expires_at ? `Expire le : ${new Date(`${entry.expires_at}T00:00:00`).toLocaleDateString("fr-FR")}` : "",
+      entry.skills?.length ? `Compétences : ${entry.skills.join(", ")}` : "",
+      `Vérification : ${entry.verification_url}`,
+    ].filter(Boolean).join("\n");
+    try {
+      await navigator.clipboard.writeText(lines);
+      setCvCopied(true);
+      window.setTimeout(() => setCvCopied(false), 1800);
+    } catch { /* presse-papiers indisponible */ }
+  }
+
   async function shareCertificate() {
     if (!verificationUrl) return;
     try {
@@ -43,12 +65,14 @@ export default function CertificateCard({ certificate, publicMode = false }: { c
 
   return (
     <div className="w-full">
-      {!publicMode && <div className="mb-4 flex flex-wrap justify-end gap-2 print:hidden">
-        <button onClick={() => window.print()} className="btn-primary"><Printer size={16}/> Imprimer / Enregistrer en PDF</button>
+      <div className="mb-4 flex flex-wrap justify-end gap-2 print:hidden">
+        {!publicMode && <button onClick={() => window.print()} className="btn-primary"><Printer size={16}/> Imprimer</button>}
+        {certificate.pdf_url && <a href={certificate.pdf_url} className="btn-primary"><Download size={16}/> Télécharger PDF</a>}
+        {!publicMode && <button onClick={copyCvEntry} className="btn-outline"><ClipboardCheck size={16}/> {cvCopied ? "Entrée CV copiée" : "Copier pour mon CV"}</button>}
         <button onClick={copyVerificationLink} className="btn-outline"><Copy size={16}/> {copied ? "Lien copié" : "Copier le lien"}</button>
         <button onClick={shareCertificate} className="btn-outline"><Share2 size={16}/> Partager</button>
         {verificationUrl && <a href={verificationUrl} target="_blank" rel="noreferrer" className="btn-outline"><ExternalLink size={16}/> Vérifier</a>}
-      </div>}
+      </div>
 
       {!valid && <div className={`mx-auto mb-4 max-w-4xl rounded-2xl border p-4 ${status === "revoked" ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
         <div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 shrink-0" size={20}/><div><p className="font-bold">{status === "revoked" ? "Ce certificat a été révoqué" : "Ce certificat a expiré"}</p><p className="mt-1 text-sm">Le QR code et le numéro restent consultables afin de préserver l'historique du registre.</p>{!publicMode && certificate.revocation_reason && <p className="mt-2 text-xs">Motif interne : {certificate.revocation_reason}</p>}{certificate.replacement_verification_url && <a className="mt-2 inline-flex items-center gap-1 text-sm font-semibold underline" href={certificate.replacement_verification_url}>Voir la version de remplacement <ExternalLink size={13}/></a>}</div></div>

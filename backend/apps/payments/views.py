@@ -24,7 +24,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from apps.accounts.models import User, PlatformSettings, InstructorApplication
 from apps.catalog.models import Course, PDFProduct
 from apps.enrollments.models import CourseEnrollment, PDFPurchase
-from apps.formations.models import InteractiveFormation, FormationEnrollment, FormationSession, FormationAttendance, MentorshipBooking, FormationKind
+from apps.formations.models import InteractiveFormation, FormationEnrollment, FormationSession, FormationAttendance, MentorshipBooking, MentorshipPack, MentorshipPass, FormationKind
 from .models import (
     Order, OrderItem, PayoutProfile, InstructorPayout, FormationSeatReservation, Currency,
     PaymentGateway, InstructorLedgerEntry, PaymentAttempt, PaymentEvent, PaymentIssue,
@@ -94,7 +94,14 @@ def _release_failed_order_reservations(order):
     Une commande encore PENDING peut être confirmée de façon asynchrone par Mobile Money
     ou carte : elle ne doit donc jamais libérer un créneau de mentorat ou une place de cohorte.
     """
+    formation_ids = list(FormationSeatReservation.objects.filter(order=order).values_list("formation_id", flat=True))
     FormationSeatReservation.objects.filter(order=order).delete()
+    for formation_id in formation_ids:
+        try:
+            from apps.formations.cohorts import refresh_waitlist
+            refresh_waitlist(formation_id)
+        except Exception:
+            logger.exception("Impossible de rafraîchir la liste d'attente de la formation %s", formation_id)
     now = timezone.now()
     MentorshipBooking.objects.filter(
         order_items__order=order,
@@ -376,6 +383,7 @@ class CheckoutView(APIView):
         pdfs = []
         formations = []
         mentorship_bookings = []
+        mentorship_packs = []
         if not employer_product:
             owned_course_ids = set(CourseEnrollment.objects.filter(user=user).values_list("course_id", flat=True))
             owned_pdf_ids = set(PDFPurchase.objects.filter(user=user).values_list("pdf_product_id", flat=True))
@@ -393,14 +401,19 @@ class CheckoutView(APIView):
                 user=user,
                 status=MentorshipBooking.Status.PENDING_PAYMENT,
             ).select_related("offering", "offering__instructor", "slot"))
-        if not employer_product and not courses and not pdfs and not formations and not mentorship_bookings:
+            mentorship_packs = list(MentorshipPack.objects.select_for_update().filter(
+                id__in=data["mentorship_pack_ids"],
+                published=True,
+                offering__published=True,
+            ).select_related("offering", "offering__instructor"))
+        if not employer_product and not courses and not pdfs and not formations and not mentorship_bookings and not mentorship_packs:
             return Response({"detail": "Tous les éléments du panier sont déjà acquis, expirés ou indisponibles."}, status=400)
 
         now = timezone.now()
         unavailable = []
         for formation in formations:
-            active_reservations = FormationSeatReservation.objects.filter(formation=formation, order__status=Order.Status.PENDING, expires_at__gt=now).count()
-            if not formation.is_enrollment_open or formation.enrollments.count() + active_reservations >= formation.max_students:
+            from apps.formations.cohorts import can_checkout_formation
+            if not can_checkout_formation(user, formation):
                 unavailable.append(formation.title)
         if unavailable:
             return Response({"detail": "Cohorte(s) complète(s), fermée(s) ou temporairement réservée(s) : " + ", ".join(unavailable)}, status=409)
@@ -433,6 +446,7 @@ class CheckoutView(APIView):
             base_total += sum((Decimal("0") if item.is_free else item.price for item in pdfs), Decimal("0"))
             base_total += sum((item.price for item in formations), Decimal("0"))
             base_total += sum((item.price_snapshot for item in mentorship_bookings), Decimal("0"))
+            base_total += sum((pack.price for pack in mentorship_packs), Decimal("0"))
         quantum = Decimal("1").scaleb(-int(currency.decimal_places))
         payment_total = (base_total * Decimal(currency.exchange_rate)).quantize(quantum, rounding=ROUND_HALF_UP)
 
@@ -538,6 +552,18 @@ class CheckoutView(APIView):
                 instructor_earning_amount=earning,
             )
 
+        for pack in mentorship_packs:
+            fee, earning = _split_revenue(pack.price, _mentor_commission_percent())
+            OrderItem.objects.create(
+                order=order,
+                item_type=OrderItem.ItemType.MENTOR_PACK,
+                mentorship_pack=pack,
+                instructor=pack.offering.instructor,
+                unit_price=pack.price,
+                platform_fee_amount=fee,
+                instructor_earning_amount=earning,
+            )
+
         if base_total > 0:
             reservation_expiry = timezone.now() + timedelta(minutes=45)
             for formation in formations:
@@ -603,7 +629,7 @@ class CheckoutView(APIView):
             order.save(update_fields=["paid_at"])
 
         for item in order.items.select_related(
-            "course", "pdf_product", "formation", "mentorship_booking__offering", "mentorship_booking__slot"
+            "course", "pdf_product", "formation", "mentorship_booking__offering", "mentorship_booking__slot", "mentorship_pack__offering"
         ).all():
             if item.item_type == OrderItem.ItemType.EMPLOYER:
                 from apps.opportunities.models import EmployerEntitlement
@@ -669,6 +695,21 @@ class CheckoutView(APIView):
                 elif enrollment.source_order_id is None:
                     enrollment.source_order = order
                     enrollment.save(update_fields=["source_order"])
+                from apps.formations.cohorts import mark_waitlist_joined
+                mark_waitlist_joined(order.user, formation)
+
+            if item.mentorship_pack:
+                expires_at = timezone.now() + timedelta(days=max(7, min(int(item.mentorship_pack.validity_days), 730)))
+                MentorshipPass.objects.get_or_create(
+                    user=order.user,
+                    pack=item.mentorship_pack,
+                    source_order=order,
+                    defaults={
+                        "total_sessions": item.mentorship_pack.sessions_count,
+                        "remaining_sessions": item.mentorship_pack.sessions_count,
+                        "expires_at": expires_at,
+                    },
+                )
 
             if item.mentorship_booking:
                 from apps.formations.mentorship import confirm_booking
@@ -836,7 +877,7 @@ class InstructorFinanceView(APIView):
         totals = _finance_totals(request.user)
         recent = OrderItem.objects.filter(
             instructor=request.user, order__status=Order.Status.PAID
-        ).select_related("order", "course", "pdf_product", "formation", "mentorship_booking__offering").order_by("-order__paid_at")[:10]
+        ).select_related("order", "course", "pdf_product", "formation", "mentorship_booking__offering", "mentorship_pack__offering").order_by("-order__paid_at")[:10]
         profile = PayoutProfile.objects.filter(instructor=request.user).first()
         paid_items = OrderItem.objects.filter(instructor=request.user, order__status=Order.Status.PAID)
         monthly = (
@@ -847,18 +888,20 @@ class InstructorFinanceView(APIView):
             .order_by("month")
         )
         top_rows = []
-        for item_type in (OrderItem.ItemType.COURSE, OrderItem.ItemType.PDF, OrderItem.ItemType.FORMATION, OrderItem.ItemType.MENTORING):
+        for item_type in (OrderItem.ItemType.COURSE, OrderItem.ItemType.PDF, OrderItem.ItemType.FORMATION, OrderItem.ItemType.MENTORING, OrderItem.ItemType.MENTOR_PACK):
             field = {
                 OrderItem.ItemType.COURSE: "course__title",
                 OrderItem.ItemType.PDF: "pdf_product__title",
                 OrderItem.ItemType.FORMATION: "formation__title",
                 OrderItem.ItemType.MENTORING: "mentorship_booking__offering__title",
+                OrderItem.ItemType.MENTOR_PACK: "mentorship_pack__offering__title",
             }[item_type]
             id_field = {
                 OrderItem.ItemType.COURSE: "course_id",
                 OrderItem.ItemType.PDF: "pdf_product_id",
                 OrderItem.ItemType.FORMATION: "formation_id",
                 OrderItem.ItemType.MENTORING: "mentorship_booking__offering_id",
+                OrderItem.ItemType.MENTOR_PACK: "mentorship_pack__offering_id",
             }[item_type]
             rows = (paid_items.filter(item_type=item_type)
                 .values(id_field, field)
@@ -878,7 +921,7 @@ class InstructorFinanceView(APIView):
             "recent_sales": [
                 {
                     "id": item.id,
-                    "title": item.course.title if item.course else item.pdf_product.title if item.pdf_product else item.formation.title if item.formation else item.mentorship_booking.offering.title if item.mentorship_booking else "",
+                    "title": item.course.title if item.course else item.pdf_product.title if item.pdf_product else item.formation.title if item.formation else item.mentorship_booking.offering.title if item.mentorship_booking else item.mentorship_pack.offering.title if item.mentorship_pack else "",
                     "type": item.item_type,
                     "gross": str(item.unit_price),
                     "earning": str(item.instructor_earning_amount),

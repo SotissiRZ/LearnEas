@@ -1,4 +1,6 @@
+from decimal import Decimal
 from django.conf import settings
+from django.utils import timezone
 from rest_framework import serializers
 from apps.accounts.serializers import UserPublicCompactSerializer
 from apps.catalog.serializers import CategoryCompactSerializer
@@ -6,7 +8,8 @@ from apps.common.fields import RelativeImageField
 from apps.common.media_metadata import validate_upload_limits
 from .models import (
     InteractiveFormation, FormationSession, FormationEnrollment, FormationAttendance, FormationSessionInvite,
-    MentorshipOffering, MentorshipSlot, MentorshipBooking,
+    FormationWaitlistEntry, MentorshipOffering, MentorshipSlot, MentorshipBooking,
+    MentorshipPack, MentorshipPass, MentorshipAvailabilityRule,
 )
 
 
@@ -111,6 +114,8 @@ class InteractiveFormationListSerializer(serializers.ModelSerializer):
     students_count = serializers.ReadOnlyField()
     seats_left = serializers.ReadOnlyField()
     is_full = serializers.ReadOnlyField()
+    waitlist_count = serializers.SerializerMethodField()
+    waitlist_offered_count = serializers.SerializerMethodField()
     thumbnail = RelativeImageField(read_only=True)
 
     class Meta:
@@ -119,18 +124,38 @@ class InteractiveFormationListSerializer(serializers.ModelSerializer):
             "id", "title", "slug", "category", "instructor", "co_instructor",
             "level", "language", "price", "num_sessions", "session_duration_minutes",
             "max_students", "thumbnail", "start_date", "end_date", "status",
-            "published", "students_count", "seats_left", "is_full", "is_enrollment_open",
+            "published", "students_count", "seats_left", "is_full", "is_enrollment_open", "is_waitlist_open",
+            "waitlist_count", "waitlist_offered_count",
             "cohort_name", "cohort_timezone", "enrollment_deadline", "min_students", "created_at",
         ]
+
+    def get_waitlist_count(self, obj):
+        annotated = getattr(obj, "_waitlist_count", None)
+        if annotated is not None:
+            return int(annotated)
+        return obj.waitlist_entries.filter(status=FormationWaitlistEntry.Status.WAITING).count()
+
+    def get_waitlist_offered_count(self, obj):
+        annotated = getattr(obj, "_waitlist_offered_count", None)
+        if annotated is not None:
+            return int(annotated)
+        return obj.waitlist_entries.filter(
+            status=FormationWaitlistEntry.Status.OFFERED, offer_expires_at__gt=timezone.now()
+        ).count()
 
 
 class InteractiveFormationDetailSerializer(InteractiveFormationListSerializer):
     sessions = FormationSessionSerializer(many=True, read_only=True)
     is_enrolled = serializers.SerializerMethodField()
+    waitlist_status = serializers.SerializerMethodField()
+    waitlist_position = serializers.SerializerMethodField()
+    waitlist_offer_expires_at = serializers.SerializerMethodField()
+    can_checkout = serializers.SerializerMethodField()
+    effective_seats_left = serializers.SerializerMethodField()
 
     class Meta(InteractiveFormationListSerializer.Meta):
         fields = InteractiveFormationListSerializer.Meta.fields + [
-            "description", "sessions", "is_enrolled", "certificate_enabled", "certificate_auto_issue",
+            "description", "sessions", "is_enrolled", "waitlist_status", "waitlist_position", "waitlist_offer_expires_at", "can_checkout", "effective_seats_left", "certificate_enabled", "certificate_auto_issue",
             "certificate_attendance_percent", "certificate_validity_months", "certificate_title",
             "certificate_subtitle", "certificate_description", "certificate_signatory_name",
             "certificate_signatory_title", "certificate_accent_color", "certificate_number_prefix",
@@ -144,6 +169,39 @@ class InteractiveFormationDetailSerializer(InteractiveFormationListSerializer):
         if _is_manager(request.user, obj):
             return True
         return obj.id in self.context.get("enrolled_formation_ids", set())
+
+    def _waitlist_snapshot(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated or _is_manager(request.user, obj):
+            return {"status": "", "position": None, "offer_expires_at": None}
+        cache = self.context.setdefault("waitlist_snapshots", {})
+        if obj.id not in cache:
+            from .cohorts import waitlist_snapshot
+            cache[obj.id] = waitlist_snapshot(request.user, obj)
+        return cache[obj.id]
+
+    def get_waitlist_status(self, obj):
+        return self._waitlist_snapshot(obj)["status"]
+
+    def get_waitlist_position(self, obj):
+        return self._waitlist_snapshot(obj)["position"]
+
+    def get_waitlist_offer_expires_at(self, obj):
+        return self._waitlist_snapshot(obj)["offer_expires_at"]
+
+    def get_can_checkout(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            from .cohorts import effective_seats_used
+            return bool(obj.is_waitlist_open and effective_seats_used(obj) < obj.max_students)
+        if _is_manager(request.user, obj) or obj.id in self.context.get("enrolled_formation_ids", set()):
+            return False
+        from .cohorts import can_checkout_formation
+        return can_checkout_formation(request.user, obj)
+
+    def get_effective_seats_left(self, obj):
+        from .cohorts import effective_seats_used
+        return max(obj.max_students - effective_seats_used(obj), 0)
 
     def to_representation(self, instance):
         self.fields["sessions"].child.context.update(self.context)
@@ -279,19 +337,49 @@ class MentorshipSlotSerializer(serializers.ModelSerializer):
                 | Q(order_items__order__status__in=["pending", "paid"])
             ).exists()
         notice = timedelta(hours=obj.offering.booking_notice_hours)
-        return bool(obj.is_active and obj.starts_at > now + notice and not confirmed_exists and not pending_exists)
+        if not (obj.is_active and obj.starts_at > now + notice and not confirmed_exists and not pending_exists):
+            return False
+
+        # Un mentor peut publier plusieurs offres. Un rendez-vous actif sur une autre
+        # offre rend ce créneau indisponible s'il chevauche la même plage horaire.
+        cache = self.context.setdefault("mentor_busy_bookings", {})
+        instructor_id = obj.offering.instructor_id
+        if instructor_id not in cache:
+            cache[instructor_id] = list(
+                MentorshipBooking.objects.filter(offering__instructor_id=instructor_id)
+                .filter(
+                    Q(status=MentorshipBooking.Status.CONFIRMED)
+                    | Q(status=MentorshipBooking.Status.PENDING_PAYMENT)
+                    & (
+                        Q(expires_at__isnull=True)
+                        | Q(expires_at__gt=now)
+                        | Q(order_items__order__status__in=["pending", "paid"])
+                    )
+                )
+                .select_related("slot", "offering")
+                .distinct()
+            )
+        slot_end = obj.starts_at + timedelta(minutes=obj.offering.duration_minutes)
+        for booking in cache[instructor_id]:
+            if booking.slot_id == obj.id:
+                continue
+            booking_end = booking.slot.starts_at + timedelta(minutes=booking.offering.duration_minutes)
+            if booking.slot.starts_at < slot_end and booking_end > obj.starts_at:
+                return False
+        return True
 
 
 class MentorshipOfferingListSerializer(serializers.ModelSerializer):
     instructor = UserPublicCompactSerializer(read_only=True)
     next_slots = serializers.SerializerMethodField()
+    packs = serializers.SerializerMethodField()
 
     class Meta:
         model = MentorshipOffering
         fields = [
             "id", "title", "slug", "description", "instructor", "duration_minutes", "price",
             "language", "timezone", "booking_notice_hours", "cancellation_notice_hours",
-            "published", "next_slots", "created_at",
+            "published", "next_slots", "packs", "created_at",
         ]
 
     def get_next_slots(self, obj):
@@ -311,6 +399,13 @@ class MentorshipOfferingListSerializer(serializers.ModelSerializer):
             qs = obj.slots.filter(starts_at__gt=now).order_by("starts_at")
             slots = qs[:50] if getattr(view, "action", "") == "mine" else qs.filter(is_active=True)[:12]
         return MentorshipSlotSerializer(slots, many=True, context=self.context).data
+
+    def get_packs(self, obj):
+        packs = obj.packs.all() if hasattr(obj, "packs") else []
+        view = self.context.get("view")
+        if getattr(view, "action", "") != "mine":
+            packs = [p for p in packs if p.published] if isinstance(packs, list) else packs.filter(published=True)
+        return MentorshipPackSerializer(packs, many=True, context=self.context).data
 
 
 class MentorshipOfferingWriteSerializer(serializers.ModelSerializer):
@@ -342,6 +437,75 @@ class MentorshipOfferingWriteSerializer(serializers.ModelSerializer):
         return value
 
 
+class MentorshipPackSerializer(serializers.ModelSerializer):
+    effective_price_per_session = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MentorshipPack
+        fields = ["id", "offering", "sessions_count", "price", "validity_days", "published", "effective_price_per_session", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def get_effective_price_per_session(self, obj):
+        if not obj.sessions_count:
+            return "0.00"
+        return str((obj.price / obj.sessions_count).quantize(Decimal("0.01")))
+
+    def validate_sessions_count(self, value):
+        if value < 2 or value > 20:
+            raise serializers.ValidationError("Un pack doit contenir entre 2 et 20 séances.")
+        return value
+
+    def validate_validity_days(self, value):
+        if value < 7 or value > 730:
+            raise serializers.ValidationError("La validité doit être comprise entre 7 et 730 jours.")
+        return value
+
+
+class MentorshipPassSerializer(serializers.ModelSerializer):
+    offering_id = serializers.IntegerField(source="pack.offering_id", read_only=True)
+    offering_title = serializers.CharField(source="pack.offering.title", read_only=True)
+    sessions_count = serializers.IntegerField(source="total_sessions", read_only=True)
+    is_active = serializers.ReadOnlyField()
+
+    class Meta:
+        model = MentorshipPass
+        fields = ["id", "pack", "offering_id", "offering_title", "sessions_count", "remaining_sessions", "expires_at", "revoked_at", "is_active", "created_at"]
+        read_only_fields = fields
+
+
+class MentorshipAvailabilityRuleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MentorshipAvailabilityRule
+        fields = ["id", "offering", "weekday", "start_time", "end_time", "interval_minutes", "valid_from", "valid_until", "is_active", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def validate(self, attrs):
+        start = attrs.get("start_time", getattr(self.instance, "start_time", None))
+        end = attrs.get("end_time", getattr(self.instance, "end_time", None))
+        if start and end and start >= end:
+            raise serializers.ValidationError({"end_time": "L'heure de fin doit être postérieure à l'heure de début."})
+        valid_from = attrs.get("valid_from", getattr(self.instance, "valid_from", None))
+        valid_until = attrs.get("valid_until", getattr(self.instance, "valid_until", None))
+        if valid_from and valid_until and valid_until < valid_from:
+            raise serializers.ValidationError({"valid_until": "La date de fin doit être postérieure à la date de début."})
+        interval = attrs.get("interval_minutes", getattr(self.instance, "interval_minutes", 60))
+        if interval < 15 or interval > 240:
+            raise serializers.ValidationError({"interval_minutes": "L'intervalle doit être compris entre 15 et 240 minutes."})
+        offering = attrs.get("offering", getattr(self.instance, "offering", None))
+        weekday = attrs.get("weekday", getattr(self.instance, "weekday", None))
+        if offering and weekday is not None and start and end:
+            overlaps = MentorshipAvailabilityRule.objects.filter(
+                offering=offering, weekday=weekday, start_time__lt=end, end_time__gt=start
+            )
+            if self.instance:
+                overlaps = overlaps.exclude(pk=self.instance.pk)
+            if overlaps.exists():
+                raise serializers.ValidationError({
+                    "start_time": "Cette plage chevauche déjà une autre disponibilité récurrente de cette offre."
+                })
+        return attrs
+
+
 class MentorshipBookingSerializer(serializers.ModelSerializer):
     offering = MentorshipOfferingListSerializer(read_only=True)
     slot = MentorshipSlotSerializer(read_only=True)
@@ -353,12 +517,12 @@ class MentorshipBookingSerializer(serializers.ModelSerializer):
         model = MentorshipBooking
         fields = [
             "id", "offering", "slot", "status", "price_snapshot", "expires_at", "confirmed_at",
-            "cancelled_at", "learner_note", "mentor_note", "created_at", "updated_at",
+            "cancelled_at", "learner_note", "mentor_note", "mentorship_pass", "rescheduled_at", "reschedule_count", "created_at", "updated_at",
             "join_session_id", "mentor_name", "learner_name",
         ]
         read_only_fields = [
             "id", "status", "price_snapshot", "expires_at", "confirmed_at", "cancelled_at",
-            "mentor_note", "created_at", "updated_at", "join_session_id",
+            "mentor_note", "mentorship_pass", "rescheduled_at", "reschedule_count", "created_at", "updated_at", "join_session_id",
         ]
 
     def get_mentor_name(self, obj):

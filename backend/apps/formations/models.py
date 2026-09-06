@@ -113,11 +113,10 @@ class InteractiveFormation(models.Model):
         return self.seats_left <= 0
 
     @property
-    def is_enrollment_open(self):
-        if self.kind != FormationKind.COHORT or not self.published or self.is_full:
+    def is_waitlist_open(self):
+        if self.kind != FormationKind.COHORT or not self.published:
             return False
-        # Une cohorte n'accepte de nouveaux participants que pendant sa phase planifiée.
-        # Le démarrage de la première séance bascule déjà la formation en IN_PROGRESS.
+        # Même cycle que l'inscription, mais sans tenir compte du nombre de places.
         if self.status != FormationStatus.SCHEDULED:
             return False
         now = timezone.now()
@@ -130,6 +129,10 @@ class InteractiveFormation(models.Model):
             if not first_session and self.start_date and self.start_date < timezone.localdate():
                 return False
         return True
+
+    @property
+    def is_enrollment_open(self):
+        return bool(self.is_waitlist_open and not self.is_full)
 
     def sync_schedule_dates(self):
         """Aligne les dates publiques de la cohorte sur son planning réel."""
@@ -215,6 +218,36 @@ class FormationEnrollment(models.Model):
 
     def __str__(self):
         return f"{self.user} → {self.formation}"
+
+
+class FormationWaitlistEntry(models.Model):
+    class Status(models.TextChoices):
+        WAITING = "waiting", "En attente"
+        OFFERED = "offered", "Place proposée"
+        JOINED = "joined", "Inscrit"
+        CANCELLED = "cancelled", "Annulé"
+        EXPIRED = "expired", "Offre expirée"
+
+    formation = models.ForeignKey(InteractiveFormation, on_delete=models.CASCADE, related_name="waitlist_entries")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="formation_waitlist_entries")
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.WAITING, db_index=True)
+    offered_at = models.DateTimeField(null=True, blank=True)
+    offer_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    joined_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["formation", "user"], name="uniq_formation_waitlist_user"),
+        ]
+        indexes = [
+            models.Index(fields=["formation", "status", "created_at"], name="form_wait_status_created_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.formation} · {self.user} · {self.status}"
 
 
 class FormationAttendance(models.Model):
@@ -367,10 +400,90 @@ class MentorshipOffering(models.Model):
         return f"{self.instructor} · {self.title}"
 
 
+class MentorshipPack(models.Model):
+    offering = models.ForeignKey(MentorshipOffering, on_delete=models.CASCADE, related_name="packs")
+    sessions_count = models.PositiveSmallIntegerField(default=3)
+    price = models.DecimalField(max_digits=8, decimal_places=2)
+    validity_days = models.PositiveIntegerField(default=180)
+    published = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sessions_count", "price"]
+        constraints = [
+            models.UniqueConstraint(fields=["offering", "sessions_count"], name="uniq_mentor_pack_sessions"),
+            models.CheckConstraint(condition=models.Q(sessions_count__gte=2), name="mentor_pack_sessions_gte2"),
+            models.CheckConstraint(condition=models.Q(price__gte=0), name="mentor_pack_price_gte0"),
+        ]
+
+    def __str__(self):
+        return f"{self.offering.title} · pack {self.sessions_count}"
+
+
+class MentorshipPass(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mentorship_passes")
+    pack = models.ForeignKey(MentorshipPack, on_delete=models.PROTECT, related_name="passes")
+    source_order = models.ForeignKey("payments.Order", on_delete=models.SET_NULL, null=True, blank=True, related_name="mentorship_passes")
+    total_sessions = models.PositiveSmallIntegerField()
+    remaining_sessions = models.PositiveSmallIntegerField()
+    expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(remaining_sessions__lte=models.F("total_sessions")),
+                name="mentor_pass_remaining_lte_total",
+            ),
+            models.UniqueConstraint(
+                fields=["user", "pack", "source_order"],
+                condition=models.Q(source_order__isnull=False),
+                name="uniq_mentor_pass_paid_source",
+            ),
+        ]
+        indexes = [models.Index(fields=["user", "revoked_at", "expires_at"], name="mentor_pass_user_active_idx")]
+
+    @property
+    def is_active(self):
+        return self.revoked_at is None and self.remaining_sessions > 0 and (self.expires_at is None or self.expires_at > timezone.now())
+
+    def __str__(self):
+        return f"{self.user} · {self.pack} · {self.remaining_sessions}/{self.total_sessions}"
+
+
+class MentorshipAvailabilityRule(models.Model):
+    offering = models.ForeignKey(MentorshipOffering, on_delete=models.CASCADE, related_name="availability_rules")
+    weekday = models.PositiveSmallIntegerField(help_text="0=lundi … 6=dimanche")
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    interval_minutes = models.PositiveSmallIntegerField(default=60)
+    valid_from = models.DateField(default=timezone.localdate)
+    valid_until = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["weekday", "start_time"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(weekday__gte=0, weekday__lte=6), name="mentor_rule_weekday_range"),
+            models.CheckConstraint(condition=models.Q(interval_minutes__gte=15), name="mentor_rule_interval_gte15"),
+        ]
+
+    def __str__(self):
+        return f"{self.offering.title} · J{self.weekday} {self.start_time}-{self.end_time}"
+
+
 class MentorshipSlot(models.Model):
     """Créneau de réservation proposé par un mentor."""
 
     offering = models.ForeignKey(MentorshipOffering, on_delete=models.CASCADE, related_name="slots")
+    availability_rule = models.ForeignKey(
+        MentorshipAvailabilityRule, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="generated_slots",
+        help_text="Règle récurrente ayant généré ce créneau ; vide pour un créneau manuel.",
+    )
     starts_at = models.DateTimeField()
     is_active = models.BooleanField(default=True)
     session = models.OneToOneField(
@@ -412,6 +525,9 @@ class MentorshipBooking(models.Model):
     cancelled_at = models.DateTimeField(null=True, blank=True)
     learner_note = models.TextField(blank=True)
     mentor_note = models.TextField(blank=True)
+    mentorship_pass = models.ForeignKey(MentorshipPass, on_delete=models.SET_NULL, null=True, blank=True, related_name="bookings")
+    rescheduled_at = models.DateTimeField(null=True, blank=True)
+    reschedule_count = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

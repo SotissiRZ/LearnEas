@@ -111,6 +111,15 @@ class CertificateRegressionTests(APITestCase):
         self.assertEqual(qr["Content-Type"], "image/png")
         self.assertTrue(bytes(qr.content).startswith(b"\x89PNG"))
 
+        pdf = self.client.get(f"/api/enrollments/certificates/verify/{certificate.verification_code}/pdf/")
+        self.assertEqual(pdf.status_code, status.HTTP_200_OK)
+        self.assertEqual(pdf["Content-Type"], "application/pdf")
+        self.assertTrue(bytes(pdf.content).startswith(b"%PDF"))
+
+        detail = self.client.get(f"/api/enrollments/certificates/verify/{certificate.verification_code}/")
+        self.assertTrue(detail.data["pdf_url"].endswith(f"/{certificate.verification_code}/pdf/"))
+        self.assertEqual(detail.data["cv_entry"]["credential_id"], certificate.certificate_number)
+
     def test_reissue_keeps_old_verification_record_and_links_replacement(self):
         self.enrollment.progress_percent = 100
         self.enrollment.save(update_fields=["progress_percent"])

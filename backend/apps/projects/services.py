@@ -78,6 +78,7 @@ def publish_verified_submission(submission: ProjectSubmission):
         "external_url": submission.external_url,
         "repository_url": submission.repository_url,
         "skills": submission.skills or submission.assignment.skills or [],
+        "stack": submission.skills or submission.assignment.skills or [],
         "is_public": True,
         "is_verified": True,
         "verified_course_title": submission.assignment.course.title,

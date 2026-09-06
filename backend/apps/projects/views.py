@@ -224,7 +224,10 @@ class PortfolioItemViewSet(viewsets.ModelViewSet):
         if instance.is_verified:
             # La preuve de validation KalanPro est immuable ; l'apprenant ne peut modifier
             # que la présentation et la visibilité de l'élément.
-            allowed = {"title", "description", "cover_image", "is_public", "featured", "order"}
+            allowed = {
+                "title", "description", "role", "problem", "objective", "outcome", "stack", "video_url",
+                "started_at", "completed_at", "cover_image", "is_public", "featured", "order"
+            }
             forbidden = set(request.data.keys()) - allowed
             if forbidden:
                 return Response({"detail": "Les informations vérifiées d'un projet KalanPro ne peuvent pas être altérées."}, status=409)
@@ -235,6 +238,6 @@ class PortfolioItemViewSet(viewsets.ModelViewSet):
 @permission_classes([permissions.AllowAny])
 def public_portfolio(request, slug):
     profile = get_object_or_404(
-        PortfolioProfile.objects.select_related("user"), slug=slug, is_public=True
+        PortfolioProfile.objects.select_related("user").prefetch_related("certificate_selections__certificate"), slug=slug, is_public=True
     )
     return Response(PublicPortfolioSerializer(profile, context={"request": request}).data)

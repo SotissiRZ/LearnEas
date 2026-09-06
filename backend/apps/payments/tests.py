@@ -704,3 +704,65 @@ class PaymentOperationalAuditTests(APITestCase):
         self.assertIn("attempts", admin_response.data)
         self.assertIn("events", admin_response.data)
         self.assertIn("issues", admin_response.data)
+
+
+class MentorshipPackPaymentRegressionTests(APITestCase):
+    def setUp(self):
+        from apps.formations.models import MentorshipOffering, MentorshipPack
+
+        self.mentor = User.objects.create_user(
+            username="mentor_pack_seller", email="mentor-pack-seller@example.com", password="passpass123", role=User.Role.INSTRUCTOR
+        )
+        self.student = User.objects.create_user(
+            username="mentor_pack_buyer", email="mentor-pack-buyer@example.com", password="passpass123", role=User.Role.STUDENT
+        )
+        self.offer = MentorshipOffering.objects.create(
+            instructor=self.mentor, title="Pack carrière", description="Accompagnement", duration_minutes=45,
+            price=Decimal("35.00"), published=True,
+        )
+        self.pack = MentorshipPack.objects.create(
+            offering=self.offer, sessions_count=3, price=Decimal("90.00"), validity_days=120, published=True,
+        )
+        Currency.objects.update_or_create(
+            code="EUR",
+            defaults={"name": "Euro", "symbol": "€", "exchange_rate": Decimal("1"), "decimal_places": 2, "is_active": True, "is_default": True},
+        )
+        self.client.force_authenticate(self.student)
+
+    @override_settings(TEST_PAYMENTS_ENABLED=True)
+    def test_test_checkout_creates_mentorship_pass(self):
+        from apps.formations.models import MentorshipPass
+
+        response = self.client.post(
+            "/api/payments/checkout/",
+            {
+                "course_ids": [], "pdf_ids": [], "formation_ids": [], "mentorship_booking_ids": [],
+                "mentorship_pack_ids": [self.pack.id], "provider": "manual", "currency": "EUR", "test_payment": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        order = Order.objects.get(pk=response.data["order"]["id"])
+        self.assertEqual(order.status, Order.Status.PAID)
+        item = OrderItem.objects.get(order=order, mentorship_pack=self.pack)
+        self.assertEqual(item.item_type, OrderItem.ItemType.MENTOR_PACK)
+        pass_obj = MentorshipPass.objects.get(user=self.student, pack=self.pack, source_order=order)
+        self.assertEqual(pass_obj.remaining_sessions, 3)
+        self.assertEqual(pass_obj.total_sessions, 3)
+
+    @override_settings(TEST_PAYMENTS_ENABLED=True)
+    def test_refund_revokes_unused_mentorship_pass(self):
+        from apps.formations.models import MentorshipPass
+        from apps.payments.services import revoke_order_entitlements
+
+        response = self.client.post(
+            "/api/payments/checkout/",
+            {"mentorship_pack_ids": [self.pack.id], "provider": "manual", "currency": "EUR", "test_payment": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        order = Order.objects.get(pk=response.data["order"]["id"])
+        result = revoke_order_entitlements(order, reason="Test remboursement pack")
+        self.assertEqual(result["mentorship_passes"], 1)
+        pass_obj = MentorshipPass.objects.get(user=self.student, pack=self.pack, source_order=order)
+        self.assertIsNotNone(pass_obj.revoked_at)

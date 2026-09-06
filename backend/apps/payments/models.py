@@ -169,10 +169,11 @@ class OrderItem(models.Model):
         PDF = "pdf", "PDF"
         FORMATION = "formation", "Formation interactive"
         MENTORING = "mentoring", "Mentorat"
+        MENTOR_PACK = "mentor_pack", "Pack mentorat"
         EMPLOYER = "employer", "Droit recruteur"
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
-    item_type = models.CharField(max_length=10, choices=ItemType.choices)
+    item_type = models.CharField(max_length=20, choices=ItemType.choices)
     course = models.ForeignKey("catalog.Course", on_delete=models.SET_NULL, null=True, blank=True)
     pdf_product = models.ForeignKey("catalog.PDFProduct", on_delete=models.SET_NULL, null=True, blank=True)
     formation = models.ForeignKey(
@@ -180,6 +181,10 @@ class OrderItem(models.Model):
     )
     mentorship_booking = models.ForeignKey(
         "formations.MentorshipBooking", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="order_items",
+    )
+    mentorship_pack = models.ForeignKey(
+        "formations.MentorshipPack", on_delete=models.PROTECT, null=True, blank=True,
         related_name="order_items",
     )
     entitlement_code = models.CharField(
@@ -197,7 +202,7 @@ class OrderItem(models.Model):
     instructor_earning_amount = models.DecimalField(max_digits=8, decimal_places=2, default=0)
 
     def __str__(self):
-        return f"{self.item_type} · {self.course or self.pdf_product or self.formation or self.mentorship_booking or self.entitlement_code}"
+        return f"{self.item_type} · {self.course or self.pdf_product or self.formation or self.mentorship_booking or self.mentorship_pack or self.entitlement_code}"
 
 
 class FormationSeatReservation(models.Model):

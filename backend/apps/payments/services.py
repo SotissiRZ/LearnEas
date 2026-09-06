@@ -4,7 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.enrollments.models import Certificate, CertificateEvent, CourseEnrollment, PDFPurchase
-from apps.formations.models import FormationEnrollment, FormationSessionInvite, MentorshipBooking
+from apps.formations.models import FormationEnrollment, FormationSessionInvite, MentorshipBooking, MentorshipPass
 
 from .models import FormationSeatReservation, InstructorLedgerEntry, Order, OrderItem
 
@@ -92,10 +92,11 @@ def revoke_order_entitlements(order: Order, *, actor=None, reason: str = "Comman
     """
     order = Order.objects.select_for_update().get(pk=order.pk)
     now = timezone.now()
-    revoked = {"courses": 0, "pdfs": 0, "formations": 0, "mentorships": 0, "certificates": 0, "employer_entitlements": 0}
+    revoked = {"courses": 0, "pdfs": 0, "formations": 0, "mentorships": 0, "mentorship_passes": 0, "certificates": 0, "employer_entitlements": 0}
 
+    freed_formation_ids = set()
     for item in order.items.select_related(
-        "course", "pdf_product", "formation", "mentorship_booking__slot__session"
+        "course", "pdf_product", "formation", "mentorship_booking__slot__session", "mentorship_pack"
     ).all():
         if item.course_id:
             enrollment = CourseEnrollment.all_objects.select_for_update().filter(
@@ -134,6 +135,26 @@ def revoke_order_entitlements(order: Order, *, actor=None, reason: str = "Comman
                 enrollment.revocation_reason = reason
                 enrollment.save(update_fields=["revoked_at", "revocation_reason"])
                 revoked["formations"] += 1
+                freed_formation_ids.add(item.formation_id)
+
+        if item.mentorship_pack_id:
+            pass_obj = MentorshipPass.objects.select_for_update().filter(
+                user=order.user, pack_id=item.mentorship_pack_id, source_order=order, revoked_at__isnull=True
+            ).first()
+            if pass_obj:
+                pass_obj.revoked_at = now
+                pass_obj.save(update_fields=["revoked_at"])
+                # Les rendez-vous futurs consommés sur un pack remboursé sont annulés.
+                for booking in pass_obj.bookings.select_for_update().filter(status=MentorshipBooking.Status.CONFIRMED):
+                    if booking.slot.starts_at > now:
+                        booking.status = MentorshipBooking.Status.CANCELLED
+                        booking.cancelled_at = now
+                        booking.save(update_fields=["status", "cancelled_at", "updated_at"])
+                        if booking.slot.session_id:
+                            FormationSessionInvite.objects.filter(
+                                session_id=booking.slot.session_id, invited_user=booking.user, revoked_at__isnull=True
+                            ).update(revoked_at=now)
+                revoked["mentorship_passes"] += 1
 
         if item.mentorship_booking_id:
             # slot.session est nullable : ne pas l'inclure dans la requête FOR UPDATE
@@ -160,5 +181,11 @@ def revoke_order_entitlements(order: Order, *, actor=None, reason: str = "Comman
             revoked["employer_entitlements"] = 1
 
     FormationSeatReservation.objects.filter(order=order).delete()
+    for formation_id in freed_formation_ids:
+        try:
+            from apps.formations.cohorts import refresh_waitlist
+            refresh_waitlist(formation_id)
+        except Exception:
+            pass
     record_refund_ledger(order)
     return revoked

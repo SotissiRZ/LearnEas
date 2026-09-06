@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { PlusCircle, Video, Users, Calendar, Loader2, AlertCircle, CheckCircle2, Trash2, BarChart3, Eye, EyeOff, Pencil, Search, ExternalLink } from "lucide-react";
+import { PlusCircle, Video, Users, Calendar, Loader2, AlertCircle, CheckCircle2, Trash2, BarChart3, Eye, EyeOff, Pencil, Search, ExternalLink, Hourglass } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { FormationSession, InteractiveFormation } from "@/types";
+import { FormationSession, FormationWaitlistRow, InteractiveFormation } from "@/types";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import GuardScreen from "@/components/ui/GuardScreen";
 
@@ -14,6 +14,12 @@ interface SessionReport {
   participants: { user_id: number; name: string; email: string; role: string; total_seconds: number; first_join?: string | null; last_leave?: string | null }[];
 }
 
+interface WaitlistPayload {
+  waiting: number;
+  offered: number;
+  results: FormationWaitlistRow[];
+}
+
 function formatSeconds(value:number){const total=Math.max(Math.floor(Number(value)||0),0);const h=Math.floor(total/3600);const m=Math.floor((total%3600)/60);const s=total%60;if(h>0)return `${h} h ${m} min`;if(m>0)return `${m} min ${s} s`;return `${s} s`;}
 
 export default function InstructorFormationsPage() {
@@ -21,6 +27,7 @@ export default function InstructorFormationsPage() {
   const [formations, setFormations] = useState<InteractiveFormation[]>([]);
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<number | null>(null);
+  const [waitlistOpenId, setWaitlistOpenId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [message, setMessage] = useState("");
@@ -81,12 +88,40 @@ export default function InstructorFormationsPage() {
     {message && <div className="mb-4 rounded-xl bg-gray-50 p-3 text-sm text-gray-600">{message}</div>}
     {loading ? <div className="card p-8 text-center text-gray-500">Chargement...</div> : filtered.length === 0 ? <div className="card p-10 text-center text-gray-500">Aucune formation correspondante.</div> : <div className="flex flex-col gap-4">
       {filtered.map((f) => <div key={f.id} className="card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div className="w-full sm:min-w-[220px]"><div className="flex flex-wrap items-center gap-2"><p className="font-bold">{f.title}</p><span className={`badge ${f.published ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>{f.published ? "Publiée" : "Brouillon"}</span></div><p className="mt-1 text-xs text-gray-500">{f.num_sessions} séances · {f.session_duration_minutes} min/séance · <Users size={12} className="inline" /> {f.students_count}/{f.max_students} inscrits</p></div><div className="flex flex-wrap gap-2"><Link href={`/formations/${f.slug}`} target="_blank" className="btn-outline !py-1.5 !text-xs"><ExternalLink size={13}/> Voir</Link><Link href={`/dashboard/instructor/formations/${f.id}/edit`} className="btn-outline !py-1.5 !text-xs"><Pencil size={13}/> Modifier</Link><button onClick={() => togglePublished(f)} className="btn-outline !py-1.5 !text-xs">{f.published ? <EyeOff size={14} /> : <Eye size={14} />} {f.published ? "Dépublier" : "Publier"}</button><button onClick={() => setOpenId(openId === f.id ? null : f.id)} className="btn-outline !py-1.5 !text-xs"><Calendar size={14} /> Planning</button><button onClick={()=>removeFormation(f)} className="rounded-lg border border-red-100 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"><Trash2 size={13} className="mr-1 inline"/>Supprimer</button></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div className="w-full sm:min-w-[220px]"><div className="flex flex-wrap items-center gap-2"><p className="font-bold">{f.title}</p><span className={`badge ${f.published ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>{f.published ? "Publiée" : "Brouillon"}</span></div><p className="mt-1 text-xs text-gray-500">{f.num_sessions} séances · {f.session_duration_minutes} min/séance · <Users size={12} className="inline" /> {f.students_count}/{f.max_students} inscrits</p></div><div className="flex flex-wrap gap-2"><Link href={`/formations/${f.slug}`} target="_blank" className="btn-outline !py-1.5 !text-xs"><ExternalLink size={13}/> Voir</Link><Link href={`/dashboard/instructor/formations/${f.id}/edit`} className="btn-outline !py-1.5 !text-xs"><Pencil size={13}/> Modifier</Link><button onClick={() => togglePublished(f)} className="btn-outline !py-1.5 !text-xs">{f.published ? <EyeOff size={14} /> : <Eye size={14} />} {f.published ? "Dépublier" : "Publier"}</button><button onClick={() => setOpenId(openId === f.id ? null : f.id)} className="btn-outline !py-1.5 !text-xs"><Calendar size={14} /> Planning</button><button onClick={() => setWaitlistOpenId(waitlistOpenId === f.id ? null : f.id)} className="btn-outline !py-1.5 !text-xs"><Hourglass size={14} /> Attente {(f.waitlist_count || 0) + (f.waitlist_offered_count || 0)}</button><button onClick={()=>removeFormation(f)} className="rounded-lg border border-red-100 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"><Trash2 size={13} className="mr-1 inline"/>Supprimer</button></div></div>
         {openId === f.id && <SessionManager formation={f} onAdd={addSession} onUpdate={updateSession} onDelete={removeSession} onReport={showReport} />}
+        {waitlistOpenId === f.id && <WaitlistPanel formation={f} />}
       </div>)}
     </div>}
     {report && <ReportModal report={report} onClose={()=>setReport(null)} />}
   </div>;
+}
+
+function WaitlistPanel({ formation }: { formation: InteractiveFormation }) {
+  const [data, setData] = useState<WaitlistPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    api.get<WaitlistPayload>(`/formations/${formation.slug}/waitlist/`)
+      .then((payload) => { if (active) { setData(payload); setError(""); } })
+      .catch((e) => { if (active) setError(e instanceof ApiError ? e.message : "Impossible de charger la liste d'attente."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [formation.slug]);
+
+  return <section className="mt-4 rounded-xl border border-amber-100 bg-amber-50/50 p-4">
+    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="flex items-center gap-2 text-sm font-bold text-amber-900"><Hourglass size={16}/> Liste d'attente</h3><p className="mt-1 text-xs text-amber-800">{data ? `${data.waiting} en attente · ${data.offered} priorité(s) temporaire(s)` : "Ordre chronologique des demandes."}</p></div></div>
+    {loading ? <p className="mt-3 flex items-center gap-2 text-xs text-gray-500"><Loader2 size={14} className="animate-spin"/> Chargement…</p> : error ? <p className="mt-3 text-xs text-red-600">{error}</p> : !data?.results.length ? <p className="mt-3 text-xs text-gray-500">Aucune personne dans la file.</p> : <div className="mt-3 overflow-x-auto"><table className="min-w-full text-left text-xs"><thead className="text-gray-500"><tr><th className="px-2 py-2">Priorité</th><th className="px-2 py-2">Apprenant</th><th className="px-2 py-2">État</th><th className="px-2 py-2">Depuis / échéance</th></tr></thead><tbody>{data.results.map((row) => <tr key={row.id} className="border-t border-amber-100"><td className="px-2 py-2 font-semibold">{row.position ? `#${row.position}` : "—"}</td><td className="px-2 py-2"><span className="font-semibold text-gray-800">{row.user.full_name}</span>{row.user.headline && <span className="block max-w-[260px] truncate text-gray-500">{row.user.headline}</span>}</td><td className="px-2 py-2"><WaitlistStatus status={row.status}/></td><td className="px-2 py-2 text-gray-500">{row.status === "offered" && row.offer_expires_at ? `Priorité jusqu'au ${new Date(row.offer_expires_at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}` : new Date(row.created_at).toLocaleDateString("fr-FR")}</td></tr>)}</tbody></table></div>}
+  </section>;
+}
+
+function WaitlistStatus({ status }: { status: FormationWaitlistRow["status"] }) {
+  const labels: Record<FormationWaitlistRow["status"], string> = { waiting: "En attente", offered: "Place proposée", joined: "Inscrit", expired: "Offre expirée" };
+  const classes: Record<FormationWaitlistRow["status"], string> = { waiting: "bg-amber-100 text-amber-800", offered: "bg-emerald-100 text-emerald-800", joined: "bg-blue-100 text-blue-800", expired: "bg-gray-100 text-gray-600" };
+  return <span className={`badge ${classes[status]}`}>{labels[status]}</span>;
 }
 
 function toLocalDateTimeInput(value: string) {
