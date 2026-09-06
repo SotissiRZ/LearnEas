@@ -1,5 +1,7 @@
 # KalanPro
 
+> **v86 — recherche globale & recommandations :** recherche unifiée cours/formations/PDF/mentors/opportunités/entreprises, talents protégés Pro/Business, suggestions navbar et recommandations selon le profil. Voir [`docs/V86_DISCOVERY.md`](./docs/V86_DISCOVERY.md).
+
 > **v85 — ATS & recrutement avancé :** pipeline drag-and-drop, matching explicable par offre, recherches de talents sauvegardées avec alertes, vérification légale d'entreprise séparée et justificatifs protégés. Voir [`docs/V85_ATS_RECRUITMENT.md`](./docs/V85_ATS_RECRUITMENT.md).
 
 > **v84 — portfolio & certificats avancés :** réalisations structurées (rôle, problème, objectif, impact, stack, vidéo, dates), contact public opt-in, sélection explicite des certificats, PDF serveur avec QR et entrée CV structurée. Voir [`docs/V84_PORTFOLIO_CERTIFICATES.md`](./docs/V84_PORTFOLIO_CERTIFICATES.md).
@@ -123,6 +125,16 @@ Admin Django : **http://localhost/admin**
 ---
 
 ## ✅ Fonctionnalités implémentées
+
+### Recherche globale & recommandations (v86)
+
+- `/search` recherche simultanément cours, cohortes live, PDF, mentorat, opportunités et entreprises.
+- Les résultats sont classés par pertinence plutôt que simplement par date.
+- La navbar propose des suggestions après deux caractères et renvoie vers la recherche globale.
+- Un apprenant connecté reçoit des recommandations basées sur son profil, ses compétences/rôles souhaités et les catégories déjà suivies.
+- Un recruteur Pro/Business peut aussi rechercher/recommander des talents opt-in ; le vivier reste invisible aux visiteurs et aux plans Starter.
+- Aucun moteur tiers ni nouveau tracking n'est requis ; aucune migration v86.
+
 
 ### Légal, lecteurs et certificats (v7)
 

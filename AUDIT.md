@@ -1,3 +1,15 @@
+# Audit v86 — Recherche globale & recommandations
+
+- API de découverte unifiée sans nouveau stockage ni migration.
+- Politique de visibilité centralisée : uniquement contenus publics ; talents strictement réservés aux entreprises approuvées Pro/Business.
+- Ranking borné et normalisé ; requêtes limitées à 120 caractères et jeux candidats plafonnés avant scoring.
+- Recommandations fondées sur les signaux déjà détenus par KalanPro ; aucun tracker tiers.
+- Frontend `/search` responsive, filtres par type, suggestions navbar et images lazy-loaded.
+- Contrôles hors Docker : 67/67 tests frontend statiques, audit mobile 131 fichiers, Python et TS/TSX syntaxiquement valides, secrets/Compose/entrypoint OK.
+- v86 n'ajoute aucune migration ; les tests Django runtime et le build Next complet restent à rejouer dans Docker.
+
+---
+
 # Audit v85 — ATS & recrutement avancé
 
 - Matching explicable calculé côté serveur et utilisable contre une offre appartenant au recruteur.

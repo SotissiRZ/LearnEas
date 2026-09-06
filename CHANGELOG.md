@@ -1,3 +1,13 @@
+# KalanPro v86 — Recherche globale & recommandations personnalisées
+
+- Nouvelle API `apps.discovery` pour rechercher cours, cohortes, PDF, mentors, opportunités, entreprises et, uniquement si autorisé, talents.
+- Confidentialité du vivier conservée : aucun talent n'est exposé au public ni aux recruteurs Starter ; accès Pro/Business + entreprise approuvée obligatoire.
+- Ranking unifié : titre, phrase, tokens métier, featured, qualité/popularité et matching candidat/offre.
+- Recommandations personnalisées à partir du profil, compétences, rôles, pays et catégories déjà apprises ; fallback populaire/récent sans profil.
+- Suggestions de recherche dans la navbar avec debounce 250 ms et nouvelle page `/search` responsive.
+- Requêtes bornées et jeux candidats plafonnés ; `select_related`/annotations utilisés pour limiter les N+1.
+- Aucun nouveau modèle ni migration.
+
 # KalanPro v85 — ATS & recrutement avancé
 
 - Matching talents explicable par compétences, rôle, mode de travail, localisation, type et expérience ; compétences requises manquantes visibles au recruteur.

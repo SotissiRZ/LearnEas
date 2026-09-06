@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "apps.projects",
     "apps.opportunities",
     "apps.assistant_ai.apps.AssistantAIConfig",
+    "apps.discovery.apps.DiscoveryConfig",
     "rest_framework_simplejwt.token_blacklist",
 ]
 

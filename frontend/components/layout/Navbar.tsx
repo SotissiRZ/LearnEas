@@ -21,6 +21,8 @@ export default function Navbar() {
   const { user, logout } = useAuth();
   const items = useCart((s) => s.items);
   const [query, setQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [suggestions, setSuggestions] = useState<Array<{ type: string; title: string; subtitle: string; url: string }>>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [platform, setPlatform] = useState({ registration_enabled: true });
@@ -38,6 +40,17 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => {
+    const term = query.trim();
+    if (term.length < 2) { setSuggestions([]); return; }
+    const timer = window.setTimeout(() => {
+      api.get<{ suggestions: Array<{ type: string; title: string; subtitle: string; url: string }> }>(`/discovery/search/suggestions/?q=${encodeURIComponent(term)}`)
+        .then((data) => setSuggestions(data.suggestions || []))
+        .catch(() => setSuggestions([]));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
     function closeOutside(event: MouseEvent) {
       if (menuOpen && profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) setMenuOpen(false);
     }
@@ -53,7 +66,9 @@ export default function Navbar() {
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     const term = query.trim();
-    router.push(term ? `/courses?search=${encodeURIComponent(term)}` : "/courses");
+    setSuggestions([]);
+    setSearchFocused(false);
+    router.push(term ? `/search?q=${encodeURIComponent(term)}` : "/search");
   }
 
   const dashboardHref = user?.role === "admin" ? "/dashboard/admin" : user?.role === "instructor" ? "/dashboard/instructor" : user?.role === "employer" ? "/dashboard/employer" : "/dashboard/student";
@@ -107,14 +122,27 @@ export default function Navbar() {
           <Link href="/about" className={navLink}>À propos</Link>
         </nav>
 
-        <form onSubmit={handleSearch} className="relative ml-auto hidden w-[280px] shrink-0 2xl:block">
+        <form onSubmit={handleSearch} onFocus={() => setSearchFocused(true)} onBlur={() => window.setTimeout(() => setSearchFocused(false), 120)} className="relative ml-auto hidden w-[280px] shrink-0 2xl:block">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" size={16} />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Rechercher..."
+            placeholder="Rechercher partout..."
+            autoComplete="off"
+            aria-label="Recherche globale"
             className="w-full rounded-xl border border-white/20 bg-white/5 py-2.5 pl-9 pr-3 text-sm text-white outline-none placeholder:text-white/40 focus:border-brand-400 focus:bg-white/10 focus:ring-2 focus:ring-brand-500/20"
           />
+          {searchFocused && suggestions.length > 0 && (
+            <div className="absolute right-0 top-12 w-[380px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 text-ink shadow-soft">
+              {suggestions.map((item) => (
+                <Link key={`${item.type}-${item.url}`} href={item.url} onMouseDown={(event) => event.preventDefault()} onClick={() => { setSuggestions([]); setSearchFocused(false); }} className="block rounded-xl px-3 py-2.5 hover:bg-slate-50">
+                  <span className="block truncate text-sm font-bold text-navy-950">{item.title}</span>
+                  <span className="mt-0.5 block truncate text-[11px] text-slate-500">{item.subtitle}</span>
+                </Link>
+              ))}
+              <button type="submit" className="mt-1 w-full rounded-xl bg-brand-50 px-3 py-2 text-left text-xs font-black text-brand-700 hover:bg-brand-100">Voir tous les résultats</button>
+            </div>
+          )}
         </form>
 
         <div className="ml-auto flex shrink-0 items-center gap-2 2xl:ml-0">
