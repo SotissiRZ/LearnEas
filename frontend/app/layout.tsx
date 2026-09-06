@@ -7,6 +7,7 @@ import LazyKalanProAssistant from "@/components/ai/LazyKalanProAssistant";
 import NavigationPerformance from "@/components/layout/NavigationPerformance";
 import NetworkStatus from "@/components/layout/NetworkStatus";
 import ServiceWorkerRegistration from "@/components/layout/ServiceWorkerRegistration";
+import ProductAnalytics from "@/components/layout/ProductAnalytics";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ServiceWorkerRegistration />
         <NavigationPerformance />
         <NetworkStatus />
+        <ProductAnalytics />
         <Navbar />
         <div className="h-20 shrink-0" aria-hidden="true" />
         <main className="flex-1">{children}</main>

@@ -26,3 +26,6 @@ class WebhookRateThrottle(AnonRateThrottle):
 
 class ClientTelemetryRateThrottle(AnonRateThrottle):
     scope = "client_telemetry"
+
+class ProductAnalyticsRateThrottle(UserRateThrottle):
+    scope = "product_analytics"

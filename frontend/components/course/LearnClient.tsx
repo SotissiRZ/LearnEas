@@ -32,6 +32,7 @@ import PdfViewer from "@/components/ui/PdfViewer";
 import VideoPlayer, { VideoPlayerHandle } from "@/components/ui/VideoPlayer";
 import { useAuth } from "@/hooks/useAuth";
 import { publishAIContext } from "@/lib/aiContext";
+import { trackProductEvent } from "@/lib/analytics";
 import {
   downloadOfflineVideo,
   formatOfflineSize,
@@ -162,6 +163,8 @@ export default function LearnClient({ course }: { course: Course }) {
   const { user } = useAuth();
   const playerRef = useRef<VideoPlayerHandle | null>(null);
   const mainRef = useRef<HTMLDivElement | null>(null);
+  const analyticsStartedLessons = useRef<Set<number>>(new Set());
+  const analyticsCompletedLessons = useRef<Set<number>>(new Set());
 
   const [enrollment, setEnrollment] = useState<CourseEnrollment | null>(null);
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
@@ -749,9 +752,21 @@ export default function LearnClient({ course }: { course: Course }) {
                     subtitlesUrl={activeLesson.subtitles_file}
                     initialTime={initialTime}
                     autoPlayOnLoad={autoStartLesson}
-                    onTimeChange={(seconds, duration) => { setCurrentTime(seconds); setVideoDuration(duration); }}
+                    onTimeChange={(seconds, duration) => {
+                      setCurrentTime(seconds); setVideoDuration(duration);
+                      if (seconds > 0.5 && !analyticsStartedLessons.current.has(activeLesson.id)) {
+                        analyticsStartedLessons.current.add(activeLesson.id);
+                        trackProductEvent("video_started", { content_type: "lesson", content_id: activeLesson.id, source: "course_player" }, `/courses/${course.slug}/learn`);
+                      }
+                    }}
                     onProgress={(seconds, _duration, watchedDeltaSeconds) => persistProgress(seconds, watchedDeltaSeconds)}
-                    onEnded={(seconds, duration, watchedDeltaSeconds) => void handleEnded(seconds, duration, watchedDeltaSeconds)}
+                    onEnded={(seconds, duration, watchedDeltaSeconds) => {
+                      if (!analyticsCompletedLessons.current.has(activeLesson.id)) {
+                        analyticsCompletedLessons.current.add(activeLesson.id);
+                        trackProductEvent("video_completed", { content_type: "lesson", content_id: activeLesson.id, completion_percent: 100, source: "course_player" }, `/courses/${course.slug}/learn`);
+                      }
+                      void handleEnded(seconds, duration, watchedDeltaSeconds);
+                    }}
                     onRepair={canRepairActiveVideo ? repairActiveVideo : undefined}
                   />
                 ) : (

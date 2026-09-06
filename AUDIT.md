@@ -1,3 +1,15 @@
+# Audit v87 — Analytics produit & pilotage
+
+- Les indicateurs financiers, pédagogiques et recrutement restent calculés depuis les tables métier : `ProductEvent` n'est jamais la source de vérité pour un paiement, une inscription ou une embauche.
+- Le collecteur refuse les événements inconnus, whiteliste les propriétés, supprime query strings et routes sensibles et hache les identifiants de session.
+- Les endpoints dashboard/export sont strictement admin ; l'ingestion publique est throttlée.
+- Les événements produit sont automatiquement purgés au-delà de la rétention configurée ; les historiques métier restent intacts.
+- Contrôles hors Docker : 71/71 tests frontend statiques, audit mobile 132 fichiers, 269 fichiers Python et 151 TS/TSX syntaxiquement valides, scan secrets/Compose/entrypoint OK.
+- Graphe local : 75 migrations, aucune dépendance locale manquante détectée ; migration v87 additive.
+- 232 fonctions de tests backend recensées. Les tests Django runtime et le build Next complet restent à rejouer dans Docker/CI.
+
+---
+
 # Audit v86 — Recherche globale & recommandations
 
 - API de découverte unifiée sans nouveau stockage ni migration.

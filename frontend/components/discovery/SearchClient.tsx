@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { DiscoveryKind, DiscoveryResult, GlobalSearchResponse, RecommendationResponse } from "@/types/discovery";
+import { trackProductEvent } from "@/lib/analytics";
 
 const FILTERS: Array<{ value: "all" | DiscoveryKind; label: string }> = [
   { value: "all", label: "Tout" }, { value: "course", label: "Cours" },
@@ -56,6 +57,7 @@ export default function SearchClient({ initialQuery }: { initialQuery: string })
     const value = input.trim().slice(0, 120);
     if (value.length === 1) { setError("Saisissez au moins 2 caractères."); return; }
     setQuery(value); setActive("all");
+    if (value) trackProductEvent("search_submitted", { query_length: value.length, source: "search_page" }, "/search");
     router.replace(value ? `/search?q=${encodeURIComponent(value)}` : "/search", { scroll: false });
   }
 
@@ -101,7 +103,7 @@ function SearchResults({ data, active }: { data: GlobalSearchResponse; active: "
     {sections.map((type) => {
       const rows = data.groups[type] || [];
       if (!rows.length) return null;
-      return <section key={type}><div className="mb-4 flex items-center gap-2"><KindIcon type={type} /><h3 className="text-lg font-black text-navy-950">{KIND_LABEL[type]}</h3><span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-black text-slate-600">{rows.length}</span></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{rows.map((row) => <ResultCard key={`${row.type}-${row.id}`} row={row} />)}</div></section>;
+      return <section key={type}><div className="mb-4 flex items-center gap-2"><KindIcon type={type} /><h3 className="text-lg font-black text-navy-950">{KIND_LABEL[type]}</h3><span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-black text-slate-600">{rows.length}</span></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{rows.map((row) => <ResultCard key={`${row.type}-${row.id}`} row={row} source="search" />)}</div></section>;
     })}
   </div>;
 }
@@ -115,15 +117,15 @@ function RecommendationSections({ data }: { data: RecommendationResponse | null 
   ].filter((section) => section.rows.length > 0);
   return <div className="space-y-10">
     <div className="rounded-3xl border border-brand-100 bg-gradient-to-br from-brand-50 to-white p-6"><div className="flex items-center gap-2 text-brand-700"><Sparkles size={18} /><span className="text-xs font-black uppercase tracking-[.14em]">Recommandations</span></div><h2 className="mt-2 text-2xl font-black text-navy-950">{data.personalized ? "Sélection adaptée à votre profil" : "À découvrir sur KalanPro"}</h2>{data.signals.length > 0 && <p className="mt-2 text-sm text-slate-600">Signaux utilisés : {data.signals.slice(0, 5).join(" · ")}</p>}</div>
-    {sections.map((section) => <section key={section.title}><div className="mb-4 flex items-center gap-2">{section.icon}<h3 className="text-lg font-black text-navy-950">{section.title}</h3></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{section.rows.map((row) => <ResultCard key={`${row.type}-${row.id}`} row={row} />)}</div></section>)}
+    {sections.map((section) => <section key={section.title}><div className="mb-4 flex items-center gap-2">{section.icon}<h3 className="text-lg font-black text-navy-950">{section.title}</h3></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{section.rows.map((row) => <ResultCard key={`${row.type}-${row.id}`} row={row} source="recommendation" />)}</div></section>)}
   </div>;
 }
 
-function ResultCard({ row }: { row: DiscoveryResult }) {
+function ResultCard({ row, source }: { row: DiscoveryResult; source: "search" | "recommendation" }) {
   const location = [row.meta.city, row.meta.country].filter(Boolean).join(", ");
   const price = typeof row.meta.price === "number" ? (row.meta.price === 0 ? "Gratuit" : `${row.meta.price.toLocaleString("fr-FR")} €`) : null;
   const match = typeof row.meta.match_score === "number" ? row.meta.match_score : null;
-  return <Link href={row.url} className="group overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md">
+  return <Link href={row.url} onClick={() => trackProductEvent(source === "recommendation" ? "recommendation_clicked" : "discovery_result_clicked", { result_type: row.type, result_id: row.id, source }, "/search")} className="group overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md">
     <div className="flex min-h-32 gap-4 p-4">
       <div className="grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-2xl bg-slate-100">
         {row.image ? <img src={row.image} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <KindIcon type={row.type} large />}

@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "apps.opportunities",
     "apps.assistant_ai.apps.AssistantAIConfig",
     "apps.discovery.apps.DiscoveryConfig",
+    "apps.analytics.apps.AnalyticsConfig",
     "rest_framework_simplejwt.token_blacklist",
 ]
 
@@ -255,6 +256,7 @@ REST_FRAMEWORK = {
         "webhook": "3000/hour",
         "certificate_verify": config("CERTIFICATE_VERIFY_THROTTLE_RATE", default="300/hour"),
         "client_telemetry": config("CLIENT_TELEMETRY_THROTTLE_RATE", default="60/hour"),
+        "product_analytics": config("PRODUCT_ANALYTICS_THROTTLE_RATE", default="500/hour" if DEBUG else "300/hour"),
         "ai": config("AI_THROTTLE_RATE", default="60/min" if DEBUG else "30/min"),
     },
 }
@@ -442,6 +444,8 @@ PAYMENT_ORDER_EXPIRY_HOURS = config("PAYMENT_ORDER_EXPIRY_HOURS", default=24, ca
 PAYMENT_STALE_BATCH_SIZE = config("PAYMENT_STALE_BATCH_SIZE", default=200, cast=int)
 COHORT_WAITLIST_OFFER_HOURS = config("COHORT_WAITLIST_OFFER_HOURS", default=24, cast=int)
 
+ANALYTICS_RETENTION_DAYS = config("ANALYTICS_RETENTION_DAYS", default=395, cast=int)
+
 CELERY_BEAT_SCHEDULE = {
     "payment-reconciliation-every-5-minutes": {
         "task": "apps.payments.tasks.reconcile_pending_payments",
@@ -478,6 +482,10 @@ CELERY_BEAT_SCHEDULE = {
     "mentorship-recurring-slots-every-12-hours": {
         "task": "apps.formations.tasks.generate_recurring_mentorship_slots",
         "schedule": 43200.0,
+    },
+    "analytics-product-events-retention-daily": {
+        "task": "apps.analytics.tasks.purge_old_product_events",
+        "schedule": 86400.0,
     },
 }
 

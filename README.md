@@ -1,5 +1,7 @@
 # KalanPro
 
+> **v87 — analytics produit & pilotage admin :** métriques acquisition/finance/apprentissage/recrutement, funnels, rétention, événements produit minimisés, export CSV et rétention automatique sans tracker tiers. Voir [`docs/V87_ANALYTICS.md`](./docs/V87_ANALYTICS.md).
+
 > **v86 — recherche globale & recommandations :** recherche unifiée cours/formations/PDF/mentors/opportunités/entreprises, talents protégés Pro/Business, suggestions navbar et recommandations selon le profil. Voir [`docs/V86_DISCOVERY.md`](./docs/V86_DISCOVERY.md).
 
 > **v85 — ATS & recrutement avancé :** pipeline drag-and-drop, matching explicable par offre, recherches de talents sauvegardées avec alertes, vérification légale d'entreprise séparée et justificatifs protégés. Voir [`docs/V85_ATS_RECRUITMENT.md`](./docs/V85_ATS_RECRUITMENT.md).
@@ -125,6 +127,16 @@ Admin Django : **http://localhost/admin**
 ---
 
 ## ✅ Fonctionnalités implémentées
+
+### Analytics produit & dashboard admin (v87)
+
+- Nouvel onglet **Admin → Analytics** avec périodes 7/30/90/365 jours.
+- Mesures fiables de GMV, remboursements, inscriptions, complétions, certificats, candidatures, entretiens, offres et embauches directement depuis PostgreSQL.
+- Événements d'usage minimisés pour pages vues, recherche, recommandations et lecture vidéo ; aucune query string ni texte de recherche n'est conservé.
+- Rétention par période, tunnels commerce/recrutement, séries quotidiennes, top pages/contenus et export CSV.
+- Rétention technique automatique des événements (`ANALYTICS_RETENTION_DAYS=395` par défaut).
+- Migration additive `analytics.0001_product_analytics_v87`.
+
 
 ### Recherche globale & recommandations (v86)
 

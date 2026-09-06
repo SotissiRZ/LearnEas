@@ -1,3 +1,15 @@
+# KalanPro v87 — Analytics produit & dashboard administrateur
+
+- Nouvelle app `apps.analytics` avec événements produit minimisés et indexés ; aucune donnée de recherche libre n'est persistée.
+- Tracking interne des pages, recherches, clics de découverte/recommandation et démarrage/fin de vidéo.
+- Routes sensibles exclues du tracking et query strings supprimées côté serveur ; identifiants de session hachés SHA-256.
+- Dashboard **Admin → Analytics** avec périodes 7/30/90/365 jours, acquisition, activité, rétention, finance, apprentissage et recrutement.
+- Funnels commerce/recrutement, série quotidienne et classements des pages/cours/formations.
+- Export CSV admin agrégé.
+- Purge Celery quotidienne avec rétention configurable `ANALYTICS_RETENTION_DAYS` ; aucune suppression des tables métier.
+- Throttle dédié `PRODUCT_ANALYTICS_THROTTLE_RATE`.
+- Migration additive `analytics.0001_product_analytics_v87`.
+
 # KalanPro v86 — Recherche globale & recommandations personnalisées
 
 - Nouvelle API `apps.discovery` pour rechercher cours, cohortes, PDF, mentors, opportunités, entreprises et, uniquement si autorisé, talents.

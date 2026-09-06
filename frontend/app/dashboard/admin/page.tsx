@@ -32,7 +32,7 @@ import {
   Mail,
   MessageCircle,
   BriefcaseBusiness,
-  Bot, Database, Gauge, Sparkles, Paperclip,
+  Bot, Database, Gauge, Sparkles, Paperclip, BarChart3, TrendingUp, Download, Activity,
 } from "lucide-react";
 import { api, ApiError, apiDownload } from "@/lib/api";
 import CurrencyPrice, { CurrencyValue } from "@/components/ui/CurrencyPrice";
@@ -307,7 +307,20 @@ type CertificateRecord = {
   student_name: string; content_type: string; content_title: string; instructor_name: string;
 };
 
-const ADMIN_TABS: AdminTab[] = ["overview", "users", "applications", "content", "orders", "payouts", "sessions", "certificates", "recruitment", "categories", "moderation", "ai", "settings"];
+type AnalyticsOverview = {
+  period_days: number;
+  generated_at: string;
+  coverage: { product_events_started_at: string | null; note: string };
+  acquisition: { registrations: number; previous_registrations: number; active_users: number; anonymous_sessions: number; returning_users: number; retention_rate: number };
+  finance: { orders_started: number; paid_orders: number; failed_orders: number; refunded_orders: number; checkout_conversion_rate: number; gmv: string; refunds: string; net_gmv: string; platform_fees: string; net_platform_fees: string };
+  learning: { course_enrollments: number; course_completions: number; formation_enrollments: number; pdf_purchases: number; mentorship_bookings: number; certificates_issued: number };
+  recruitment: { applications: number; interviews: number; offers: number; hires: number; application_to_interview_rate: number; interview_to_offer_rate: number; offer_to_hire_rate: number };
+  funnels: { commerce: { label: string; value: number }[]; recruitment: { label: string; value: number }[] };
+  engagement: { events: { event_name: string; count: number }[]; top_paths: { path: string; count: number }[]; top_courses: { title: string; count: number }[]; top_formations: { title: string; count: number }[] };
+  timeline: { date: string; registrations: number; active_users: number; paid_orders: number; gmv: number; applications: number }[];
+};
+
+const ADMIN_TABS: AdminTab[] = ["overview", "analytics", "users", "applications", "content", "orders", "payouts", "sessions", "certificates", "recruitment", "categories", "moderation", "ai", "settings"];
 
 function unwrap<T>(data: Paginated<T> | T[]): T[] {
   return Array.isArray(data) ? data : data.results;
@@ -340,6 +353,7 @@ function AdminDashboardContent() {
           <AdminSidebar activeTab={tab} />
           <main className="min-w-0 lg:ml-16 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:px-5 lg:py-4 lg:pb-8 lg:transition-[margin-left] lg:duration-200 lg:ease-out lg:peer-hover:ml-60">
             {tab === "overview" && <OverviewTab key={searchParams.toString()} />}
+            {tab === "analytics" && <AnalyticsTab key={searchParams.toString()} />}
             {tab === "users" && <UsersTab key={searchParams.toString()} />}
             {tab === "applications" && <ApplicationsTab key={searchParams.toString()} />}
             {tab === "content" && <ContentTab key={searchParams.toString()} />}
@@ -497,6 +511,123 @@ function OverviewTab() {
       <SessionReportModal sessionId={reportId} onClose={() => setReportId(null)} />
     </>
   );
+}
+
+function AnalyticsTab() {
+  const [period, setPeriod] = useState(30);
+  const [data, setData] = useState<AnalyticsOverview | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try { setData(await api.get<AnalyticsOverview>(`/analytics/admin/overview/?period=${period}`)); }
+    catch (e) { setError(toError(e)); }
+    finally { setLoading(false); }
+  }, [period]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function exportCsv() {
+    setExporting(true); setError("");
+    try { await apiDownload(`/analytics/admin/export/?period=${period}`, `kalanpro-analytics-${period}j.csv`); }
+    catch (e) { setError(toError(e)); }
+    finally { setExporting(false); }
+  }
+
+  const timeline = useMemo(() => {
+    const rows = data?.timeline || [];
+    const step = rows.length > 100 ? 7 : rows.length > 45 ? 3 : 1;
+    return rows.filter((_, index) => index % step === 0 || index === rows.length - 1);
+  }, [data]);
+  const maxActivity = Math.max(1, ...timeline.map((row) => Math.max(row.active_users, row.registrations, row.applications)));
+
+  return <>
+    <PageHeader
+      title="Analytics produit"
+      description="Mesurez acquisition, conversion, apprentissage, recrutement et rétention sans exposer les contenus privés des utilisateurs."
+      actions={<div className="flex flex-wrap gap-2"><select value={period} onChange={(e) => setPeriod(Number(e.target.value))} className="input-admin"><option value={7}>7 jours</option><option value={30}>30 jours</option><option value={90}>90 jours</option><option value={365}>12 mois</option></select><button onClick={exportCsv} disabled={exporting} className="btn-outline !py-2 !text-xs"><Download size={15} /> {exporting ? "Export..." : "Exporter CSV"}</button><button onClick={load} disabled={loading} className="btn-outline !py-2 !text-xs"><RefreshCw size={15} className={loading ? "animate-spin" : ""} /> Actualiser</button></div>}
+    />
+    {error && <Alert text={error} tone="error" />}
+    {loading && !data ? <LoadingBlock /> : data && <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <AnalyticsMetric icon={<Users size={18} />} label="Nouvelles inscriptions" value={data.acquisition.registrations} note={`${data.acquisition.active_users} utilisateur(s) actif(s) mesuré(s)`} />
+        <AnalyticsMetric icon={<BadgeDollarSign size={18} />} label="GMV" value={<CurrencyPrice value={data.finance.gmv} />} note={`${data.finance.checkout_conversion_rate}% de conversion checkout`} />
+        <AnalyticsMetric icon={<BookOpen size={18} />} label="Inscriptions cours" value={data.learning.course_enrollments} note={`${data.learning.course_completions} cours terminé(s)`} />
+        <AnalyticsMetric icon={<BriefcaseBusiness size={18} />} label="Candidatures" value={data.recruitment.applications} note={`${data.recruitment.hires} embauche(s)`} />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.45fr_.9fr]">
+        <CompactCard title="Activité quotidienne" subtitle="Utilisateurs actifs, inscriptions et candidatures">
+          <div className="flex h-52 items-end gap-1 overflow-hidden rounded-xl border border-slate-100 bg-slate-50 p-3" aria-label="Activité quotidienne">
+            {timeline.map((row) => {
+              const height = Math.max(4, Math.round((Math.max(row.active_users, row.registrations, row.applications) / maxActivity) * 100));
+              return <div key={row.date} className="group relative flex h-full min-w-[5px] flex-1 items-end" title={`${row.date} · actifs ${row.active_users} · inscriptions ${row.registrations} · candidatures ${row.applications}`}><div style={{ height: `${height}%` }} className="w-full rounded-t bg-brand-500/80 transition group-hover:bg-brand-600" /></div>;
+            })}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-4 text-[11px] text-slate-500"><span><Activity size={12} className="mr-1 inline" />Pic basé sur l'activité utilisateur</span><span>{timeline.length} points affichés</span></div>
+        </CompactCard>
+        <CompactCard title="Rétention" subtitle="Retour d'utilisateurs mesuré par événements produit">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <AnalyticsMetric compact icon={<TrendingUp size={17} />} label="Taux de retour" value={`${data.acquisition.retention_rate}%`} note={`${data.acquisition.returning_users} utilisateur(s) revenu(s)`} />
+            <AnalyticsMetric compact icon={<Users size={17} />} label="Sessions anonymes" value={data.acquisition.anonymous_sessions} note="Identifiants techniques hachés" />
+          </div>
+          <p className="mt-3 text-[11px] leading-5 text-slate-500">{data.coverage.note}</p>
+        </CompactCard>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <FunnelCard title="Tunnel commercial" rows={data.funnels.commerce} />
+        <FunnelCard title="Tunnel recrutement" rows={data.funnels.recruitment} />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <CompactCard title="Finance" subtitle={`${data.finance.paid_orders} paiement(s) confirmé(s)`}>
+          <AnalyticsRow label="Commandes démarrées" value={data.finance.orders_started} />
+          <AnalyticsRow label="Paiements échoués" value={data.finance.failed_orders} />
+          <AnalyticsRow label="Remboursements" value={<CurrencyPrice value={data.finance.refunds} />} />
+          <AnalyticsRow label="GMV net" value={<CurrencyPrice value={data.finance.net_gmv} />} />
+          <AnalyticsRow label="Commission nette" value={<CurrencyPrice value={data.finance.net_platform_fees} />} />
+        </CompactCard>
+        <CompactCard title="Apprentissage" subtitle="Activité pédagogique sur la période">
+          <AnalyticsRow label="Formations live" value={data.learning.formation_enrollments} />
+          <AnalyticsRow label="Achats PDF" value={data.learning.pdf_purchases} />
+          <AnalyticsRow label="Mentorats" value={data.learning.mentorship_bookings} />
+          <AnalyticsRow label="Cours terminés" value={data.learning.course_completions} />
+          <AnalyticsRow label="Certificats émis" value={data.learning.certificates_issued} />
+        </CompactCard>
+        <CompactCard title="Recrutement" subtitle="Progression du pipeline ATS">
+          <AnalyticsRow label="Entretiens" value={`${data.recruitment.interviews} · ${data.recruitment.application_to_interview_rate}%`} />
+          <AnalyticsRow label="Offres" value={`${data.recruitment.offers} · ${data.recruitment.interview_to_offer_rate}%`} />
+          <AnalyticsRow label="Embauches" value={`${data.recruitment.hires} · ${data.recruitment.offer_to_hire_rate}%`} />
+        </CompactCard>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        <RankedList title="Pages les plus consultées" rows={data.engagement.top_paths.map((row) => ({ label: row.path, value: row.count }))} empty="Les vues commenceront à être mesurées avec v87." />
+        <RankedList title="Cours les plus acquis" rows={data.engagement.top_courses.map((row) => ({ label: row.title, value: row.count }))} empty="Aucune acquisition sur la période." />
+        <RankedList title="Formations les plus suivies" rows={data.engagement.top_formations.map((row) => ({ label: row.title, value: row.count }))} empty="Aucune inscription sur la période." />
+      </div>
+    </div>}
+  </>;
+}
+
+function AnalyticsMetric({ icon, label, value, note, compact = false }: { icon: React.ReactNode; label: string; value: React.ReactNode; note: React.ReactNode; compact?: boolean }) {
+  return <div className={`rounded-xl border border-slate-200 bg-white ${compact ? "p-3" : "p-4"}`}><div className="flex items-center gap-2 text-slate-500">{icon}<span className="text-[11px] font-bold uppercase tracking-wide">{label}</span></div><div className={`${compact ? "mt-1 text-xl" : "mt-2 text-2xl"} font-black text-navy-950`}>{value}</div><div className="mt-1 text-[11px] text-slate-500">{note}</div></div>;
+}
+
+function AnalyticsRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-2.5 last:border-0"><span className="text-xs text-slate-500">{label}</span><strong className="text-sm text-navy-950">{value}</strong></div>;
+}
+
+function FunnelCard({ title, rows }: { title: string; rows: { label: string; value: number }[] }) {
+  const first = Math.max(rows[0]?.value || 0, 1);
+  return <CompactCard title={title} subtitle="Volumes et conversion entre étapes"><div className="space-y-3">{rows.map((row, index) => { const pct = Math.round((row.value / first) * 100); return <div key={row.label}><div className="mb-1 flex items-center justify-between text-xs"><span className="font-semibold text-slate-600">{row.label}</span><span className="font-black text-navy-950">{row.value} <span className="font-medium text-slate-400">· {index === 0 ? 100 : pct}%</span></span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.max(row.value ? 3 : 0, Math.min(100, pct))}%` }} /></div></div>; })}</div></CompactCard>;
+}
+
+function RankedList({ title, rows, empty }: { title: string; rows: { label: string; value: number }[]; empty: string }) {
+  return <CompactCard title={title} subtitle="Classement sur la période">{rows.length ? <div className="space-y-2">{rows.slice(0, 8).map((row, index) => <div key={`${row.label}-${index}`} className="flex items-center gap-3 rounded-lg bg-slate-50 px-3 py-2"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white text-[10px] font-black text-slate-500">{index + 1}</span><span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-700">{row.label}</span><strong className="text-xs text-navy-950">{row.value}</strong></div>)}</div> : <Empty text={empty} />}</CompactCard>;
 }
 
 function UsersTab() {
