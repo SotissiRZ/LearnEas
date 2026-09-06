@@ -6,6 +6,7 @@ import RatingStars from "@/components/ui/RatingStars";
 import LevelBadge from "@/components/ui/LevelBadge";
 import ContactInstructorButton from "@/components/chat/ContactInstructorButton";
 import PdfAccessCard from "@/components/course/PdfAccessCard";
+import ReportLink from "@/components/support/ReportLink";
 
 async function getPdf(slug: string): Promise<PDFProduct | null> {
   try {
@@ -34,6 +35,7 @@ export default async function PdfDetailPage({ params }: { params: Promise<{ slug
             <span className="flex items-center gap-1 text-gray-500"><FileText size={16} /> {pdf.page_count} pages</span>
           </div>
           <p className="mt-2 text-sm text-gray-500">Par <span className="font-semibold">{pdf.instructor.full_name}</span></p>
+          <div className="mt-2"><ReportLink targetType="pdf" targetId={pdf.id} label={pdf.title} url={`/pdfs/${pdf.slug}`} /></div>
         </div>
 
         <div className="card p-6">

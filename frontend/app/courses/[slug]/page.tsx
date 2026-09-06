@@ -10,6 +10,7 @@ import LevelBadge from "@/components/ui/LevelBadge";
 import CourseCurriculum from "@/components/course/CourseCurriculum";
 import ContactInstructorButton from "@/components/chat/ContactInstructorButton";
 import CoursePurchaseCard from "@/components/course/CoursePurchaseCard";
+import ReportLink from "@/components/support/ReportLink";
 
 async function getCourse(slug: string): Promise<Course | null> {
   try {
@@ -48,6 +49,7 @@ export default async function CourseDetailPage({ params }: { params: Promise<{ s
               Créé par <span className="font-semibold text-white">{course.instructor.full_name}</span>
               {course.instructor.headline ? ` · ${course.instructor.headline}` : ""}
             </p>
+            <div className="mt-2"><ReportLink targetType="course" targetId={course.id} label={course.title} url={`/courses/${course.slug}`} className="text-gray-400 hover:text-red-300" /></div>
 
             <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-300">
               <span className="flex items-center gap-1"><Globe size={16} /> {course.language}</span>

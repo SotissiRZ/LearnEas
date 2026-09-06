@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Check, Search, X } from "lucide-react";
 import { COUNTRY_OPTIONS, PRIORITY_COUNTRY_CODES, countryFlag } from "@/lib/countries";
 
-const PRIORITY_SET = new Set(PRIORITY_COUNTRY_CODES);
+const PRIORITY_SET = new Set<string>(PRIORITY_COUNTRY_CODES);
 const ORDERED_COUNTRIES = [
   ...PRIORITY_COUNTRY_CODES.map((code) => COUNTRY_OPTIONS.find((item) => item.code === code)).filter(Boolean),
   ...COUNTRY_OPTIONS.filter((item) => !PRIORITY_SET.has(item.code)),

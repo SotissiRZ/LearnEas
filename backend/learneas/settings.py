@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "apps.chat",
     "apps.formations",
     "apps.notifications",
+    "apps.support",
     "apps.projects",
     "apps.opportunities",
     "apps.assistant_ai.apps.AssistantAIConfig",

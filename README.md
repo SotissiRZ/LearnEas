@@ -1,6 +1,7 @@
 # KalanPro
 
-> **v88 — Premium apprenant :** pass 30 jours optionnel pour un catalogue de cours/PDF sélectionné par l’administrateur, droits temporaires expirables, renouvellements chaînés, révocation au remboursement et achats à l’unité toujours permanents. Voir [`docs/V88_PREMIUM.md`](./docs/V88_PREMIUM.md).
+> **v88 — Premium apprenant + modération/support :** pass 30 jours optionnel pour un catalogue cours/PDF sélectionné par l’administrateur, droits temporaires expirables et achats à l’unité permanents ; tickets privés, conversation support, signalements structurés, file de modération admin et journal de décision. Voir [`docs/V88_PREMIUM.md`](./docs/V88_PREMIUM.md) et [`docs/V88_SUPPORT_MODERATION.md`](./docs/V88_SUPPORT_MODERATION.md).
+
 
 > **v87 — analytics produit & pilotage admin :** métriques acquisition/finance/apprentissage/recrutement, funnels, rétention, événements produit minimisés, export CSV et rétention automatique sans tracker tiers. Voir [`docs/V87_ANALYTICS.md`](./docs/V87_ANALYTICS.md).
 

@@ -42,6 +42,7 @@ import AdminSidebar, { AdminTab } from "@/components/admin/AdminSidebar";
 import AdminModal from "@/components/admin/AdminModal";
 import CertificateContentConfigurator from "@/components/certificates/CertificateContentConfigurator";
 import CountrySelect from "@/components/ui/CountrySelect";
+import SupportModerationPanel from "@/components/admin/SupportModerationPanel";
 
 type Paginated<T> = { count: number; next: string | null; previous: string | null; results: T[] };
 
@@ -379,7 +380,7 @@ function AdminDashboardContent() {
             {tab === "certificates" && <CertificatesTab key={searchParams.toString()} />}
             {tab === "recruitment" && <RecruitmentTab key={searchParams.toString()} />}
             {tab === "categories" && <CategoriesTab key={searchParams.toString()} />}
-            {tab === "moderation" && <ModerationTab key={searchParams.toString()} />}
+            {tab === "moderation" && <><SupportModerationPanel /><ModerationTab key={searchParams.toString()} /></>}
             {tab === "ai" && <AITab key={searchParams.toString()} />}
             {tab === "settings" && <SettingsTab key={searchParams.toString()} />}
           </main>
@@ -1225,7 +1226,7 @@ function ModerationTab() {
 
   return (
     <>
-      <PageHeader title="FAQ & modération" description="Administrez l'aide publique et modérez les avis publiés sur les contenus." />
+      <PageHeader title="FAQ & avis" description="Administrez l'aide publique et les avis publiés sur les contenus." />
       <div className="mb-4 flex rounded-xl border border-gray-200 bg-white p-1 sm:w-fit">
         <button onClick={() => { setMode("faq"); setPage(1); }} className={`rounded-lg px-4 py-2 text-xs font-semibold ${mode === "faq" ? "bg-brand-50 text-brand-700" : "text-gray-500"}`}>FAQ</button>
         <button onClick={() => { setMode("reviews"); setPage(1); }} className={`rounded-lg px-4 py-2 text-xs font-semibold ${mode === "reviews" ? "bg-brand-50 text-brand-700" : "text-gray-500"}`}>Avis</button>

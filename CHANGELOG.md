@@ -1,4 +1,27 @@
-# KalanPro v88 — Premium apprenant
+### V88.4 — Finalisation du contrat Opportunités legacy
+- Réintègre `frontend/lib/opportunities.ts` dans l’archive afin qu’une extraction par-dessus une installation ancienne remplace le fichier legacy au lieu de le laisser dériver localement.
+- Complète `OPPORTUNITY_KIND_LABELS` avec `mission`.
+- Complète `OPPORTUNITY_STATUS_LABELS` avec `archived`.
+- Conserve les helpers historiques `APPLICATION_STATUS_LABELS`, `statusBadge` et le formatage de rémunération.
+- Renforce `test-type-contract-v88.mjs` pour vérifier explicitement `mission` et `archived`.
+- Aucun changement Premium, Support/Modération, paiement, migration ou donnée.
+
+### V88.3 — Compatibilité TypeScript Opportunités / ATS
+- Étend le contrat `OpportunityKind` aux valeurs historiques `apprenticeship` et `volunteer`.
+- Étend `OpportunityStatus` avec `pending_review`, `rejected` et `filled` pour les écrans de modération encore présents sur certaines installations.
+- Restaure `CompanyProfile` ainsi que les alias `company` / `required_skills` attendus par les anciennes vues Opportunités.
+- Rend `compensation_period` indexable de façon sûre par les anciens helpers de rémunération.
+- Type explicitement le pipeline recruteur avec `JobApplicationStatus` et caste les valeurs issues des `<select>` avant mutation.
+- Renforce `test-type-contract-v88.mjs` pour couvrir cette rétrocompatibilité et éviter une nouvelle régression.
+- Aucun changement de logique Premium, Support/Modération, paiement ou schéma de base de données.
+
+
+### V88.2 — Correctif harness Docker
+- Le test de contrat TypeScript V88 lit désormais les sources frontend via `/app` (`readFrontend`) au lieu de `/workspace/frontend`.
+- `/workspace` reste réservé aux montages structurels backend/Compose/CI en lecture seule.
+- Corrige l’unique `ENOENT /workspace/frontend/types/index.ts` observé sous Docker sans modifier Premium ni Support/Modération.
+
+# KalanPro v88 — Premium apprenant + Modération & support utilisateur
 
 - Nouveau pass apprenant optionnel de 30 jours, en complément de l'achat à l'unité.
 - Prix/activation Premium administrables et catalogue cours/PDF explicitement marqué par l'administrateur.
@@ -9,8 +32,13 @@
 - Remboursement d'une période Premium avec révocation et recalage des périodes futures.
 - Dashboard étudiant avec statut Premium, échéance, navigation vers le catalogue et prolongation.
 - Cohortes live et mentorat volontairement exclus du pass Premium.
-- Migrations additives `accounts.0012`, `catalog.0008`, `payments.0016`, `enrollments.0008`.
-- Suite structurelle portée à 78 tests.
+- Centre de support authentifié avec tickets privés, catégories, priorités, statuts et conversation utilisateur ↔ support.
+- File de traitement administrateur avec assignation et notifications in-app.
+- Signalements structurés avec gravité, décision, action prise et journal de modération.
+- Liens de signalement sur les fiches cours/PDF et remplacement du formulaire Contact simulé par le vrai support.
+- Correctif de contrat TypeScript : réexports Opportunités stables, types recruteur restaurés, paramètres pricing recruteur présents dans `PlatformSettings`.
+- Migrations additives Premium (`accounts.0012`, `catalog.0008`, `payments.0016`, `enrollments.0008`) et Support (`support.0001_support_moderation`).
+
 
 # KalanPro v87 — Analytics produit & dashboard administrateur
 
@@ -1352,3 +1380,9 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Évite volontairement le montage global `.:/workspace:ro` afin de ne pas exposer un éventuel `backend/.env` au processus Next de développement.
 - Les suites v79–v87 concernées utilisent désormais le resolver commun ; validation structurelle de référence : **71/71 tests réussis**.
 - Aucun changement métier, schéma ou donnée.
+### V88 — correctif typecheck Docker
+- Restaure le barrel `@/types` pour les types recrutement/opportunités attendus par les écrans recruteur.
+- Réintègre les champs de tarification recruteur dans `PlatformSettings`.
+- Corrige le typage des codes pays prioritaires.
+- Ajoute un test de non-régression du contrat TypeScript.
+

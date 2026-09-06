@@ -31,7 +31,7 @@ const ITEMS = [
   { tab: "certificates", label: "Certificats", icon: Award },
   { tab: "recruitment", label: "Recrutement", icon: BriefcaseBusiness },
   { tab: "categories", label: "Catégories", icon: Tags },
-  { tab: "moderation", label: "FAQ & avis", icon: MessageSquareText },
+  { tab: "moderation", label: "Support & modération", icon: MessageSquareText },
   { tab: "ai", label: "Assistant IA", icon: Bot },
   { tab: "settings", label: "Paramètres", icon: Settings },
 ] as const;

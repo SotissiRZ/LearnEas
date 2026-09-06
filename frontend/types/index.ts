@@ -754,3 +754,8 @@ export interface AIAdminSettings {
   custom_system_prompt: string;
   updated_at: string;
 }
+// Domain-specific public type contracts. Keep these re-exports stable because
+// dashboard modules import them from the @/types barrel.
+export * from "./opportunities";
+export * from "./discovery";
+

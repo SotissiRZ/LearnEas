@@ -15,7 +15,7 @@ export default function Footer() {
         </div>
         <FooterColumn title="Apprendre" items={[["/courses","Formations"],["/formations","Cohortes live"],["/mentorship","Mentorat"],["/pdfs","PDF & Guides"],["/instructors","Instructeurs"]]} />
         <FooterColumn title="Carrière" items={[["/opportunities","Opportunités"],["/dashboard/student/projects","Mes projets"],["/dashboard/student/portfolio","Portfolio"],["/certificates/verify","Vérifier un certificat"]]} />
-        <FooterColumn title="Support" items={[["/pricing","Tarifs"],["/about","À propos"],["/contact","Contact"],["/faq","Centre d'aide"],["/login","Connexion"]]} />
+        <FooterColumn title="Support" items={[["/pricing","Tarifs"],["/about","À propos"],["/contact","Contact"],["/faq","Centre d'aide"],["/support","Support & sécurité"],["/login","Connexion"]]} />
         <FooterColumn title="Légal" items={[["/legal/terms","Conditions d'utilisation"],["/legal/privacy","Confidentialité"],["/legal/notices","Mentions légales"],["/legal/cookies","Cookies"],["/legal/refunds","Paiements & remboursements"]]} />
       </div>
       <div className="border-t border-white/10 py-4 text-center text-xs text-white/40">© {new Date().getFullYear()} KalanPro. Tous droits réservés.</div>

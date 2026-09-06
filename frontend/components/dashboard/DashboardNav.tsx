@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BookOpen, FileText, User, PlusCircle, Users, ShoppingBag, Video, Award, CalendarCheck2, ClipboardCheck, BriefcaseBusiness, Bot } from "lucide-react";
+import { LayoutDashboard, BookOpen, FileText, User, PlusCircle, Users, ShoppingBag, Video, Award, CalendarCheck2, ClipboardCheck, BriefcaseBusiness, Bot, LifeBuoy } from "lucide-react";
 
 const LINKS: Record<string, { href: string; label: string; icon: React.ReactNode }[]> = {
   student: [
@@ -16,6 +16,7 @@ const LINKS: Record<string, { href: string; label: string; icon: React.ReactNode
     { href: "/dashboard/student/certificates", label: "Mes certificats", icon: <Award size={16} /> },
     { href: "/assistant", label: "KalanPro AI", icon: <Bot size={16} /> },
     { href: "/dashboard/student/profile", label: "Profil", icon: <User size={16} /> },
+    { href: "/support", label: "Support", icon: <LifeBuoy size={16} /> },
   ],
   instructor: [
     { href: "/dashboard/instructor", label: "Aperçu", icon: <LayoutDashboard size={16} /> },
@@ -28,11 +29,13 @@ const LINKS: Record<string, { href: string; label: string; icon: React.ReactNode
     { href: "/dashboard/instructor/pdfs", label: "Mes PDF", icon: <FileText size={16} /> },
     { href: "/dashboard/instructor/pdfs/new", label: "Nouveau PDF", icon: <PlusCircle size={16} /> },
     { href: "/assistant", label: "KalanPro AI", icon: <Bot size={16} /> },
+    { href: "/support", label: "Support", icon: <LifeBuoy size={16} /> },
   ],
   employer: [
     { href: "/dashboard/employer", label: "Espace entreprise", icon: <LayoutDashboard size={16} /> },
     { href: "/opportunities", label: "Marché des opportunités", icon: <BriefcaseBusiness size={16} /> },
     { href: "/assistant", label: "KalanPro AI", icon: <Bot size={16} /> },
+    { href: "/support", label: "Support", icon: <LifeBuoy size={16} /> },
   ],
   admin: [
     { href: "/dashboard/admin", label: "Aperçu", icon: <LayoutDashboard size={16} /> },

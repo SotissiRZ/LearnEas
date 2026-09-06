@@ -37,6 +37,25 @@ export type EmployerProfile = {
   updated_at?: string;
 };
 
+
+export type CompanyProfile = {
+  id: number;
+  name: string;
+  slug: string;
+  tagline?: string;
+  description?: string;
+  industry?: string;
+  website_url?: string;
+  contact_email?: string;
+  logo?: string | null;
+  banner?: string | null;
+  country?: string;
+  city?: string;
+  status?: EmployerStatus;
+  verification_status?: "unverified" | "pending" | "verified" | "rejected";
+  [key: string]: any;
+};
+
 export type CandidateProfile = {
   id: number;
   headline: string;
@@ -56,18 +75,45 @@ export type CandidateProfile = {
   updated_at: string;
 };
 
-export type OpportunityKind = "job" | "internship" | "freelance" | "mission";
-export type WorkMode = "remote" | "hybrid" | "onsite";
+export type OpportunityKind =
+  | "job"
+  | "internship"
+  | "freelance"
+  | "mission"
+  | "apprenticeship"
+  | "volunteer";
+export type OpportunityWorkMode = "remote" | "hybrid" | "onsite";
+export type WorkMode = OpportunityWorkMode;
+export type OpportunityExperience = "entry" | "junior" | "mid" | "senior" | "lead";
+export type OpportunityStatus =
+  | "draft"
+  | "pending_review"
+  | "published"
+  | "rejected"
+  | "closed"
+  | "filled"
+  | "archived";
+export type JobApplicationStatus =
+  | "submitted"
+  | "reviewing"
+  | "shortlisted"
+  | "interview"
+  | "offer"
+  | "hired"
+  | "rejected"
+  | "withdrawn";
 
 export type Opportunity = {
   id: number;
   employer: EmployerProfile & { id: number; company_name: string; slug: string; status: EmployerStatus };
+  /** Legacy/admin compatibility: older moderation screens use `company` instead of `employer`. */
+  company: CompanyProfile;
   title: string;
   slug: string;
   kind: OpportunityKind;
   contract_type: string;
-  work_mode: WorkMode;
-  experience_level: string;
+  work_mode: OpportunityWorkMode;
+  experience_level: OpportunityExperience;
   description: string;
   department: string;
   openings: number;
@@ -75,6 +121,8 @@ export type Opportunity = {
   responsibilities: string[];
   requirements: string[];
   skills_required: string[];
+  /** Legacy alias retained for pre-v75 admin/opportunity screens. */
+  required_skills: string[];
   skills_optional: string[];
   screening_questions: string[];
   country: string;
@@ -88,7 +136,7 @@ export type Opportunity = {
   apply_mode: "internal" | "external";
   external_application_url: string;
   application_deadline: string | null;
-  status: "draft" | "published" | "closed" | "archived";
+  status: OpportunityStatus;
   featured: boolean;
   published_at: string | null;
   created_at: string;
@@ -97,6 +145,12 @@ export type Opportunity = {
   match_score?: number | null;
   already_applied?: boolean;
   is_open: boolean;
+  /** Compatibility fields used by the recruiter workspace introduced before the salary_* API naming was consolidated. */
+  compensation_min?: string | number | null;
+  compensation_max?: string | number | null;
+  compensation_currency?: string;
+  compensation_period: "hour" | "month" | "year" | "project";
+  [key: string]: any;
 };
 
 export type ScreeningAnswer = { question: string; answer: string };
@@ -107,7 +161,7 @@ export type OpportunityApplication = {
   opportunity_title: string;
   opportunity_slug: string;
   company_name: string;
-  status: string;
+  status: JobApplicationStatus;
   cover_letter: string;
   screening_answers: ScreeningAnswer[];
   resume_url: string | null;
@@ -136,6 +190,34 @@ export type OpportunityApplication = {
   next_step_at?: string | null;
   applied_at: string;
   updated_at: string;
+};
+
+export type EmployerJobApplication = {
+  id: number;
+  opportunity: number;
+  opportunity_title: string;
+  opportunity_slug: string;
+  status: JobApplicationStatus;
+  candidate_name: string;
+  candidate_email: string;
+  candidate_country: string;
+  candidate_headline: string;
+  cover_letter: string;
+  cv_file: string | null;
+  match_score: number;
+  matched_skills: string[];
+  missing_skills: string[];
+  employer_message?: string;
+  candidate_snapshot?: {
+    portfolio_public?: boolean;
+    portfolio_slug?: string;
+    verified_projects_count?: number;
+    active_certificates_count?: number;
+    [key: string]: unknown;
+  };
+  submitted_at: string;
+  updated_at?: string;
+  [key: string]: any;
 };
 
 export type Talent = {
