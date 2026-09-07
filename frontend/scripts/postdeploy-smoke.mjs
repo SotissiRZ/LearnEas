@@ -55,14 +55,14 @@ await check("frontend HTTPS liveness", async () => {
 });
 
 await check("same-origin API liveness", async () => {
-  const response = await request(`${baseURL}/api/health/live/`);
+  const response = await request(`${baseURL}/api/health/live`);
   const payload = await response.json();
   if (payload.status !== "ok") throw new Error("backend status != ok");
   if (!response.headers.get("x-request-id")) throw new Error("X-Request-ID absent");
 });
 
 await check("same-origin API readiness", async () => {
-  const response = await request(`${baseURL}/api/health/ready/`);
+  const response = await request(`${baseURL}/api/health/ready`);
   const payload = await response.json();
   if (payload.status !== "ok" || payload.checks?.database !== "ok" || payload.checks?.cache !== "ok") {
     throw new Error(JSON.stringify(payload));
@@ -93,10 +93,10 @@ for (const path of ["/", "/courses", "/pdfs", "/opportunities", "/pricing", "/su
 }
 
 for (const path of [
-  "/api/auth/platform-settings/",
-  "/api/catalog/courses/?page_size=1",
-  "/api/catalog/pdfs/?page_size=1",
-  "/api/opportunities/listings/?page_size=1",
+  "/api/auth/platform-settings",
+  "/api/catalog/courses?page_size=1",
+  "/api/catalog/pdfs?page_size=1",
+  "/api/opportunities/listings?page_size=1",
 ]) {
   await check(`API publique ${path}`, async () => {
     const response = await request(`${baseURL}${path}`);

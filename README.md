@@ -74,6 +74,21 @@ La V90 ajoute un gate de release reproductible sans modifier les fonctionnalité
 
 La Phase IA 2 comprend maintenant l’analyse CV/offre, les recommandations de formations pour compétences manquantes, les brouillons de CV amélioré et de lettre de motivation, ainsi que la préparation candidat/recruteur aux entretiens. Voir `docs/AI_PHASE2_V66.md`.
 
+
+## 📘 Exploitation, maintenance et déploiement
+
+La documentation opérationnelle consolidée de la V93.4 est disponible ici :
+
+- [`docs/OPERATIONS_MANUAL.md`](./docs/OPERATIONS_MANUAL.md) — point d’entrée exploitation ;
+- [`docs/OPERATIONS_QUICK_REFERENCE.md`](./docs/OPERATIONS_QUICK_REFERENCE.md) — fiche commandes essentielles ;
+- [`docs/DEPLOYMENT_RAILWAY_VERCEL.md`](./docs/DEPLOYMENT_RAILWAY_VERCEL.md) — staging/production Railway + Vercel ;
+- [`docs/ENVIRONMENT_VARIABLES.md`](./docs/ENVIRONMENT_VARIABLES.md) — variables et secrets ;
+- [`docs/MAINTENANCE_RUNBOOK.md`](./docs/MAINTENANCE_RUNBOOK.md) — maintenance quotidienne/hebdo/mensuelle ;
+- [`docs/BACKUP_RESTORE_DISASTER_RECOVERY.md`](./docs/BACKUP_RESTORE_DISASTER_RECOVERY.md) — sauvegarde/restauration/PRA ;
+- [`docs/INCIDENT_RESPONSE.md`](./docs/INCIDENT_RESPONSE.md) — gestion des incidents ;
+- [`docs/PERFORMANCE_TROUBLESHOOTING.md`](./docs/PERFORMANCE_TROUBLESHOOTING.md) — diagnostic des lenteurs ;
+- [`docs/RELEASE_CHECKLIST.md`](./docs/RELEASE_CHECKLIST.md) — checklist de release et rollback.
+
 ## 🏗️ Architecture
 
 ```
@@ -810,3 +825,7 @@ Les sauvegardes de sécurité peuvent être envoyées directement dans le stocka
 ```bash
 python manage.py backup_database --upload --delete-local-after-upload
 ```
+
+## Correctif V93.4 — qualification locale
+
+`release:qualify:dev` utilise désormais les URLs same-origin canoniques sans slash final, laisse le rewrite Next rétablir le slash Django côté backend, chauffe les routes `next dev` avant mesure et applique des seuils de charge locaux distincts des seuils release/staging.

@@ -1,3 +1,32 @@
+## Documentation exploitation — V93.4
+
+- manuel d’exploitation consolidé ;
+- runbook de maintenance ;
+- déploiement Railway/Vercel ;
+- référence des variables d’environnement ;
+- sauvegarde/restauration/PRA ;
+- réponse aux incidents ;
+- diagnostic performance ;
+- checklist release/rollback.
+
+Aucune modification du code métier ni migration.
+
+### V93.4 — Release gate dev / proxy Next canonique
+
+- Corrige les `HTTP 308` du smoke/load/chaos : les appels via le proxy same-origin Next sont désormais sans slash final ; le rewrite conserve le slash requis côté Django.
+- Conserve explicitement les slashs finaux pour les appels directs au backend Railway.
+- Ajoute un warm-up des routes en `next dev` et un timeout local de 30 s pour ne pas confondre compilation Turbopack initiale et panne applicative.
+- Adapte uniquement les valeurs par défaut du test de charge local (60 requêtes, concurrence 6, p95 5 s) ; les seuils release non locaux restent 180 requêtes, concurrence 18 et p95 1,5 s.
+- Adapte le chaos local à la latence Docker Desktop tout en conservant les fautes 503/timeout et les retries GET bornés.
+- Aucun changement métier, aucune migration, aucun changement Premium/paiement.
+
+### V93.3 — Harness Docker des contrats V91/V93
+
+- Corrige les deux échecs `test:ci` restants dans le conteneur frontend : `backend/docker/start-web.sh` et `.env.production.example` n'étaient pas exposés sous `/workspace`.
+- Monte explicitement et en lecture seule `backend/docker/`, `docs/V93_GO_LIVE.md` et `.env.production.example` pour les tests structurels de déploiement, sans exposer `backend/.env` ni les secrets runtime.
+- Ajoute une régression structurelle qui vérifie ces mounts Docker.
+- Aucun changement métier, aucune migration, aucun changement Premium/paiement.
+
 # KalanPro v89 — Production Media & Observability
 
 ## V90 — Release Qualification, E2E, charge et résilience
@@ -1445,3 +1474,19 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - `poweredByHeader: false` sur Next.js ;
 - CI étendue avec contrats production backend/frontend ;
 - guide `docs/V93_GO_LIVE.md` : staging, services Railway, Vercel, webhooks, backup et rollback.
+
+## V93.1 — Correctif PostgreSQL renouvellement Premium
+
+- Corrige `prepare_premium_renewal()` : le profil Premium est verrouillé seul, puis `last_order` est verrouillé dans une requête séparée lorsqu'il existe.
+- Évite `FOR UPDATE` sur la partie nullable d'un `LEFT OUTER JOIN`, refusé par PostgreSQL.
+- Conserve la sérialisation transactionnelle des renouvellements concurrents.
+- Aucun changement de modèle ni migration.
+- Ajoute un test structurel anti-régression dédié.
+- Stabilise aussi la pagination des cohortes avec un ordre par défaut `-created_at, -id`, supprimant l'avertissement `UnorderedObjectListWarning` observé pendant les tests Django.
+## V93.2 — Correctif récupération checkout Premium
+
+- Corrige le chemin de récupération d’une commande de renouvellement `pending` sans URL de checkout : `mark_attempt_redirected()` reçoit désormais son argument nommé réel `reference`.
+- Élimine le `TypeError: unexpected keyword argument 'provider_reference'` observé dans `LearnerPremiumV92Tests`.
+- Ajoute une assertion structurelle anti-régression sur la signature du helper de cycle paiement.
+- Aucun changement de modèle, migration, entitlement ou règle de redistribution Premium.
+

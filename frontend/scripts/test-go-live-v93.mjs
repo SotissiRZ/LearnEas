@@ -14,6 +14,8 @@ const envCheck = readFrontend("scripts/production-env-check.mjs");
 const prodSmoke = readFrontend("scripts/postdeploy-smoke.mjs");
 const nextConfig = readFrontend("next.config.js");
 const docs = readRepo("docs/V93_GO_LIVE.md");
+const formationViews = readRepo("backend/apps/formations/views.py");
+const composeDev = readRepo("docker-compose.dev.yml");
 
 test("v93 backend écoute le PORT de la plateforme sans casser Docker local", () => {
   assert.match(dockerfile, /start-web\.sh/);
@@ -41,9 +43,11 @@ test("v93 frontend valide le proxy Vercel et interdit les secrets NEXT_PUBLIC", 
 });
 
 test("v93 smoke production teste HTTPS proxy readiness CORS et CSP", () => {
-  for (const marker of ["RELEASE_BASE_URL", "RELEASE_BACKEND_URL", "/api/health/ready/", "access-control-allow-origin", "content-security-policy"]) {
+  for (const marker of ["RELEASE_BASE_URL", "RELEASE_BACKEND_URL", "/api/health/ready", "access-control-allow-origin", "content-security-policy"]) {
     assert.ok(prodSmoke.includes(marker), `missing ${marker}`);
   }
+  assert.ok(prodSmoke.includes('`${backendURL}/api/health/live/`'), "direct Railway Django URL must keep trailing slash");
+  assert.ok(prodSmoke.includes('`${baseURL}/api/health/live`'), "same-origin Next proxy URL must be slashless");
 });
 
 test("v93 sauvegarde et restauration peuvent utiliser le stockage privé", () => {
@@ -56,5 +60,20 @@ test("v93 sauvegarde et restauration peuvent utiliser le stockage privé", () =>
 test("v93 documente Railway Vercel webhooks et rollback", () => {
   for (const marker of ["Railway", "Vercel", "stripe/webhook", "whatsapp/webhook", "release:smoke:prod", "Rollback"]) {
     assert.ok(docs.includes(marker), `missing ${marker}`);
+  }
+});
+
+
+test("v93 pagination formations est déterministe", () => {
+  assert.match(formationViews, /ordering = \["-created_at", "-id"\]/);
+});
+
+test("v93 docker dev monte les contrats de déploiement requis en lecture seule", () => {
+  for (const marker of [
+    "./backend/docker:/workspace/backend/docker:ro",
+    "./docs/V93_GO_LIVE.md:/workspace/docs/V93_GO_LIVE.md:ro",
+    "./.env.production.example:/workspace/.env.production.example:ro",
+  ]) {
+    assert.ok(composeDev.includes(marker), `missing Docker structural mount ${marker}`);
   }
 });

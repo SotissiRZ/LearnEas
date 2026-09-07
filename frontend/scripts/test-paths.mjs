@@ -4,9 +4,9 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
-// The frontend is mounted at /app in docker-compose.dev.yml.  The whole
-// repository is additionally mounted read-only at /workspace so structural
-// tests can inspect backend/Compose/CI files without relying on process.cwd().
+// The frontend is mounted at /app in docker-compose.dev.yml. Selected,
+// non-secret repository paths are mounted read-only under /workspace so structural
+// tests can inspect backend/Compose/CI/deployment contracts without process.cwd().
 export const frontendRoot = path.resolve(scriptDir, "..");
 export const repoRoot = process.env.KALANPRO_REPO_ROOT
   ? path.resolve(process.env.KALANPRO_REPO_ROOT)

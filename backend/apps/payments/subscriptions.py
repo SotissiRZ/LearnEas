@@ -449,9 +449,24 @@ def prepare_premium_renewal(profile_id):
     from .models import PaymentAttempt, PaymentEvent
     from .providers import ProviderError, create_checkout, is_configured, normalize_provider_amount
 
-    profile = PremiumRenewalProfile.objects.select_for_update().select_related("user", "last_order").filter(pk=profile_id).first()
+    # Lock only the renewal profile row first. PostgreSQL rejects FOR UPDATE
+    # across the nullable last_order LEFT JOIN, so the optional order is locked
+    # separately below when it exists. This preserves serialization without
+    # relying on an invalid outer-join lock.
+    profile = (
+        PremiumRenewalProfile.objects
+        .select_for_update()
+        .select_related("user")
+        .filter(pk=profile_id)
+        .first()
+    )
     if not profile or not profile.enabled:
         return {"prepared": False, "reason": "disabled"}
+    last_order = (
+        Order.objects.select_for_update().filter(pk=profile.last_order_id).first()
+        if profile.last_order_id
+        else None
+    )
     coverage_end = premium_coverage_end(profile.user)
     now = timezone.now()
     lead_hours = max(1, min(int(getattr(settings, "PREMIUM_RENEWAL_LEAD_HOURS", 72)), 168))
@@ -476,17 +491,17 @@ def prepare_premium_renewal(profile_id):
         profile.grace_ends_at = grace_end
         profile.save(update_fields=["status", "grace_ends_at", "updated_at"])
 
-    if profile.last_order_id and profile.last_order and profile.last_order.status == Order.Status.PENDING and profile.last_order.checkout_url:
-        if not profile.last_order.expires_at or profile.last_order.expires_at > now:
+    if last_order and last_order.status == Order.Status.PENDING and last_order.checkout_url:
+        if not last_order.expires_at or last_order.expires_at > now:
             profile.status = PremiumRenewalProfile.Status.ACTION_REQUIRED
             profile.last_attempt_at = now
             profile.save(update_fields=["status", "last_attempt_at", "updated_at"])
-            return {"prepared": True, "reused": True, "order_id": profile.last_order_id, "checkout_url": profile.last_order.checkout_url}
-        profile.last_order.status = Order.Status.FAILED
-        profile.last_order.provider_status = profile.last_order.provider_status or "EXPIRED"
-        profile.last_order.save(update_fields=["status", "provider_status"])
+            return {"prepared": True, "reused": True, "order_id": last_order.id, "checkout_url": last_order.checkout_url}
+        last_order.status = Order.Status.FAILED
+        last_order.provider_status = last_order.provider_status or "EXPIRED"
+        last_order.save(update_fields=["status", "provider_status"])
         profile.failure_count = min(int(profile.failure_count) + 1, 65535)
-    if profile.last_order_id and profile.last_order and profile.last_order.status == Order.Status.PAID:
+    if last_order and last_order.status == Order.Status.PAID:
         profile.status = PremiumRenewalProfile.Status.SCHEDULED
 
     gateway = PaymentGateway.objects.filter(code=profile.provider, is_active=True).first()
@@ -554,7 +569,7 @@ def prepare_premium_renewal(profile_id):
         order.provider_reference = str(reference or "")[:255]
         order.provider_status = "PENDING"
         order.save(update_fields=["checkout_url", "provider_reference", "provider_status"])
-        mark_attempt_redirected(order, provider_reference=order.provider_reference)
+        mark_attempt_redirected(order, reference=order.provider_reference)
         record_event(
             order=order,
             source=PaymentEvent.Source.SYSTEM,

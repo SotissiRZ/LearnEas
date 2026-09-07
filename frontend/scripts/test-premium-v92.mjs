@@ -84,3 +84,11 @@ test("v92 fournit un rapport opérable du cycle Premium", () => {
   assert.match(premiumReport, /fail-on-past-due/);
   assert.match(premiumReport, /automatic_charge.*False/s);
 });
+
+test("v92 verrouille le renouvellement sans FOR UPDATE sur jointure nullable", () => {
+  assert.doesNotMatch(subscriptions, /select_for_update\(\)\.select_related\(["']user["'],\s*["']last_order["']\)/);
+  assert.match(subscriptions, /PremiumRenewalProfile\.objects[\s\S]*?select_for_update\(\)[\s\S]*?select_related\(["']user["']\)/);
+  assert.match(subscriptions, /Order\.objects\.select_for_update\(\)\.filter\(pk=profile\.last_order_id\)/);
+  assert.match(subscriptions, /mark_attempt_redirected\(order, reference=order\.provider_reference\)/);
+  assert.doesNotMatch(subscriptions, /mark_attempt_redirected\(order, provider_reference=/);
+});

@@ -109,6 +109,7 @@ class InteractiveFormationViewSet(viewsets.ModelViewSet):
     ]
     search_fields = ["title", "description"]
     ordering_fields = ["created_at", "price", "start_date"]
+    ordering = ["-created_at", "-id"]
     lookup_field = "slug"
 
     def get_queryset(self):

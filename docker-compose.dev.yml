@@ -369,7 +369,12 @@ services:
       - ./backend/apps:/workspace/backend/apps:ro
       - ./backend/learneas:/workspace/backend/learneas:ro
       - ./backend/Dockerfile:/workspace/backend/Dockerfile:ro
+      # V91/V93 structural tests inspect only these deployment files. Keep them
+      # read-only and explicit so backend/.env and runtime secrets stay outside /workspace.
+      - ./backend/docker:/workspace/backend/docker:ro
       - ./docker:/workspace/docker:ro
+      - ./docs/V93_GO_LIVE.md:/workspace/docs/V93_GO_LIVE.md:ro
+      - ./.env.production.example:/workspace/.env.production.example:ro
       - ./.github:/workspace/.github:ro
       - ./.gitignore:/workspace/.gitignore:ro
       - ./docker-compose.dev.yml:/workspace/docker-compose.dev.yml:ro

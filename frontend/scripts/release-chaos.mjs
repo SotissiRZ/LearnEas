@@ -2,8 +2,9 @@ import http from "node:http";
 import process from "node:process";
 
 const target = new URL((process.env.RELEASE_BASE_URL || "http://127.0.0.1:3000").replace(/\/+$/, ""));
-const attempts = Math.max(12, Math.min(200, Number(process.env.RELEASE_CHAOS_REQUESTS || 36)));
-const clientTimeoutMs = Math.max(200, Number(process.env.RELEASE_CHAOS_CLIENT_TIMEOUT_MS || 900));
+const isLocalDev = ["127.0.0.1", "localhost", "0.0.0.0"].includes(target.hostname);
+const attempts = Math.max(12, Math.min(200, Number(process.env.RELEASE_CHAOS_REQUESTS || (isLocalDev ? 24 : 36))));
+const clientTimeoutMs = Math.max(200, Number(process.env.RELEASE_CHAOS_CLIENT_TIMEOUT_MS || (isLocalDev ? 2500 : 900)));
 const maxRetries = 2;
 let sequence = 0;
 
@@ -65,7 +66,7 @@ async function resilientGet(path) {
 let succeeded = 0;
 try {
   for (let i = 0; i < attempts; i += 1) {
-    const path = i % 2 === 0 ? "/api/health/live/" : "/api/auth/platform-settings/";
+    const path = i % 2 === 0 ? "/api/health/live" : "/api/auth/platform-settings";
     if (await resilientGet(path)) succeeded += 1;
   }
 } finally {
