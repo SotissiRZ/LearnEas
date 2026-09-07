@@ -66,6 +66,10 @@ dashboards dédiés par rôle et espace de lecture immersif).
 ---
 
 
+## V90 — Release Qualification, E2E, charge et résilience
+
+La V90 ajoute un gate de release reproductible sans modifier les fonctionnalités métier : `release_gate` côté Django, smoke/E2E HTTP réel, injection déterministe de latence/503, charge bornée avec seuils p95/taux d’erreur, et job CI d’intégration qui démarre réellement la stack Docker. Voir `docs/V90_RELEASE_QUALIFICATION.md` et `VALIDATION_V90.md`.
+
 ## KalanPro AI — copilote carrière
 
 La Phase IA 2 comprend maintenant l’analyse CV/offre, les recommandations de formations pour compétences manquantes, les brouillons de CV amélioré et de lettre de motivation, ainsi que la préparation candidat/recruteur aux entretiens. Voir `docs/AI_PHASE2_V66.md`.

@@ -77,3 +77,66 @@ class AdminOperationsEndpointTests(APITestCase):
         response = self.client.get("/api/ops/health/")
         self.assertEqual(response.status_code, 403)
         snapshot.assert_not_called()
+
+
+class ReleaseResilienceTests(TestCase):
+    @patch("learneas.urls.connection.cursor", side_effect=RuntimeError("database down"))
+    def test_liveness_survives_database_failure(self, _cursor):
+        response = self.client.get("/api/health/live/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ok")
+
+    @patch("learneas.urls.cache.set", side_effect=RuntimeError("redis down"))
+    def test_liveness_survives_cache_failure(self, _cache_set):
+        response = self.client.get("/api/health/live/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ok")
+
+    @patch("learneas.urls.connection.cursor", side_effect=RuntimeError("database down"))
+    def test_readiness_fails_closed_when_database_is_down(self, _cursor):
+        response = self.client.get("/api/health/ready/")
+        self.assertEqual(response.status_code, 503)
+        payload = response.json()
+        self.assertEqual(payload["status"], "error")
+        self.assertEqual(payload["checks"]["database"], "error")
+
+
+class ReleaseGateSnapshotTests(TestCase):
+    @patch("apps.common.release._pending_migrations", return_value=[])
+    @patch("apps.common.release._django_checks", return_value=[])
+    @patch("apps.common.release._cache_check", return_value={"status": "ok"})
+    @patch("apps.common.release._database_check", return_value={"status": "ok"})
+    def test_release_gate_is_green_when_core_dependencies_are_green(
+        self, _db, _cache, _checks, _migrations
+    ):
+        from apps.common.release import build_release_gate_snapshot
+
+        snapshot = build_release_gate_snapshot()
+        self.assertEqual(snapshot["status"], "ok")
+        self.assertEqual(snapshot["blockers"], [])
+
+    @patch("apps.common.release._pending_migrations", return_value=["catalog.9999_missing"])
+    @patch("apps.common.release._django_checks", return_value=[])
+    @patch("apps.common.release._cache_check", return_value={"status": "ok"})
+    @patch("apps.common.release._database_check", return_value={"status": "ok"})
+    def test_release_gate_blocks_pending_migrations(self, _db, _cache, _checks, _migrations):
+        from apps.common.release import build_release_gate_snapshot
+
+        snapshot = build_release_gate_snapshot()
+        self.assertEqual(snapshot["status"], "error")
+        self.assertIn("pending_migrations", snapshot["blockers"])
+
+    @override_settings(REQUIRE_REMOTE_MEDIA=True)
+    @patch("apps.common.release._storage_check", return_value={"status": "ok", "backend": "local"})
+    @patch("apps.common.release._pending_migrations", return_value=[])
+    @patch("apps.common.release._django_checks", return_value=[])
+    @patch("apps.common.release._cache_check", return_value={"status": "ok"})
+    @patch("apps.common.release._database_check", return_value={"status": "ok"})
+    def test_release_gate_enforces_remote_media_contract(
+        self, _db, _cache, _checks, _migrations, _storage
+    ):
+        from apps.common.release import build_release_gate_snapshot
+
+        snapshot = build_release_gate_snapshot()
+        self.assertEqual(snapshot["status"], "error")
+        self.assertIn("remote_media_required", snapshot["blockers"])

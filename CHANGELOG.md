@@ -1,5 +1,15 @@
 # KalanPro v89 — Production Media & Observability
 
+## V90 — Release Qualification, E2E, charge et résilience
+
+- Ajout de `python manage.py release_gate` : Django checks, migrations pendantes, PostgreSQL/Redis et, en mode strict, broker/workers + stockage.
+- Ajout d’un smoke/E2E HTTP sans dépendance navigateur : liveness, readiness, catalogues publics, pages principales, headers de sécurité et auth admin de démo optionnelle.
+- Ajout d’un runner chaos déterministe (503 + latence) avec retry borné uniquement pour des GET idempotents.
+- Ajout d’un runner de charge bornée avec concurrence, p50/p95/p99, RPS et seuil de taux d’erreur.
+- Ajout d’un job GitHub CI `integration` qui construit la stack Docker et exécute la qualification runtime.
+- Ajout de tests de résilience backend : liveness indépendant des pannes DB/cache et gate de release bloquant les migrations/stockage incompatibles.
+- Aucune migration ni modification des fonctionnalités Premium, support/modération, ATS ou médias V89.
+
 - Stockage S3/R2 via `KalanProS3Storage`, avec classification public/privé par préfixe sans rendre le bucket public.
 - `PUBLIC_MEDIA_BASE_URL` optionnel pour servir uniquement les assets publics via CDN ; cache long immutable public et `private, no-store` pour les médias sensibles.
 - Timeouts client S3 explicites et garde HTTPS du CDN lorsque la production impose HTTPS.
