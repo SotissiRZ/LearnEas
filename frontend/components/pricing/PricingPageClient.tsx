@@ -12,6 +12,7 @@ export type PublicPricingSettings = {
   platform_commission_percent: number;
   learner_premium_enabled: boolean;
   learner_premium_monthly_eur: string;
+  learner_premium_creator_pool_percent: number;
   instructor_pro_monthly_eur: string;
   instructor_pro_commission_percent: number;
   mentor_commission_percent: number;
@@ -102,7 +103,7 @@ export default function PricingPageClient({ settings }: { settings: PublicPricin
             {settings.learner_premium_enabled && <PlanCard title="KalanPro Premium" eyebrow="Catalogue sélectionné" price={settings.learner_premium_monthly_eur} suffix="/ 30 jours" badge="Optionnel" featured cta="Activer Premium" href="/checkout?learner_product=premium">
               <Feature>Accès aux cours et PDF portant le badge Premium.</Feature>
               <Feature>Progression et certificats conservés ; l’accès au contenu expire avec le pass.</Feature>
-              <Feature>Renouvellements chaînés sans perdre les jours déjà payés.</Feature>
+              <Feature>Renouvellements chaînés sans perdre les jours déjà payés ; préparation automatique du prochain checkout si vous l’activez.</Feature>
             </PlanCard>}
             <PlanCard title="Formations & ressources" eyebrow="À la carte" priceLabel="Prix affiché par contenu" cta="Voir les formations" href="/courses">
               <Feature>Cours vidéo, PDF et cohortes au prix affiché par le créateur.</Feature>
@@ -126,6 +127,7 @@ export default function PricingPageClient({ settings }: { settings: PublicPricin
               <Feature>Publication de cours, PDF et cohortes.</Feature>
               <Feature>Commission KalanPro : <strong>{settings.platform_commission_percent}%</strong> sur chaque vente encaissée.</Feature>
               <Feature>HLS faible connexion, certificats, projets et statistiques essentielles.</Feature>
+              <Feature>Partage du pool Premium : <strong>{settings.learner_premium_creator_pool_percent}%</strong> du revenu des périodes éligibles est redistribué selon les contenus réellement utilisés.</Feature>
             </PlanCard>
             <PlanCard title="Pro créateur" eyebrow="Pour les créateurs actifs" price={settings.instructor_pro_monthly_eur} suffix="/ mois" badge="Sur demande" featured cta="Parler à l’équipe" href="/contact?subject=KalanPro%20Pro%20instructeur">
               <Feature>Commission réduite à <strong>{settings.instructor_pro_commission_percent}%</strong>.</Feature>

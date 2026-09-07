@@ -219,6 +219,9 @@ class LearnerSubscription(models.Model):
     ends_at = models.DateTimeField(db_index=True)
     revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
     revocation_reason = models.CharField(max_length=500, blank=True)
+    revenue_settled_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    creator_pool_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    platform_revenue_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -236,6 +239,109 @@ class LearnerSubscription(models.Model):
 
     def __str__(self):
         return f"Premium {self.user} · {self.starts_at:%Y-%m-%d} → {self.ends_at:%Y-%m-%d}"
+
+
+class PremiumRenewalProfile(models.Model):
+    class Status(models.TextChoices):
+        SCHEDULED = "scheduled", "Planifié"
+        ACTION_REQUIRED = "action_required", "Action requise"
+        PAST_DUE = "past_due", "Échu"
+        PAUSED = "paused", "En pause"
+        CANCELLED = "cancelled", "Annulé"
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="premium_renewal_profile"
+    )
+    enabled = models.BooleanField(default=False)
+    status = models.CharField(max_length=24, choices=Status.choices, default=Status.PAUSED, db_index=True)
+    provider = models.CharField(max_length=30, choices=Order.Provider.choices, default=Order.Provider.STRIPE)
+    currency = models.CharField(max_length=3, default="EUR")
+    next_renewal_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    grace_ends_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    last_order = models.ForeignKey(
+        Order, on_delete=models.SET_NULL, null=True, blank=True, related_name="premium_renewal_profiles"
+    )
+    failure_count = models.PositiveSmallIntegerField(default=0)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["enabled", "next_renewal_at"], name="pay_premrenew_due_idx")]
+
+    def save(self, *args, **kwargs):
+        self.currency = str(self.currency or "EUR").upper().strip()[:3]
+        if not self.enabled and self.status == self.Status.SCHEDULED:
+            self.status = self.Status.PAUSED
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Premium renewal {self.user} · {self.status}"
+
+
+class PremiumContentUsage(models.Model):
+    subscription = models.ForeignKey(
+        LearnerSubscription, on_delete=models.PROTECT, related_name="content_usage"
+    )
+    instructor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="premium_content_usage"
+    )
+    course = models.ForeignKey(
+        "catalog.Course", on_delete=models.SET_NULL, null=True, blank=True, related_name="premium_usage"
+    )
+    pdf_product = models.ForeignKey(
+        "catalog.PDFProduct", on_delete=models.SET_NULL, null=True, blank=True, related_name="premium_usage"
+    )
+    interaction_count = models.PositiveIntegerField(default=0)
+    watched_seconds = models.PositiveIntegerField(default=0)
+    first_used_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(auto_now=True, db_index=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(course__isnull=False, pdf_product__isnull=True)
+                    | models.Q(course__isnull=True, pdf_product__isnull=False)
+                ),
+                name="prem_usage_one_content",
+            ),
+            models.UniqueConstraint(
+                fields=["subscription", "course"], condition=models.Q(course__isnull=False),
+                name="uniq_prem_usage_course",
+            ),
+            models.UniqueConstraint(
+                fields=["subscription", "pdf_product"], condition=models.Q(pdf_product__isnull=False),
+                name="uniq_prem_usage_pdf",
+            ),
+        ]
+        indexes = [models.Index(fields=["subscription", "instructor"], name="pay_premusage_instr_idx")]
+
+
+class PremiumRevenueAllocation(models.Model):
+    subscription = models.ForeignKey(
+        LearnerSubscription, on_delete=models.PROTECT, related_name="revenue_allocations"
+    )
+    instructor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="premium_revenue_allocations"
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    usage_weight = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    creator_pool_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    reversed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["subscription", "instructor"], name="uniq_prem_alloc_instr"),
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="prem_alloc_amount_gt_zero"),
+        ]
+        indexes = [models.Index(fields=["instructor", "created_at"], name="pay_premalloc_instr_idx")]
+
+    def __str__(self):
+        return f"Premium {self.subscription_id} → {self.instructor} · {self.amount} EUR"
 
 
 class FormationSeatReservation(models.Model):
@@ -328,6 +434,8 @@ class InstructorLedgerEntry(models.Model):
         REFUND = "refund", "Remboursement"
         PAYOUT = "payout", "Versement"
         ADJUSTMENT = "adjustment", "Ajustement"
+        PREMIUM = "premium", "Part Premium"
+        PREMIUM_REFUND = "premium_refund", "Reprise Premium"
 
     instructor = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ledger_entries"
@@ -339,6 +447,9 @@ class InstructorLedgerEntry(models.Model):
     )
     payout = models.ForeignKey(
         InstructorPayout, on_delete=models.SET_NULL, null=True, blank=True, related_name="ledger_entries"
+    )
+    premium_allocation = models.ForeignKey(
+        PremiumRevenueAllocation, on_delete=models.SET_NULL, null=True, blank=True, related_name="ledger_entries"
     )
     reference = models.CharField(max_length=160, blank=True)
     note = models.CharField(max_length=500, blank=True)
@@ -361,6 +472,13 @@ class InstructorLedgerEntry(models.Model):
                 fields=["payout", "entry_type"],
                 condition=models.Q(payout__isnull=False, entry_type="payout"),
                 name="uniq_ledger_payout",
+            ),
+            models.UniqueConstraint(
+                fields=["premium_allocation", "entry_type"],
+                condition=models.Q(
+                    premium_allocation__isnull=False, entry_type__in=["premium", "premium_refund"]
+                ),
+                name="uniq_ledger_premium_alloc_type",
             ),
         ]
 

@@ -1,7 +1,7 @@
 from rest_framework.routers import DefaultRouter
 from django.urls import path
 from .views import (
-    OrderViewSet, CheckoutView, ConfirmPaymentView, PremiumAccessView, PayoutProfileView,
+    OrderViewSet, CheckoutView, ConfirmPaymentView, PremiumAccessView, PremiumRenewalView, PayoutProfileView,
     InstructorFinanceView, InstructorPayoutViewSet, AdminOverviewView, StripeWebhookView, GeniusPayWebhookView, CinetPayWebhookView, CinetPayReturnView, CurrencyViewSet, PaymentGatewayViewSet, PublicPaymentConfigView, AdminEmailTestView,
 )
 
@@ -14,6 +14,7 @@ router.register("admin/gateways", PaymentGatewayViewSet, basename="gateway")
 urlpatterns = router.urls + [
     path("checkout/", CheckoutView.as_view(), name="checkout"),
     path("premium/", PremiumAccessView.as_view(), name="premium-access"),
+    path("premium/renewal/", PremiumRenewalView.as_view(), name="premium-renewal"),
     path("stripe/webhook/", StripeWebhookView.as_view(), name="stripe-webhook"),
     path("geniuspay/webhook/", GeniusPayWebhookView.as_view(), name="geniuspay-webhook"),
     path("cinetpay/webhook/", CinetPayWebhookView.as_view(), name="cinetpay-webhook"),

@@ -244,7 +244,7 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
             "site_name", "support_email", "registration_enabled",
             "instructor_applications_enabled", "platform_commission_percent",
             "minimum_payout_amount",
-            "pricing_enabled", "learner_premium_enabled", "learner_premium_monthly_eur", "instructor_pro_monthly_eur",
+            "pricing_enabled", "learner_premium_enabled", "learner_premium_monthly_eur", "learner_premium_creator_pool_percent", "instructor_pro_monthly_eur",
             "instructor_pro_commission_percent", "mentor_commission_percent",
             "employer_free_active_jobs", "employer_single_post_eur",
             "employer_pro_monthly_eur", "employer_pro_active_jobs",
@@ -279,6 +279,11 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
     def validate_platform_commission_percent(self, value):
         if value < 0 or value > 100:
             raise serializers.ValidationError("La commission doit être comprise entre 0 et 100 %.")
+        return value
+
+    def validate_learner_premium_creator_pool_percent(self, value):
+        if value < 0 or value > 100:
+            raise serializers.ValidationError("Le pool Premium créateurs doit être compris entre 0 et 100 %.")
         return value
 
     def validate_instructor_pro_commission_percent(self, value):

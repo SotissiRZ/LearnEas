@@ -1,7 +1,8 @@
 from django.contrib import admin
 from .models import (
     Currency, PaymentGateway, Order, OrderItem, PayoutProfile, InstructorPayout,
-    PaymentAttempt, PaymentEvent, PaymentIssue, LearnerSubscription,
+    PaymentAttempt, PaymentEvent, PaymentIssue, LearnerSubscription, PremiumRenewalProfile,
+    PremiumContentUsage, PremiumRevenueAllocation,
 )
 
 
@@ -126,10 +127,52 @@ class PaymentIssueAdmin(admin.ModelAdmin):
 
 @admin.register(LearnerSubscription)
 class LearnerSubscriptionAdmin(admin.ModelAdmin):
-    list_display = ("user", "starts_at", "ends_at", "revoked_at", "source_order")
+    list_display = ("user", "starts_at", "ends_at", "revoked_at", "revenue_settled_at", "creator_pool_amount", "source_order")
     list_filter = ("revoked_at",)
     search_fields = ("user__email", "user__username", "source_order__invoice_number")
-    readonly_fields = ("user", "source_order", "starts_at", "ends_at", "revoked_at", "revocation_reason", "created_at", "updated_at")
+    readonly_fields = ("user", "source_order", "starts_at", "ends_at", "revoked_at", "revocation_reason", "revenue_settled_at", "creator_pool_amount", "platform_revenue_amount", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PremiumRenewalProfile)
+class PremiumRenewalProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "enabled", "status", "provider", "currency", "next_renewal_at", "last_order", "failure_count")
+    list_filter = ("enabled", "status", "provider", "currency")
+    search_fields = ("user__email", "user__username", "last_order__invoice_number")
+    readonly_fields = tuple(field.name for field in PremiumRenewalProfile._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PremiumContentUsage)
+class PremiumContentUsageAdmin(admin.ModelAdmin):
+    list_display = ("subscription", "instructor", "course", "pdf_product", "interaction_count", "last_used_at")
+    list_filter = ("last_used_at",)
+    search_fields = ("subscription__user__email", "instructor__email", "course__title", "pdf_product__title")
+    readonly_fields = tuple(field.name for field in PremiumContentUsage._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PremiumRevenueAllocation)
+class PremiumRevenueAllocationAdmin(admin.ModelAdmin):
+    list_display = ("subscription", "instructor", "amount", "usage_weight", "creator_pool_amount", "reversed_at", "created_at")
+    list_filter = ("reversed_at", "created_at")
+    search_fields = ("subscription__user__email", "instructor__email")
+    readonly_fields = tuple(field.name for field in PremiumRevenueAllocation._meta.fields)
 
     def has_add_permission(self, request):
         return False

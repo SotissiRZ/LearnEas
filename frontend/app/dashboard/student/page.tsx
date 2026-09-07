@@ -18,6 +18,19 @@ type PremiumStatus = {
   starts_at: string | null;
   current_period_ends_at: string | null;
   coverage_ends_at: string | null;
+  renewal: {
+    enabled: boolean;
+    status: "scheduled" | "action_required" | "past_due" | "paused" | "cancelled";
+    provider: string | null;
+    currency: string | null;
+    next_renewal_at: string | null;
+    grace_ends_at: string | null;
+    last_attempt_at: string | null;
+    failure_count: number;
+    action_url: string | null;
+    recurring_mode: string | null;
+    automatic_charge: boolean;
+  };
 };
 
 type StudentOrder = {
@@ -40,6 +53,7 @@ export default function StudentDashboard() {
   const [loading, setLoading] = useState(true);
   const [checkingOrderId, setCheckingOrderId] = useState<number | null>(null);
   const [paymentMessage, setPaymentMessage] = useState("");
+  const [renewalBusy, setRenewalBusy] = useState(false);
   const autoConfirmedRef = useRef<number | null>(null);
 
   const loadData = useCallback(async () => {
@@ -67,6 +81,23 @@ export default function StudentDashboard() {
       setCheckingOrderId(null);
     }
   }, [loadData]);
+
+
+  const updatePremiumRenewal = useCallback(async (enabled: boolean) => {
+    setRenewalBusy(true);
+    setPaymentMessage("");
+    try {
+      const renewal = await api.patch<PremiumStatus["renewal"]>("/payments/premium/renewal/", { enabled });
+      setPremium((current) => current ? { ...current, renewal } : current);
+      setPaymentMessage(enabled
+        ? "Renouvellement Premium planifié. KalanPro préparera le prochain paiement avant l’échéance."
+        : "Renouvellement Premium désactivé. Votre période déjà payée reste active jusqu’à son échéance.");
+    } catch (error) {
+      setPaymentMessage(error instanceof ApiError ? error.message : "Impossible de modifier le renouvellement Premium.");
+    } finally {
+      setRenewalBusy(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!ready) return;
@@ -104,9 +135,9 @@ export default function StudentDashboard() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
               <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-violet-600 text-white"><Crown size={20} /></span>
-              <div><p className="font-extrabold text-violet-950">KalanPro Premium actif</p><p className="mt-1 text-xs leading-5 text-violet-700">Accès au catalogue Premium jusqu’au {premium.coverage_ends_at ? new Date(premium.coverage_ends_at).toLocaleDateString("fr-FR") : "prochain renouvellement"}. Vos achats à l’unité restent permanents.</p></div>
+              <div><p className="font-extrabold text-violet-950">KalanPro Premium actif</p><p className="mt-1 text-xs leading-5 text-violet-700">Accès au catalogue Premium jusqu’au {premium.coverage_ends_at ? new Date(premium.coverage_ends_at).toLocaleDateString("fr-FR") : "prochain renouvellement"}. Vos achats à l’unité restent permanents.</p>{premium.renewal?.enabled && <p className="mt-1 text-[11px] font-semibold text-violet-800">Renouvellement planifié · le paiement sera préparé avant l’échéance et devra être confirmé auprès du prestataire tant qu’aucun mandat hors session n’est disponible.</p>}</div>
             </div>
-            <div className="flex shrink-0 flex-wrap gap-2"><Link href="/courses?premium_included=true" className="btn-primary !py-2 !text-xs">Cours Premium</Link><Link href="/pdfs?premium_included=true" className="btn-outline !py-2 !text-xs">PDF Premium</Link><Link href="/checkout?learner_product=premium" className="btn-outline !py-2 !text-xs">Prolonger 30 jours</Link></div>
+            <div className="flex shrink-0 flex-wrap gap-2"><Link href="/courses?premium_included=true" className="btn-primary !py-2 !text-xs">Cours Premium</Link><Link href="/pdfs?premium_included=true" className="btn-outline !py-2 !text-xs">PDF Premium</Link><Link href="/checkout?learner_product=premium" className="btn-outline !py-2 !text-xs">Prolonger 30 jours</Link><button type="button" disabled={renewalBusy} onClick={() => void updatePremiumRenewal(!premium.renewal?.enabled)} className="btn-outline !py-2 !text-xs">{renewalBusy ? "Mise à jour…" : premium.renewal?.enabled ? "Désactiver renouvellement" : "Planifier renouvellement"}</button>{premium.renewal?.action_url && <a href={premium.renewal.action_url} className="btn-primary !py-2 !text-xs">Confirmer le renouvellement</a>}{premium.renewal?.status === "past_due" && premium.renewal.grace_ends_at && <p className="basis-full text-xs text-amber-700">Fenêtre de rattrapage jusqu’au {new Date(premium.renewal.grace_ends_at).toLocaleString("fr-FR")}. L’accès Premium n’est pas prolongé pendant ce délai.</p>}</div>
           </div>
         </section>
       )}

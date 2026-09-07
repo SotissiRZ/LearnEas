@@ -1,7 +1,9 @@
+from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
 from django.test import override_settings
+from django.utils import timezone
 from django.core import mail
 
 from rest_framework import status
@@ -13,7 +15,8 @@ from apps.enrollments.models import CourseEnrollment
 from apps.formations.models import InteractiveFormation
 from .models import (
     Order, OrderItem, FormationSeatReservation, Currency, PaymentGateway, InstructorLedgerEntry,
-    PaymentAttempt, PaymentEvent, PaymentIssue, LearnerSubscription,
+    PaymentAttempt, PaymentEvent, PaymentIssue, LearnerSubscription, PremiumRenewalProfile,
+    PremiumContentUsage, PremiumRevenueAllocation,
 )
 from .providers import _to_minor_units, _from_minor_units, normalize_provider_amount
 
@@ -865,3 +868,166 @@ class LearnerPremiumV88Tests(APITestCase):
         self.assertLess(second.starts_at, second_start_before_refund)
         self.assertTrue(second.is_active)
 
+
+
+class LearnerPremiumV92Tests(APITestCase):
+    def setUp(self):
+        self.instructor = User.objects.create_user(
+            username="premium-v92-seller", email="premium-v92-seller@example.com", password="passpass123", role=User.Role.INSTRUCTOR
+        )
+        self.student = User.objects.create_user(
+            username="premium-v92-buyer", email="premium-v92-buyer@example.com", password="passpass123", role=User.Role.STUDENT
+        )
+        category = Category.objects.create(name="Premium V92")
+        self.course = Course.objects.create(
+            instructor=self.instructor, category=category, title="Cours Premium V92", description="Test",
+            price=Decimal("20.00"), published=True, premium_included=True,
+        )
+        Currency.objects.update_or_create(
+            code="EUR",
+            defaults={"name": "Euro", "symbol": "€", "exchange_rate": Decimal("1"), "decimal_places": 2, "is_active": True, "is_default": True},
+        )
+        config = PlatformSettings.load()
+        config.learner_premium_enabled = True
+        config.learner_premium_monthly_eur = Decimal("9.99")
+        config.learner_premium_creator_pool_percent = 60
+        config.save(update_fields=["learner_premium_enabled", "learner_premium_monthly_eur", "learner_premium_creator_pool_percent"])
+        self.client.force_authenticate(self.student)
+
+    @override_settings(TEST_PAYMENTS_ENABLED=True)
+    def _premium_order(self, key="premium-v92-order"):
+        response = self.client.post(
+            "/api/payments/checkout/",
+            {"learner_product": "premium", "provider": "manual", "currency": "EUR", "test_payment": True},
+            format="json", HTTP_IDEMPOTENCY_KEY=key,
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        return Order.objects.get(pk=response.data["order"]["id"])
+
+    @override_settings(TEST_PAYMENTS_ENABLED=True)
+    def test_premium_usage_settlement_credits_creator_ledger(self):
+        from apps.payments.subscriptions import claim_premium_course, settle_premium_subscription
+
+        order = self._premium_order()
+        claim_premium_course(self.student, self.course.id)
+        subscription = LearnerSubscription.all_objects.get(source_order=order)
+        self.assertTrue(PremiumContentUsage.objects.filter(subscription=subscription, course=self.course).exists())
+        LearnerSubscription.all_objects.filter(pk=subscription.pk).update(ends_at=timezone.now() - timedelta(minutes=1))
+
+        result = settle_premium_subscription(subscription.id)
+        self.assertTrue(result["settled"])
+        allocation = PremiumRevenueAllocation.objects.get(subscription=subscription, instructor=self.instructor)
+        self.assertEqual(allocation.amount, Decimal("5.99"))
+        ledger = InstructorLedgerEntry.objects.get(
+            premium_allocation=allocation, entry_type=InstructorLedgerEntry.EntryType.PREMIUM
+        )
+        self.assertEqual(ledger.amount, Decimal("5.99"))
+        subscription.refresh_from_db()
+        self.assertEqual(subscription.creator_pool_amount, Decimal("5.99"))
+        self.assertEqual(subscription.platform_revenue_amount, Decimal("4.00"))
+
+    @override_settings(TEST_PAYMENTS_ENABLED=True)
+    def test_refund_reverses_already_settled_premium_creator_revenue(self):
+        from apps.payments.subscriptions import claim_premium_course, revoke_learner_subscription, settle_premium_subscription
+
+        order = self._premium_order("premium-v92-refund")
+        claim_premium_course(self.student, self.course.id)
+        subscription = LearnerSubscription.all_objects.get(source_order=order)
+        LearnerSubscription.all_objects.filter(pk=subscription.pk).update(ends_at=timezone.now() - timedelta(minutes=1))
+        settle_premium_subscription(subscription.id)
+        allocation = PremiumRevenueAllocation.objects.get(subscription=subscription, instructor=self.instructor)
+
+        self.assertTrue(revoke_learner_subscription(order, reason="Remboursement V92"))
+        allocation.refresh_from_db()
+        self.assertIsNotNone(allocation.reversed_at)
+        reversal = InstructorLedgerEntry.objects.get(
+            premium_allocation=allocation, entry_type=InstructorLedgerEntry.EntryType.PREMIUM_REFUND
+        )
+        self.assertEqual(reversal.amount, Decimal("-5.99"))
+
+    @override_settings(STRIPE_TEST_SECRET_KEY="sk_test_v92", TEST_PAYMENTS_ENABLED=True)
+    def test_renewal_profile_requires_online_gateway_and_exposes_no_automatic_charge(self):
+        self._premium_order("premium-v92-renewal-base")
+        PaymentGateway.objects.update_or_create(
+            code="stripe",
+            defaults={"name": "Stripe", "is_active": True, "sandbox": True, "supported_currencies": ["EUR"]},
+        )
+        response = self.client.patch(
+            "/api/payments/premium/renewal/",
+            {"enabled": True, "provider": "stripe", "currency": "EUR"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data["enabled"])
+        self.assertEqual(response.data["status"], PremiumRenewalProfile.Status.SCHEDULED)
+        self.assertFalse(response.data["automatic_charge"])
+        self.assertEqual(response.data["recurring_mode"], "checkout_confirmation_required")
+
+        disabled = self.client.patch("/api/payments/premium/renewal/", {"enabled": False}, format="json")
+        self.assertEqual(disabled.status_code, status.HTTP_200_OK, disabled.data)
+        self.assertFalse(disabled.data["enabled"])
+        self.assertEqual(disabled.data["status"], PremiumRenewalProfile.Status.CANCELLED)
+
+    @override_settings(PREMIUM_RENEWAL_GRACE_HOURS=48)
+    def test_expired_renewal_grace_pauses_orchestration_without_extending_access(self):
+        from apps.payments.subscriptions import prepare_premium_renewal
+
+        profile = PremiumRenewalProfile.objects.create(
+            user=self.student,
+            enabled=True,
+            status=PremiumRenewalProfile.Status.PAST_DUE,
+            provider=Order.Provider.STRIPE,
+            currency="EUR",
+            next_renewal_at=timezone.now() - timedelta(days=3),
+            grace_ends_at=timezone.now() - timedelta(hours=1),
+        )
+        outcome = prepare_premium_renewal(profile.id)
+        self.assertEqual(outcome, {"prepared": False, "reason": "grace_expired"})
+        profile.refresh_from_db()
+        self.assertTrue(profile.enabled)
+        self.assertEqual(profile.status, PremiumRenewalProfile.Status.PAUSED)
+        self.assertIsNone(profile.next_renewal_at)
+        self.assertIsNone(profile.grace_ends_at)
+
+    @override_settings(PREMIUM_RENEWAL_LEAD_HOURS=72, PREMIUM_RENEWAL_GRACE_HOURS=48)
+    @patch("apps.payments.providers.create_checkout", return_value=("https://pay.example/renew", "renew-ref"))
+    @patch("apps.payments.providers.is_configured", return_value=True)
+    def test_renewal_recovers_pending_order_without_checkout_url(self, _configured, _checkout):
+        from apps.payments.subscriptions import prepare_premium_renewal
+
+        base_order = self._premium_order("premium-v92-recovery-base")
+        subscription = LearnerSubscription.all_objects.get(source_order=base_order)
+        due_at = timezone.now() + timedelta(hours=1)
+        LearnerSubscription.all_objects.filter(pk=subscription.pk).update(ends_at=due_at)
+        PaymentGateway.objects.update_or_create(
+            code="stripe",
+            defaults={"name": "Stripe", "is_active": True, "sandbox": True, "supported_currencies": ["EUR"]},
+        )
+        profile = PremiumRenewalProfile.objects.create(
+            user=self.student,
+            enabled=True,
+            status=PremiumRenewalProfile.Status.SCHEDULED,
+            provider=Order.Provider.STRIPE,
+            currency="EUR",
+            next_renewal_at=due_at,
+        )
+        cycle_key = due_at.strftime("%Y%m%d%H%M")
+        renewal_order = Order.objects.create(
+            user=self.student,
+            idempotency_key=f"premium-renewal:{profile.id}:{cycle_key}:a0",
+            provider=Order.Provider.STRIPE,
+            provider_sandbox=True,
+            base_total_amount=Decimal("9.99"),
+            total_amount=Decimal("9.99"),
+            currency="EUR",
+            request_fingerprint="recovery-test",
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        outcome = prepare_premium_renewal(profile.id)
+        self.assertTrue(outcome["prepared"])
+        self.assertEqual(outcome["order_id"], renewal_order.id)
+        renewal_order.refresh_from_db()
+        self.assertEqual(renewal_order.checkout_url, "https://pay.example/renew")
+        self.assertEqual(renewal_order.items.filter(item_type=OrderItem.ItemType.LEARNER_SUBSCRIPTION).count(), 1)
+        self.assertEqual(renewal_order.payment_attempts.count(), 1)

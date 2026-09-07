@@ -56,6 +56,10 @@ class PlatformSettings(models.Model):
     pricing_enabled = models.BooleanField(default=True)
     learner_premium_monthly_eur = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("9.99"))
     learner_premium_enabled = models.BooleanField(default=True)
+    learner_premium_creator_pool_percent = models.PositiveSmallIntegerField(
+        default=60,
+        help_text="Part du revenu Premium distribuée aux créateurs selon l’usage éligible de la période.",
+    )
     instructor_pro_monthly_eur = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("15.09"))
     instructor_pro_commission_percent = models.PositiveSmallIntegerField(default=8)
     mentor_commission_percent = models.PositiveSmallIntegerField(default=15)
@@ -119,6 +123,7 @@ class PlatformSettings(models.Model):
         self.pk = 1
         self.platform_commission_percent = min(max(int(self.platform_commission_percent), 0), 100)
         self.instructor_pro_commission_percent = min(max(int(self.instructor_pro_commission_percent), 0), 100)
+        self.learner_premium_creator_pool_percent = min(max(int(self.learner_premium_creator_pool_percent), 0), 100)
         self.mentor_commission_percent = min(max(int(self.mentor_commission_percent), 0), 100)
         self.employer_free_active_jobs = max(int(self.employer_free_active_jobs), 0)
         self.employer_pro_active_jobs = max(int(self.employer_pro_active_jobs), 1)

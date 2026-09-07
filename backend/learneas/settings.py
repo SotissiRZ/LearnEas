@@ -487,6 +487,10 @@ PAYMENT_RECONCILIATION_BATCH_SIZE = config("PAYMENT_RECONCILIATION_BATCH_SIZE", 
 PAYMENT_ORDER_EXPIRY_HOURS = config("PAYMENT_ORDER_EXPIRY_HOURS", default=24, cast=int)
 PAYMENT_STALE_BATCH_SIZE = config("PAYMENT_STALE_BATCH_SIZE", default=200, cast=int)
 COHORT_WAITLIST_OFFER_HOURS = config("COHORT_WAITLIST_OFFER_HOURS", default=24, cast=int)
+PREMIUM_RENEWAL_LEAD_HOURS = config("PREMIUM_RENEWAL_LEAD_HOURS", default=72, cast=int)
+PREMIUM_RENEWAL_GRACE_HOURS = config("PREMIUM_RENEWAL_GRACE_HOURS", default=48, cast=int)
+PREMIUM_RENEWAL_BATCH_SIZE = config("PREMIUM_RENEWAL_BATCH_SIZE", default=100, cast=int)
+PREMIUM_SETTLEMENT_BATCH_SIZE = config("PREMIUM_SETTLEMENT_BATCH_SIZE", default=200, cast=int)
 
 ANALYTICS_RETENTION_DAYS = config("ANALYTICS_RETENTION_DAYS", default=395, cast=int)
 
@@ -497,6 +501,14 @@ CELERY_BEAT_SCHEDULE = {
     },
     "payment-stale-review-hourly": {
         "task": "apps.payments.tasks.flag_stale_pending_payments",
+        "schedule": 3600.0,
+    },
+    "premium-renewal-preparation-hourly": {
+        "task": "apps.payments.tasks.prepare_premium_renewals",
+        "schedule": 3600.0,
+    },
+    "premium-revenue-settlement-hourly": {
+        "task": "apps.payments.tasks.settle_premium_revenue",
         "schedule": 3600.0,
     },
     "whatsapp-live-reminders-every-5-minutes": {

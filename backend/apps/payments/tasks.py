@@ -163,3 +163,64 @@ def flag_stale_pending_payments():
                 payload={"expires_at": order.expires_at.isoformat() if order.expires_at else None},
             )
     return {"checked": len(ids), "issues_created": created}
+
+
+@shared_task(name="apps.payments.tasks.prepare_premium_renewals")
+def prepare_premium_renewals():
+    """Prépare les checkouts Premium proches de l'échéance, sans débit hors session."""
+    from .models import PremiumRenewalProfile
+    from .subscriptions import prepare_premium_renewal
+
+    lead_hours = max(1, min(int(getattr(settings, "PREMIUM_RENEWAL_LEAD_HOURS", 72)), 168))
+    batch_size = min(max(int(getattr(settings, "PREMIUM_RENEWAL_BATCH_SIZE", 100)), 1), 500)
+    horizon = timezone.now() + timedelta(hours=lead_hours)
+    ids = list(
+        PremiumRenewalProfile.objects.filter(
+            enabled=True,
+            next_renewal_at__isnull=False,
+            next_renewal_at__lte=horizon,
+        )
+        .order_by("next_renewal_at", "id")
+        .values_list("id", flat=True)[:batch_size]
+    )
+    result = {"checked": 0, "prepared": 0, "reused": 0, "errors": 0}
+    for profile_id in ids:
+        result["checked"] += 1
+        try:
+            outcome = prepare_premium_renewal(profile_id)
+        except Exception:
+            result["errors"] += 1
+            continue
+        if outcome.get("prepared"):
+            result["prepared"] += 1
+            result["reused"] += int(bool(outcome.get("reused")))
+    return result
+
+
+@shared_task(name="apps.payments.tasks.settle_premium_revenue")
+def settle_premium_revenue():
+    """Clôture les périodes Premium échues et crédite le ledger instructeur de façon idempotente."""
+    from .models import LearnerSubscription
+    from .subscriptions import settle_premium_subscription
+
+    batch_size = min(max(int(getattr(settings, "PREMIUM_SETTLEMENT_BATCH_SIZE", 200)), 1), 1000)
+    ids = list(
+        LearnerSubscription.all_objects.filter(
+            ends_at__lte=timezone.now(),
+            revenue_settled_at__isnull=True,
+        )
+        .order_by("ends_at", "id")
+        .values_list("id", flat=True)[:batch_size]
+    )
+    result = {"checked": 0, "settled": 0, "allocations": 0, "errors": 0}
+    for subscription_id in ids:
+        result["checked"] += 1
+        try:
+            outcome = settle_premium_subscription(subscription_id)
+        except Exception:
+            result["errors"] += 1
+            continue
+        if outcome.get("settled"):
+            result["settled"] += 1
+            result["allocations"] += int(outcome.get("allocations") or 0)
+    return result

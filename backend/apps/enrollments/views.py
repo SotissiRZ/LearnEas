@@ -168,6 +168,9 @@ class CourseEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
             enrollment.completed = True
             enrollment.completed_at = timezone.now()
         enrollment.save()
+        if enrollment.source_subscription_id and enrollment.course.premium_included:
+            from apps.payments.subscriptions import record_premium_usage
+            record_premium_usage(enrollment.user, course=enrollment.course)
 
         # Le certificat peut être configuré à un seuil différent de 100 %.
         if enrollment.course.certificate_enabled and enrollment.course.certificate_auto_issue:
@@ -201,6 +204,9 @@ class CourseEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
             progress.save(update_fields=["watched_seconds", "last_position_seconds", "last_watch_heartbeat_at", "updated_at"])
             enrollment.last_accessed_lesson = lesson
             enrollment.save(update_fields=["last_accessed_lesson"])
+        if enrollment.source_subscription_id and enrollment.course.premium_included:
+            from apps.payments.subscriptions import record_premium_usage
+            record_premium_usage(enrollment.user, course=enrollment.course)
         data = LessonProgressSerializer(progress).data
         # Le client conserve la partie hors-ligne non encore créditée si le plafond anti-triche
         # (temps mural / token signé) n'a accepté qu'une fraction de ce qu'il avait accumulé.

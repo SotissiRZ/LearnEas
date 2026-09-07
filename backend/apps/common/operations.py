@@ -178,7 +178,7 @@ def _storage_check(*, scan: bool = False):
 def _domain_metrics():
     from apps.catalog.models import Lesson, StreamingStatus
     from apps.notifications.models import EmailDelivery, WhatsAppDelivery
-    from apps.payments.models import PaymentGateway, PaymentIssue
+    from apps.payments.models import LearnerSubscription, PaymentGateway, PaymentIssue, PremiumRenewalProfile
     from apps.support.models import ModerationReport, SupportTicket
     from apps.formations.models import FormationAttendance, FormationSession
     from apps.formations.quality import session_quality_snapshot
@@ -214,6 +214,15 @@ def _domain_metrics():
                 status=PaymentIssue.Status.OPEN, severity=PaymentIssue.Severity.CRITICAL
             ).count(),
             "active_gateways": PaymentGateway.objects.filter(is_active=True).count(),
+            "premium_renewal_action_required": PremiumRenewalProfile.objects.filter(
+                enabled=True, status=PremiumRenewalProfile.Status.ACTION_REQUIRED
+            ).count(),
+            "premium_renewal_past_due": PremiumRenewalProfile.objects.filter(
+                enabled=True, status=PremiumRenewalProfile.Status.PAST_DUE
+            ).count(),
+            "premium_unsettled_periods": LearnerSubscription.all_objects.filter(
+                ends_at__lte=now, revenue_settled_at__isnull=True
+            ).count(),
         },
         "support": {
             "open": SupportTicket.objects.filter(status=SupportTicket.Status.OPEN).count(),

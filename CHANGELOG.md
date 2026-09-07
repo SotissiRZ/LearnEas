@@ -1419,3 +1419,16 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - `RTC_SFU_URL` prépare la configuration mais n'active aucun faux SFU : le contrat reste `topology=mesh` et `active_adapter=False` sans intégration réelle.
 - Nouvelle commande `rtc_capacity_report` pour décider le passage SFU sur la base des sessions/mesures réelles.
 - Tests structurels de référence portés à **103/103**.
+
+## v92 — Cycle Premium, renouvellement orchestré et redistribution créateurs (2026-09-07)
+- Ajoute un profil de renouvellement Premium avec états `scheduled`, `action_required`, `past_due`, `paused`, `cancelled`.
+- Prépare automatiquement un checkout avant échéance, sans stocker de carte/token et sans prétendre effectuer un débit hors session ; `automatic_charge=false` reste explicite.
+- Ajoute une fenêtre de rattrapage configurable après échéance, sans prolonger gratuitement l'accès Premium.
+- Ajoute un suivi d'usage par contenu Premium distinct et par période, indépendant des clics répétés.
+- Ajoute un pool créateurs administrable (`learner_premium_creator_pool_percent`, 60 % par défaut) distinct des commissions de ventes unitaires.
+- Clôture les périodes expirées par allocations immuables instructeur et écritures ledger `premium`.
+- Les remboursements post-settlement créent des écritures `premium_refund` au lieu d'effacer l'historique.
+- Les revenus Premium sont visibles dans l'espace finance instructeur et dans le back-office Santé plateforme.
+- Ajoute les tâches Celery `prepare_premium_renewals` et `settle_premium_revenue` et la commande `premium_revenue_report`.
+- Migrations additives : `accounts.0013_premium_creator_pool` et `payments.0017_premium_lifecycle_revenue`.
+- Tests structurels de référence portés à **109/109**.

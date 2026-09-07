@@ -766,3 +766,17 @@ docker compose -f docker-compose.dev.yml exec backend python manage.py rtc_capac
 ```
 
 Voir `docs/V91_LIVE_SCALABILITY.md` et `VALIDATION_V91.md`.
+
+## V92 — Premium phase 2 : cycle et redistribution créateurs
+
+V92 conserve le pass Premium 30 jours et les achats à l'unité existants, puis ajoute un cycle de renouvellement orchestré et une redistribution comptable aux créateurs. Les fournisseurs de paiement actuels nécessitent encore une confirmation de checkout : KalanPro ne stocke aucun moyen de paiement réutilisable et ne présente donc jamais ce mécanisme comme un débit automatique.
+
+Le pool créateurs est administrable dans **Administration → Paramètres** (`60 %` par défaut) et réparti à la clôture d'une période selon les contenus Premium distincts réellement utilisés. Les remboursements produisent des écritures inverses dans le ledger afin de conserver un historique financier auditable.
+
+Diagnostic :
+
+```bash
+docker compose -f docker-compose.dev.yml exec backend python manage.py premium_revenue_report --json
+```
+
+Voir `docs/V92_PREMIUM_LIFECYCLE.md` et `VALIDATION_V92.md`.

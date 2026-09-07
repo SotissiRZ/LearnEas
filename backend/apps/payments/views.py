@@ -28,6 +28,7 @@ from apps.formations.models import InteractiveFormation, FormationEnrollment, Fo
 from .models import (
     Order, OrderItem, PayoutProfile, InstructorPayout, FormationSeatReservation, Currency,
     PaymentGateway, InstructorLedgerEntry, PaymentAttempt, PaymentEvent, PaymentIssue,
+    PremiumRenewalProfile, PremiumRevenueAllocation,
 )
 import stripe
 from apps.common.throttles import CheckoutRateThrottle, AdminTestRateThrottle, WebhookRateThrottle
@@ -111,6 +112,19 @@ def _release_failed_order_reservations(order):
         expires_at=None,
         updated_at=now,
     )
+    renewal = PremiumRenewalProfile.objects.filter(last_order=order, enabled=True).first()
+    if renewal:
+        from .subscriptions import premium_coverage_end
+        coverage_end = premium_coverage_end(order.user, now=now)
+        renewal.status = (
+            PremiumRenewalProfile.Status.PAST_DUE
+            if not coverage_end or coverage_end <= now
+            else PremiumRenewalProfile.Status.ACTION_REQUIRED
+        )
+        renewal.failure_count = min(int(renewal.failure_count) + 1, 65535)
+        renewal.last_attempt_at = now
+        renewal.next_renewal_at = coverage_end
+        renewal.save(update_fields=["status", "failure_count", "last_attempt_at", "next_renewal_at", "updated_at"])
 
 
 def _finance_totals(instructor):
@@ -118,7 +132,14 @@ def _finance_totals(instructor):
     gross = paid_items.aggregate(v=Sum("unit_price"))["v"] or Decimal("0")
     net_earnings = InstructorLedgerEntry.objects.filter(
         instructor=instructor,
-        entry_type__in=[InstructorLedgerEntry.EntryType.SALE, InstructorLedgerEntry.EntryType.REFUND],
+        entry_type__in=[
+            InstructorLedgerEntry.EntryType.SALE, InstructorLedgerEntry.EntryType.REFUND,
+            InstructorLedgerEntry.EntryType.PREMIUM, InstructorLedgerEntry.EntryType.PREMIUM_REFUND,
+        ],
+    ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+    premium_earnings = InstructorLedgerEntry.objects.filter(
+        instructor=instructor,
+        entry_type__in=[InstructorLedgerEntry.EntryType.PREMIUM, InstructorLedgerEntry.EntryType.PREMIUM_REFUND],
     ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
     ledger_balance = InstructorLedgerEntry.objects.filter(instructor=instructor).aggregate(v=Sum("amount"))["v"] or Decimal("0")
     pending_locked = InstructorPayout.objects.filter(
@@ -131,6 +152,7 @@ def _finance_totals(instructor):
     return {
         "gross_revenue": gross,
         "total_earnings": net_earnings,
+        "premium_earnings": premium_earnings,
         "available_balance": max(ledger_balance - pending_locked, Decimal("0")),
         "ledger_balance": ledger_balance,
         "paid_out": paid_out,
@@ -809,6 +831,35 @@ class PremiumAccessView(APIView):
         }, status=201 if created else 200)
 
 
+class PremiumRenewalView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [CheckoutRateThrottle]
+
+    def get(self, request):
+        from .subscriptions import premium_renewal_status
+        return Response(premium_renewal_status(request.user))
+
+    def patch(self, request):
+        from .subscriptions import configure_premium_renewal, premium_renewal_status
+        enabled = request.data.get("enabled")
+        if not isinstance(enabled, bool):
+            return Response({"enabled": ["Valeur booléenne obligatoire."]}, status=400)
+        try:
+            configure_premium_renewal(
+                request.user,
+                enabled=enabled,
+                provider=request.data.get("provider"),
+                currency=request.data.get("currency"),
+            )
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=403)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(premium_renewal_status(request.user))
+
+    post = patch
+
+
 class ConfirmPaymentView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     throttle_classes = [CheckoutRateThrottle]
@@ -979,11 +1030,26 @@ class InstructorFinanceView(APIView):
                     "earning": str(row["earning"] or 0),
                 })
         top_rows.sort(key=lambda r: (r["sales"], Decimal(r["gross"])), reverse=True)
+        premium_recent = PremiumRevenueAllocation.objects.filter(
+            instructor=request.user, reversed_at__isnull=True
+        ).select_related("subscription", "subscription__source_order").order_by("-created_at")[:10]
+        premium_pool_percent = PlatformSettings.load().learner_premium_creator_pool_percent
         return Response({
             **{k: str(v) if isinstance(v, Decimal) else v for k, v in totals.items()},
             "commission_percent": float(_platform_finance_settings()[0]),
             "minimum_payout": str(_platform_finance_settings()[1]),
+            "premium_creator_pool_percent": int(premium_pool_percent),
             "payout_profile_configured": bool(profile and profile.account_reference),
+            "recent_premium_allocations": [
+                {
+                    "id": allocation.id,
+                    "amount": str(allocation.amount),
+                    "usage_weight": str(allocation.usage_weight),
+                    "period_ends_at": allocation.subscription.ends_at,
+                    "created_at": allocation.created_at,
+                }
+                for allocation in premium_recent
+            ],
             "recent_sales": [
                 {
                     "id": item.id,
@@ -1088,6 +1154,11 @@ class AdminOverviewView(APIView):
         total_revenue = OrderItem.objects.filter(order__status=Order.Status.PAID).aggregate(v=Sum("unit_price"))["v"] or Decimal("0")
         platform_fees = OrderItem.objects.filter(order__status=Order.Status.PAID).aggregate(v=Sum("platform_fee_amount"))["v"] or Decimal("0")
         instructor_earnings = OrderItem.objects.filter(order__status=Order.Status.PAID).aggregate(v=Sum("instructor_earning_amount"))["v"] or Decimal("0")
+        premium_creator_earnings = InstructorLedgerEntry.objects.filter(
+            entry_type__in=[InstructorLedgerEntry.EntryType.PREMIUM, InstructorLedgerEntry.EntryType.PREMIUM_REFUND]
+        ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+        instructor_earnings += premium_creator_earnings
+        platform_fees -= premium_creator_earnings
         pending_payouts = InstructorPayout.objects.filter(status=InstructorPayout.Status.PENDING)
         sessions = FormationSession.objects.select_related("formation", "formation__instructor").order_by("-scheduled_at")[:12]
         platform_config = PlatformSettings.load()
@@ -1113,9 +1184,11 @@ class AdminOverviewView(APIView):
             "total_revenue": str(total_revenue),
             "platform_fees": str(platform_fees),
             "instructor_earnings": str(instructor_earnings),
+            "premium_creator_earnings": str(premium_creator_earnings),
             "pending_payout_count": pending_payouts.count(),
             "pending_payout_amount": str(pending_payouts.aggregate(v=Sum("amount"))["v"] or Decimal("0")),
             "platform_commission_percent": platform_config.platform_commission_percent,
+            "learner_premium_creator_pool_percent": platform_config.learner_premium_creator_pool_percent,
             "minimum_payout_amount": str(platform_config.minimum_payout_amount),
             "recent_sessions": [
                 {
