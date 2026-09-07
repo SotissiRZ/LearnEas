@@ -492,6 +492,13 @@ PREMIUM_RENEWAL_GRACE_HOURS = config("PREMIUM_RENEWAL_GRACE_HOURS", default=48, 
 PREMIUM_RENEWAL_BATCH_SIZE = config("PREMIUM_RENEWAL_BATCH_SIZE", default=100, cast=int)
 PREMIUM_SETTLEMENT_BATCH_SIZE = config("PREMIUM_SETTLEMENT_BATCH_SIZE", default=200, cast=int)
 
+# V93 · contrat de mise en production. Ces garde-fous sont évalués par
+# `python manage.py production_preflight`; ils ne contactent aucun fournisseur.
+PRODUCTION_REQUIRE_PAYMENT_PROVIDER = config("PRODUCTION_REQUIRE_PAYMENT_PROVIDER", default=True, cast=bool)
+PRODUCTION_REQUIRE_EMAIL = config("PRODUCTION_REQUIRE_EMAIL", default=True, cast=bool)
+PRODUCTION_REQUIRE_TURN = config("PRODUCTION_REQUIRE_TURN", default=True, cast=bool)
+PRODUCTION_REQUIRE_MALWARE_SCAN = config("PRODUCTION_REQUIRE_MALWARE_SCAN", default=True, cast=bool)
+
 ANALYTICS_RETENTION_DAYS = config("ANALYTICS_RETENTION_DAYS", default=395, cast=int)
 
 CELERY_BEAT_SCHEDULE = {

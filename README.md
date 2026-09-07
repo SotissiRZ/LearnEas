@@ -780,3 +780,33 @@ docker compose -f docker-compose.dev.yml exec backend python manage.py premium_r
 ```
 
 Voir `docs/V92_PREMIUM_LIFECYCLE.md` et `VALIDATION_V92.md`.
+
+## V93 — Go-live production
+
+La dernière phase pré-production est documentée dans `docs/V93_GO_LIVE.md`.
+
+Gates principaux :
+
+```bash
+# backend
+python manage.py production_preflight --json
+python manage.py release_gate --strict-infra --deploy --production --json
+
+# frontend Vercel
+npm run production:preflight
+npm run test:ci
+npm run build:check
+
+# après déploiement
+RELEASE_BASE_URL=https://app.example.com \
+RELEASE_BACKEND_URL=https://api.example.com \
+npm run release:smoke:prod
+```
+
+Le serveur backend écoute automatiquement `${PORT:-8000}`. Sur Railway, exécuter les migrations en Pre-deploy puis utiliser `RUN_MIGRATIONS_ON_BOOT=False` sur le service web. Les workers Celery doivent conserver `SKIP_BOOTSTRAP=true`.
+
+Les sauvegardes de sécurité peuvent être envoyées directement dans le stockage privé :
+
+```bash
+python manage.py backup_database --upload --delete-local-after-upload
+```

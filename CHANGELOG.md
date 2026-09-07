@@ -1432,3 +1432,16 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Ajoute les tâches Celery `prepare_premium_renewals` et `settle_premium_revenue` et la commande `premium_revenue_report`.
 - Migrations additives : `accounts.0013_premium_creator_pool` et `payments.0017_premium_lifecycle_revenue`.
 - Tests structurels de référence portés à **109/109**.
+
+## V93 — Production Go-Live Railway + Vercel
+
+- backend Railway compatible avec le `PORT` injecté via `docker/start-web.sh` ; fallback 8000 conservé en Docker local ;
+- bootstrap backend dissocié avec `RUN_MIGRATIONS_ON_BOOT` et `COLLECTSTATIC_ON_BOOT` ;
+- nouveau `production_preflight` : HTTPS, hosts/origines, cookies, S3/R2, uploads directs, antivirus, paiements, email, WhatsApp et TURN ;
+- `release_gate --production` agrège le contrat de configuration V93 ;
+- préflight frontend pour `API_PROXY_TARGET`, `/api` same-origin, WebSocket `wss://`, média HTTPS et interdiction des secrets `NEXT_PUBLIC_*` ;
+- smoke test HTTPS post-déploiement Vercel/Railway avec readiness, CORS, CSP et catalogues publics ;
+- sauvegarde PostgreSQL uploadable dans le stockage privé `backups/database/` et restauration depuis cette clé ;
+- `poweredByHeader: false` sur Next.js ;
+- CI étendue avec contrats production backend/frontend ;
+- guide `docs/V93_GO_LIVE.md` : staging, services Railway, Vercel, webhooks, backup et rollback.

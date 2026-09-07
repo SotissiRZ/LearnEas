@@ -21,12 +21,18 @@ class Command(BaseCommand):
             action="store_true",
             help="Active les deployment checks Django et traite leurs warnings comme bloquants.",
         )
+        parser.add_argument(
+            "--production",
+            action="store_true",
+            help="Ajoute le contrat de configuration production V93 aux blockers du gate.",
+        )
         parser.add_argument("--json", action="store_true", help="Sortie JSON stable pour CI.")
 
     def handle(self, *args, **options):
         snapshot = build_release_gate_snapshot(
             strict_infra=bool(options["strict_infra"]),
             deploy=bool(options["deploy"]),
+            production=bool(options["production"]),
         )
         if options["json"]:
             self.stdout.write(json.dumps(snapshot, ensure_ascii=False, sort_keys=True))

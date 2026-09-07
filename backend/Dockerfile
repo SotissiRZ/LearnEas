@@ -23,7 +23,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY . .
-RUN chmod +x /app/docker/entrypoint.sh \
+RUN chmod +x /app/docker/entrypoint.sh /app/docker/start-web.sh \
     && groupadd --gid 10001 learneas \
     && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin learneas \
     && mkdir -p /app/staticfiles /app/media \
@@ -32,4 +32,4 @@ RUN chmod +x /app/docker/entrypoint.sh \
 EXPOSE 8000
 
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
-CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "--application-close-timeout", "10", "learneas.asgi:application"]
+CMD ["/app/docker/start-web.sh"]

@@ -15,6 +15,7 @@ const distDir = process.env.NEXT_DIST_DIR || ".next";
 
 const nextConfig = {
   distDir,
+  poweredByHeader: false,
   output: "standalone",
   images: { formats: ["image/avif", "image/webp"] },
   async rewrites() {

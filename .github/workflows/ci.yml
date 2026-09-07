@@ -54,6 +54,45 @@ jobs:
         run: python manage.py test
       - working-directory: backend
         run: python manage.py check --deploy
+      - name: Production configuration contract
+        working-directory: backend
+        env:
+          DEBUG: "False"
+          USE_HTTPS: "True"
+          SECRET_KEY: ci-production-contract-secret-key-0123456789
+          ALLOWED_HOSTS: api.example.com
+          DATABASE_URL: postgresql://user:pass@db.example.internal:5432/kalanpro
+          REDIS_URL: redis://redis.example.internal:6379/0
+          FRONTEND_URL: https://app.example.com
+          BACKEND_PUBLIC_URL: https://api.example.com
+          CORS_ALLOWED_ORIGINS: https://app.example.com
+          REALTIME_ALLOWED_ORIGINS: https://app.example.com
+          CSRF_TRUSTED_ORIGINS: https://app.example.com
+          AUTH_REFRESH_COOKIE_SECURE: "True"
+          TEST_PAYMENTS_ENABLED: "False"
+          SEED_DEMO: "False"
+          USE_S3: "True"
+          REQUIRE_REMOTE_MEDIA: "True"
+          DIRECT_MEDIA_UPLOADS_ENABLED: "True"
+          AWS_ACCESS_KEY_ID: ci-access
+          AWS_SECRET_ACCESS_KEY: ci-secret
+          AWS_STORAGE_BUCKET_NAME: kalanpro-ci
+          AWS_S3_REGION_NAME: auto
+          AWS_S3_ENDPOINT_URL: https://storage.example.com
+          MALWARE_SCAN_ENABLED: "True"
+          MALWARE_SCAN_REQUIRED: "True"
+          CLAMAV_HOST: clamav.example.internal
+          CINETPAY_API_KEY: ci-key
+          CINETPAY_SITE_ID: ci-site
+          CINETPAY_SECRET_KEY: ci-secret
+          RESEND_ENABLED: "True"
+          RESEND_DRY_RUN: "False"
+          RESEND_API_KEY: re_ci_placeholder
+          DEFAULT_FROM_EMAIL: KalanPro <no-reply@example.com>
+          RTC_TURN_URLS: turns:turn.example.com:5349?transport=tcp
+          RTC_TURN_SECRET: ci-turn-secret
+          AI_DRY_RUN: "True"
+        run: python manage.py production_preflight --json
 
   frontend:
     runs-on: ubuntu-latest
@@ -70,6 +109,14 @@ jobs:
         run: npm run test:ci
       - working-directory: frontend
         run: npm run build:check
+      - name: Frontend production configuration contract
+        working-directory: frontend
+        env:
+          API_PROXY_TARGET: https://api.example.com
+          NEXT_PUBLIC_API_URL: /api
+          NEXT_PUBLIC_WS_URL: wss://api.example.com/ws
+          NEXT_PUBLIC_MEDIA_ORIGIN: https://media.example.com
+        run: npm run production:preflight
 
 
   integration:

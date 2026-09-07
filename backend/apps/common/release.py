@@ -8,6 +8,7 @@ from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
 from apps.common.operations import _broker_check, _cache_check, _database_check, _storage_check
+from apps.common.production import build_production_preflight_snapshot
 
 
 def _pending_migrations() -> list[str]:
@@ -32,7 +33,7 @@ def _django_checks(*, deploy: bool) -> list[dict[str, Any]]:
     ]
 
 
-def build_release_gate_snapshot(*, strict_infra: bool = False, deploy: bool = False) -> dict[str, Any]:
+def build_release_gate_snapshot(*, strict_infra: bool = False, deploy: bool = False, production: bool = False) -> dict[str, Any]:
     """Build a deterministic release qualification snapshot.
 
     The default mode is safe for local/dev validation. ``deploy=True`` upgrades Django
@@ -76,11 +77,17 @@ def build_release_gate_snapshot(*, strict_infra: bool = False, deploy: bool = Fa
         if storage.get("backend") != "s3":
             blockers.append("remote_media_required")
 
+    production_snapshot = build_production_preflight_snapshot() if production else None
+    if production_snapshot and production_snapshot.get("status") != "ok":
+        blockers.extend(f"production:{item}" for item in production_snapshot.get("blockers", []))
+
     return {
         "status": "ok" if not blockers else "error",
         "deploy_checks": deploy,
         "strict_infra": strict_infra,
         "remote_media_required": remote_media_required,
+        "production_checks": production,
+        "production": production_snapshot,
         "django_issues": django_issues,
         "pending_migrations": migrations,
         "services": services,

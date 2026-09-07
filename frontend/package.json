@@ -13,13 +13,15 @@
     "test:roles": "node --test scripts/test-employer-role.mjs",
     "build:check": "node scripts/build-check.mjs",
     "typecheck": "tsc --noEmit",
-    "test:unit": "node --test scripts/test-security.mjs scripts/test-performance.mjs scripts/test-employer-role.mjs scripts/test-foundation.mjs scripts/test-ats-v85.mjs scripts/test-discovery-v86.mjs scripts/test-analytics-v87.mjs scripts/test-premium-v88.mjs scripts/test-support-v88.mjs scripts/test-type-contract-v88.mjs scripts/test-operations-v89.mjs scripts/test-release-v90.mjs scripts/test-live-v91.mjs scripts/test-premium-v92.mjs",
+    "test:unit": "node --test scripts/test-security.mjs scripts/test-performance.mjs scripts/test-employer-role.mjs scripts/test-foundation.mjs scripts/test-ats-v85.mjs scripts/test-discovery-v86.mjs scripts/test-analytics-v87.mjs scripts/test-premium-v88.mjs scripts/test-support-v88.mjs scripts/test-type-contract-v88.mjs scripts/test-operations-v89.mjs scripts/test-release-v90.mjs scripts/test-live-v91.mjs scripts/test-premium-v92.mjs scripts/test-go-live-v93.mjs",
     "test:ci": "npm run test:unit && npm run audit:mobile && npm run typecheck",
     "release:smoke": "node scripts/release-smoke.mjs",
     "release:smoke:dev": "node scripts/release-smoke.mjs --demo-auth",
     "release:load": "node scripts/release-load.mjs",
     "release:chaos": "node scripts/release-chaos.mjs",
-    "release:qualify:dev": "npm run release:smoke:dev && npm run release:chaos && npm run release:load"
+    "release:qualify:dev": "npm run release:smoke:dev && npm run release:chaos && npm run release:load",
+    "production:preflight": "node scripts/production-env-check.mjs",
+    "release:smoke:prod": "node scripts/postdeploy-smoke.mjs"
   },
   "dependencies": {
     "next": "15.5.21",

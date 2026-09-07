@@ -101,11 +101,19 @@ else:
 PYEOF
   fi
 
-  echo "Application des migrations..."
-  python manage.py migrate --noinput
+  if [ "${RUN_MIGRATIONS_ON_BOOT:-true}" = "true" ]; then
+    echo "Application des migrations..."
+    python manage.py migrate --noinput
+  else
+    echo "Migrations au démarrage désactivées (RUN_MIGRATIONS_ON_BOOT=false)."
+  fi
 
-  echo "Collecte des fichiers statiques..."
-  python manage.py collectstatic --noinput --clear
+  if [ "${COLLECTSTATIC_ON_BOOT:-true}" = "true" ]; then
+    echo "Collecte des fichiers statiques..."
+    python manage.py collectstatic --noinput --clear
+  else
+    echo "Collectstatic au démarrage désactivé (COLLECTSTATIC_ON_BOOT=false)."
+  fi
 
   # Crée automatiquement les comptes de démonstration si SEED_DEMO=true.
   # Cette option reste réservée au développement/démo et doit rester désactivée en prod.
