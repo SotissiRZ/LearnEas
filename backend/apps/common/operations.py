@@ -181,10 +181,26 @@ def _domain_metrics():
     from apps.payments.models import PaymentGateway, PaymentIssue
     from apps.support.models import ModerationReport, SupportTicket
     from apps.formations.models import FormationAttendance, FormationSession
+    from apps.formations.quality import session_quality_snapshot
 
     now = timezone.now()
     last_24h = now - timedelta(hours=24)
     live_cutoff = now - timedelta(minutes=2)
+    active_live_ids = list(FormationSession.objects.filter(
+        started_at__isnull=False, ended_at__isnull=True
+    ).values_list("id", flat=True)[:50])
+    quality_reports = 0
+    poor_quality_reports = 0
+    rtt_values = []
+    packet_loss_values = []
+    for session_id in active_live_ids:
+        quality = session_quality_snapshot(session_id)
+        quality_reports += int(quality.get("reports") or 0)
+        poor_quality_reports += int((quality.get("quality") or {}).get("poor") or 0)
+        if quality.get("avg_rtt_ms") is not None:
+            rtt_values.append(float(quality["avg_rtt_ms"]))
+        if quality.get("avg_packet_loss_pct") is not None:
+            packet_loss_values.append(float(quality["avg_packet_loss_pct"]))
     return {
         "streaming": {
             "pending": Lesson.objects.filter(streaming_status=StreamingStatus.PENDING).count(),
@@ -225,6 +241,10 @@ def _domain_metrics():
             "recent_participants": FormationAttendance.objects.filter(
                 left_at__isnull=True, last_seen_at__gte=live_cutoff
             ).count(),
+            "quality_reports": quality_reports,
+            "poor_quality_reports": poor_quality_reports,
+            "avg_rtt_ms": round(sum(rtt_values) / len(rtt_values), 1) if rtt_values else None,
+            "avg_packet_loss_pct": round(sum(packet_loss_values) / len(packet_loss_values), 2) if packet_loss_values else None,
         },
     }
 
@@ -245,6 +265,13 @@ def _provider_config():
         },
         "turn": {
             "configured": bool(getattr(settings, "RTC_TURN_SECRET", "") or getattr(settings, "RTC_TURN_CREDENTIAL", "")),
+            "multi_url": bool(str(getattr(settings, "RTC_TURN_URLS", "") or "").strip()),
+            "ice_transport_policy": str(getattr(settings, "RTC_ICE_TRANSPORT_POLICY", "all") or "all"),
+        },
+        "sfu": {
+            "configured": bool(str(getattr(settings, "RTC_SFU_URL", "") or "").strip()),
+            "recommend_threshold": max(int(getattr(settings, "RTC_SFU_RECOMMEND_THRESHOLD", 7)), 3),
+            "active_adapter": False,
         },
     }
 

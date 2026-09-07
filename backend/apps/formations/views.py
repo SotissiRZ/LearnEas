@@ -26,7 +26,8 @@ from .models import (
     FormationKind, FormationWaitlistEntry, MentorshipOffering, MentorshipSlot, MentorshipBooking,
     MentorshipPack, MentorshipPass, MentorshipAvailabilityRule,
 )
-from .rtc import ice_servers_for_user
+from .rtc import ice_servers_for_user, rtc_policy
+from .quality import record_session_quality, session_quality_snapshot
 from .realtime import (
     make_realtime_ticket, publish_files_changed, publish_presence_changed,
     publish_session_state, publish_signal, serialize_signal,
@@ -310,6 +311,10 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
     def room(self, request, pk=None):
         session = self.get_object()
         self._require_access(request, session)
+        cutoff = timezone.now() - timedelta(seconds=45)
+        active_participants = FormationAttendance.objects.filter(
+            session=session, left_at__isnull=True, last_seen_at__gte=cutoff
+        ).values("user_id").distinct().count()
         return Response({
             "id": session.id,
             "room_key": str(session.room_key),
@@ -333,7 +338,25 @@ class FormationSessionViewSet(viewsets.ModelViewSet):
                 "avatar": request.user.avatar.url if getattr(request.user, "avatar", None) else None,
             },
             "ice_servers": ice_servers_for_user(request.user),
+            "rtc_policy": rtc_policy(active_participants=active_participants),
         })
+
+    @action(detail=True, methods=["get", "post"], url_path="quality", throttle_classes=[LiveRateThrottle])
+    def quality(self, request, pk=None):
+        session = self.get_object()
+        self._require_access(request, session)
+        if request.method == "GET":
+            self._require_organizer(request, session)
+            return Response(session_quality_snapshot(session.id))
+
+        cutoff = timezone.now() - timedelta(seconds=45)
+        active = FormationAttendance.objects.filter(
+            session=session, user=request.user, left_at__isnull=True, last_seen_at__gte=cutoff
+        ).exists()
+        if not active:
+            return Response({"detail": "Rejoignez la séance avant d'envoyer la qualité WebRTC."}, status=409)
+        payload = request.data if isinstance(request.data, dict) else {}
+        return Response(record_session_quality(session_id=session.id, user_id=request.user.id, payload=payload))
 
     @action(detail=True, methods=["post"], url_path="realtime-ticket")
     def realtime_ticket(self, request, pk=None):

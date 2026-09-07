@@ -1408,3 +1408,14 @@ données confirmées accessibles via l'API (8 cours, 4 PDF, 3 formations, 6 cat�
 - Corrige le typage des codes pays prioritaires.
 - Ajoute un test de non-régression du contrat TypeScript.
 
+
+## v91 — Scalabilité live, WebRTC/TURN et préparation SFU (2026-09-07)
+- Le live WebRTC ne supprime plus immédiatement un pair sur `disconnected/failed` : délai de grâce, `restartIce()` et offre `iceRestart` déterministe avant abandon.
+- Support de plusieurs URLs STUN/TURN avec compatibilité des variables historiques et maintien des credentials TURN REST temporaires côté backend.
+- Nouvelle politique RTC exposée par la salle : seuil mesh, recommandation SFU, ICE transport/pool, délai de récupération, fréquence qualité et bitrates.
+- Adaptation du bitrate envoyé lorsque la pression du mesh augmente, sans imposer une limite dure de participants.
+- Collecte bornée `getStats()` (RTT, jitter, perte, débit sortant) et télémétrie éphémère Redis/cache avec TTL ; aucune donnée réseau persistante et aucune migration.
+- Le back-office Santé plateforme agrège désormais la qualité WebRTC des salles actives.
+- `RTC_SFU_URL` prépare la configuration mais n'active aucun faux SFU : le contrat reste `topology=mesh` et `active_adapter=False` sans intégration réelle.
+- Nouvelle commande `rtc_capacity_report` pour décider le passage SFU sur la base des sessions/mesures réelles.
+- Tests structurels de référence portés à **103/103**.

@@ -357,13 +357,14 @@ type OperationsSnapshot = {
     finance: { open_issues: number; critical_issues: number; active_gateways: number };
     support: { open: number; in_progress: number; urgent: number; moderation_pending: number };
     notifications: { email_failed_24h: number; whatsapp_failed_24h: number };
-    live: { active_sessions: number; recent_participants: number };
+    live: { active_sessions: number; recent_participants: number; quality_reports: number; poor_quality_reports: number; avg_rtt_ms: number | null; avg_packet_loss_pct: number | null };
   };
   providers: {
     resend: { enabled: boolean; dry_run: boolean };
     whatsapp: { enabled: boolean; dry_run: boolean };
     ai: { configured: boolean; dry_run: boolean };
-    turn: { configured: boolean };
+    turn: { configured: boolean; multi_url?: boolean; ice_transport_policy?: string };
+    sfu: { configured: boolean; recommend_threshold: number; active_adapter: boolean };
   };
 };
 
@@ -756,7 +757,7 @@ function OperationsTab() {
       <div className="grid gap-4 xl:grid-cols-3">
         <div className="card p-4"><p className="text-sm font-bold">Finance</p><div className="mt-3 space-y-2 text-sm"><p>Incidents ouverts <b className="float-right">{data.metrics.finance.open_issues}</b></p><p>Critiques <b className="float-right text-red-600">{data.metrics.finance.critical_issues}</b></p><p>Passerelles actives <b className="float-right">{data.metrics.finance.active_gateways}</b></p></div></div>
         <div className="card p-4"><p className="text-sm font-bold">Support & modération</p><div className="mt-3 space-y-2 text-sm"><p>Tickets ouverts <b className="float-right">{data.metrics.support.open}</b></p><p>En cours <b className="float-right">{data.metrics.support.in_progress}</b></p><p>Urgents <b className="float-right text-red-600">{data.metrics.support.urgent}</b></p><p>Signalements à traiter <b className="float-right">{data.metrics.support.moderation_pending}</b></p></div></div>
-        <div className="card p-4"><p className="text-sm font-bold">Notifications & live</p><div className="mt-3 space-y-2 text-sm"><p>Emails en échec · 24 h <b className="float-right">{data.metrics.notifications.email_failed_24h}</b></p><p>WhatsApp en échec · 24 h <b className="float-right">{data.metrics.notifications.whatsapp_failed_24h}</b></p><p>Sessions live actives <b className="float-right">{data.metrics.live.active_sessions}</b></p><p>Participants vus &lt; 2 min <b className="float-right">{data.metrics.live.recent_participants}</b></p></div></div>
+        <div className="card p-4"><p className="text-sm font-bold">Notifications & live</p><div className="mt-3 space-y-2 text-sm"><p>Emails en échec · 24 h <b className="float-right">{data.metrics.notifications.email_failed_24h}</b></p><p>WhatsApp en échec · 24 h <b className="float-right">{data.metrics.notifications.whatsapp_failed_24h}</b></p><p>Sessions live actives <b className="float-right">{data.metrics.live.active_sessions}</b></p><p>Participants vus &lt; 2 min <b className="float-right">{data.metrics.live.recent_participants}</b></p><p>Rapports qualité WebRTC <b className="float-right">{data.metrics.live.quality_reports}</b></p><p>Qualité faible <b className="float-right text-amber-600">{data.metrics.live.poor_quality_reports}</b></p><p>RTT moyen <b className="float-right">{data.metrics.live.avg_rtt_ms == null ? "—" : `${data.metrics.live.avg_rtt_ms} ms`}</b></p><p>Perte moyenne <b className="float-right">{data.metrics.live.avg_packet_loss_pct == null ? "—" : `${data.metrics.live.avg_packet_loss_pct}%`}</b></p></div></div>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -766,6 +767,7 @@ function OperationsTab() {
           ["WhatsApp", data.providers.whatsapp.enabled, data.providers.whatsapp.dry_run ? "dry-run" : "actif"],
           ["IA", data.providers.ai.configured, data.providers.ai.dry_run ? "dry-run" : "clé configurée"],
           ["TURN", data.providers.turn.configured, "relay WebRTC"],
+          ["SFU prêt", data.providers.sfu.configured, data.providers.sfu.active_adapter ? "adaptateur actif" : `seuil conseillé ${data.providers.sfu.recommend_threshold}`],
         ].map(([label, enabled, detail]) => <div key={String(label)} className="rounded-xl bg-slate-50 p-3"><div className="flex items-center justify-between gap-2"><p className="text-sm font-bold">{String(label)}</p><span className={`h-2.5 w-2.5 rounded-full ${enabled ? "bg-emerald-500" : "bg-slate-300"}`}/></div><p className="mt-1 text-xs text-gray-400">{enabled ? String(detail) : "non configuré"}</p></div>)}</div></div>
       </div>
     </div>}

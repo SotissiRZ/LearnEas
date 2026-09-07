@@ -415,11 +415,25 @@ RESEND_HTTP_TIMEOUT = config("RESEND_HTTP_TIMEOUT", default=15, cast=int)
 REDIS_URL = config("REDIS_URL", default="redis://localhost:6379/0")
 REALTIME_TICKET_MAX_AGE_SECONDS = config("REALTIME_TICKET_MAX_AGE_SECONDS", default=60, cast=int)
 RTC_STUN_URL = config("RTC_STUN_URL", default="stun:stun.l.google.com:19302")
+RTC_STUN_URLS = config("RTC_STUN_URLS", default="")
 RTC_TURN_URL = config("RTC_TURN_URL", default="")
+RTC_TURN_URLS = config("RTC_TURN_URLS", default="")
 RTC_TURN_SECRET = config("RTC_TURN_SECRET", default="")
 RTC_TURN_TTL_SECONDS = config("RTC_TURN_TTL_SECONDS", default=3600, cast=int)
 RTC_TURN_USERNAME = config("RTC_TURN_USERNAME", default="")
 RTC_TURN_CREDENTIAL = config("RTC_TURN_CREDENTIAL", default="")
+# V91 : la topologie active reste mesh. Ces seuils rendent la saturation observable
+# et préparent une bascule SFU réelle sans annoncer une intégration qui n'existe pas encore.
+RTC_MESH_SOFT_LIMIT = config("RTC_MESH_SOFT_LIMIT", default=6, cast=int)
+RTC_SFU_RECOMMEND_THRESHOLD = config("RTC_SFU_RECOMMEND_THRESHOLD", default=7, cast=int)
+RTC_SFU_URL = config("RTC_SFU_URL", default="")
+RTC_ICE_TRANSPORT_POLICY = config("RTC_ICE_TRANSPORT_POLICY", default="all")
+RTC_ICE_CANDIDATE_POOL_SIZE = config("RTC_ICE_CANDIDATE_POOL_SIZE", default=2, cast=int)
+RTC_DISCONNECT_GRACE_SECONDS = config("RTC_DISCONNECT_GRACE_SECONDS", default=8, cast=int)
+RTC_QUALITY_INTERVAL_SECONDS = config("RTC_QUALITY_INTERVAL_SECONDS", default=10, cast=int)
+RTC_QUALITY_TTL_SECONDS = config("RTC_QUALITY_TTL_SECONDS", default=180, cast=int)
+RTC_VIDEO_MAX_BITRATE_KBPS = config("RTC_VIDEO_MAX_BITRATE_KBPS", default=900, cast=int)
+RTC_AUDIO_MAX_BITRATE_KBPS = config("RTC_AUDIO_MAX_BITRATE_KBPS", default=64, cast=int)
 REALTIME_ALLOWED_ORIGINS = config(
     "REALTIME_ALLOWED_ORIGINS",
     default=",".join(CORS_ALLOWED_ORIGINS) if CORS_ALLOWED_ORIGINS else "http://localhost:3000",

@@ -197,6 +197,46 @@ class InteractiveFormationRegressionTests(APITestCase):
         self.assertTrue(turn["credential"])
         self.assertNotEqual(turn["credential"], "shared-turn-secret")
 
+    @override_settings(
+        RTC_STUN_URLS="stun:one.example.test:3478,stun:two.example.test:3478",
+        RTC_TURN_URLS="turn:turn.example.test:3478?transport=udp,turns:turn.example.test:5349?transport=tcp",
+        RTC_TURN_SECRET="shared-turn-secret",
+        RTC_MESH_SOFT_LIMIT=4,
+        RTC_SFU_RECOMMEND_THRESHOLD=5,
+        RTC_SFU_URL="https://sfu.internal.example.test",
+        RTC_ICE_TRANSPORT_POLICY="relay",
+    )
+    def test_v91_room_exposes_bounded_rtc_policy_and_multiple_ice_servers(self):
+        session, _ = self._started_session_with_student()
+        response = self.client.get(f"/api/sessions/{session.id}/room/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(len(response.data["ice_servers"][0]["urls"]), 2)
+        self.assertEqual(len(response.data["ice_servers"][1]["urls"]), 2)
+        policy = response.data["rtc_policy"]
+        self.assertEqual(policy["topology"], "mesh")
+        self.assertEqual(policy["mesh_soft_limit"], 4)
+        self.assertTrue(policy["sfu_configured"])
+        self.assertEqual(policy["ice_transport_policy"], "relay")
+
+    @override_settings(CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}})
+    def test_v91_quality_telemetry_is_ephemeral_bounded_and_organizer_visible(self):
+        session, _ = self._started_session_with_student()
+        posted = self.client.post(
+            f"/api/sessions/{session.id}/quality/",
+            {"peers": 2, "rtt_ms": 180.7, "jitter_ms": 12.4, "packet_loss_pct": 1.25, "outgoing_kbps": 850, "quality": "good"},
+            format="json",
+        )
+        self.assertEqual(posted.status_code, status.HTTP_200_OK, posted.data)
+        self.assertEqual(posted.data["quality"], "good")
+        self.assertEqual(posted.data["peers"], 2)
+
+        self.client.force_authenticate(self.organizer)
+        report = self.client.get(f"/api/sessions/{session.id}/quality/")
+        self.assertEqual(report.status_code, status.HTTP_200_OK, report.data)
+        self.assertEqual(report.data["reports"], 1)
+        self.assertEqual(report.data["quality"]["good"], 1)
+        self.assertAlmostEqual(report.data["avg_rtt_ms"], 180.7, places=1)
+
     def test_realtime_ticket_is_short_lived_and_scoped_to_user_and_session(self):
         session, _ = self._started_session_with_student()
         response = self.client.post(f"/api/sessions/{session.id}/realtime-ticket/", {}, format="json")

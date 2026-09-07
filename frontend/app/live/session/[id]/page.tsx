@@ -48,6 +48,30 @@ import { buildRealtimeWebSocketUrl } from "@/lib/realtime";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import GuardScreen from "@/components/ui/GuardScreen";
 
+interface RTCPolicy {
+  topology: "mesh";
+  recommended_topology: "mesh" | "sfu";
+  sfu_configured: boolean;
+  mesh_soft_limit: number;
+  sfu_recommend_threshold: number;
+  participant_count: number;
+  ice_transport_policy: "all" | "relay";
+  ice_candidate_pool_size: number;
+  disconnect_grace_seconds: number;
+  quality_interval_seconds: number;
+  video_max_bitrate_kbps: number;
+  audio_max_bitrate_kbps: number;
+}
+
+type RTCQuality = "good" | "fair" | "poor" | "unknown";
+
+interface RTCQualityMetrics {
+  rttMs: number | null;
+  jitterMs: number | null;
+  packetLossPct: number | null;
+  outgoingKbps: number | null;
+}
+
 interface RoomInfo {
   id: number;
   room_key: string;
@@ -63,6 +87,7 @@ interface RoomInfo {
   organizer: { id: number; name: string; avatar: string | null };
   user: { id: number; name: string; avatar: string | null };
   ice_servers: RTCIceServer[];
+  rtc_policy?: RTCPolicy;
 }
 
 interface Person {
@@ -205,6 +230,8 @@ export default function LiveSessionPage() {
   const [attendanceId, setAttendanceId] = useState<number | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
   const [remoteFeeds, setRemoteFeeds] = useState<RemoteFeed[]>([]);
+  const [rtcQuality, setRtcQuality] = useState<RTCQuality>("unknown");
+  const [rtcQualityMetrics, setRtcQualityMetrics] = useState<RTCQualityMetrics>({ rttMs: null, jitterMs: null, packetLossPct: null, outgoingKbps: null });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
@@ -265,6 +292,7 @@ export default function LiveSessionPage() {
   const presenterCameraRef = useRef<HTMLVideoElement | null>(null);
   const presenterPipPositionRef = useRef({ x: 0.745, y: 0.68 });
   const peersRef = useRef<Map<number, RTCPeerConnection>>(new Map());
+  const peerRecoveryTimersRef = useRef<Map<number, number>>(new Map());
   const pendingIceRef = useRef<Map<number, RTCIceCandidateInit[]>>(new Map());
   const lastSignalIdRef = useRef(0);
   const attendanceIdRef = useRef<number | null>(null);
@@ -380,12 +408,18 @@ export default function LiveSessionPage() {
       recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
       localStreamRef.current?.getTracks().forEach((track) => track.stop());
       screenStreamRef.current?.getTracks().forEach((track) => track.stop());
+      peerRecoveryTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      peerRecoveryTimersRef.current.clear();
       peersRef.current.forEach((pc) => pc.close());
       peersRef.current.clear();
     };
   }, []);
 
   const participantsCount = people.length || (attendanceId ? 1 : 0);
+  const rtcQualityLabel = rtcQuality === "good" ? "Bonne" : rtcQuality === "fair" ? "Moyenne" : rtcQuality === "poor" ? "Faible" : "—";
+  const meshSoftLimit = room?.rtc_policy?.mesh_soft_limit || 6;
+  const meshCapacityWarning = Boolean(attendanceId && participantsCount > meshSoftLimit);
+  const sfuRecommended = Boolean(attendanceId && (room?.rtc_policy?.recommended_topology === "sfu" || participantsCount >= (room?.rtc_policy?.sfu_recommend_threshold || 7)));
   const raisedHandsCount = people.filter((person) => person.hand_raised).length;
   const myHandRaised = Boolean(people.find((person) => person.user_id === room?.user.id)?.hand_raised);
 
@@ -727,6 +761,8 @@ export default function LiveSessionPage() {
     stopShareComposite();
     screenStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
+    peerRecoveryTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    peerRecoveryTimersRef.current.clear();
     peersRef.current.forEach((pc) => pc.close());
     peersRef.current.clear();
     remoteVideoElementsRef.current.clear();
@@ -748,6 +784,26 @@ export default function LiveSessionPage() {
     router.push("/formations");
   }, [router, sessionId, stopAllConferenceMedia]);
 
+  const applyPeerSenderLimits = useCallback(async (pc: RTCPeerConnection) => {
+    const policy = room?.rtc_policy;
+    if (!policy) return;
+    const count = Math.max(people.length, 1);
+    const pressureFactor = count >= policy.mesh_soft_limit ? 0.6 : count >= 4 ? 0.8 : 1;
+    const videoBps = Math.round(policy.video_max_bitrate_kbps * 1000 * pressureFactor);
+    const audioBps = Math.round(policy.audio_max_bitrate_kbps * 1000);
+    await Promise.all(pc.getSenders().map(async (sender) => {
+      if (!sender.track) return;
+      const params = sender.getParameters();
+      if (!params.encodings?.length) params.encodings = [{}];
+      params.encodings[0].maxBitrate = sender.track.kind === "video" ? videoBps : audioBps;
+      try { await sender.setParameters(params); } catch { /* navigateur sans contrôle bitrate dynamique */ }
+    }));
+  }, [people.length, room?.rtc_policy]);
+
+  useEffect(() => {
+    peersRef.current.forEach((pc) => { void applyPeerSenderLimits(pc); });
+  }, [applyPeerSenderLimits]);
+
   const ensurePeer = useCallback(
     (peerId: number, name: string) => {
       const existing = peersRef.current.get(peerId);
@@ -756,13 +812,66 @@ export default function LiveSessionPage() {
       const iceServers: RTCIceServer[] = room?.ice_servers?.length
         ? room.ice_servers
         : [{ urls: "stun:stun.l.google.com:19302" }];
-
-      const pc = new RTCPeerConnection({ iceServers });
+      const policy = room?.rtc_policy;
+      const pc = new RTCPeerConnection({
+        iceServers,
+        iceTransportPolicy: policy?.ice_transport_policy || "all",
+        iceCandidatePoolSize: policy?.ice_candidate_pool_size || 0,
+        bundlePolicy: "max-bundle",
+      });
       peersRef.current.set(peerId, pc);
 
       localStreamRef.current?.getTracks().forEach((track) => {
         pc.addTrack(track, localStreamRef.current!);
       });
+      void applyPeerSenderLimits(pc);
+
+      const clearRecoveryTimer = () => {
+        const timer = peerRecoveryTimersRef.current.get(peerId);
+        if (timer !== undefined) window.clearTimeout(timer);
+        peerRecoveryTimersRef.current.delete(peerId);
+      };
+      const dropPeer = () => {
+        clearRecoveryTimer();
+        setRemoteFeeds((prev) => prev.filter((feed) => feed.userId !== peerId));
+        remoteVideoElementsRef.current.delete(peerId);
+        if (peersRef.current.get(peerId) === pc) peersRef.current.delete(peerId);
+        if (pc.connectionState !== "closed") pc.close();
+      };
+      const scheduleRecovery = () => {
+        if (peerRecoveryTimersRef.current.has(peerId) || pc.connectionState === "closed") return;
+        const graceMs = Math.max(3000, (policy?.disconnect_grace_seconds || 8) * 1000);
+        const timer = window.setTimeout(() => {
+          peerRecoveryTimersRef.current.delete(peerId);
+          if (["connected", "connecting", "new"].includes(pc.connectionState)) return;
+          // Un seul côté initie le restart ICE pour éviter la glare d'offres simultanées.
+          if (room && room.user.id < peerId && pc.signalingState === "stable") {
+            void (async () => {
+              try {
+                pc.restartIce();
+                const offer = await pc.createOffer({ iceRestart: true });
+                await pc.setLocalDescription(offer);
+                await sendSignal(peerId, "offer", offer);
+              } catch {
+                // Le second délai décidera si la connexion doit réellement être supprimée.
+              } finally {
+                const cleanup = window.setTimeout(() => {
+                  peerRecoveryTimersRef.current.delete(peerId);
+                  if (["failed", "disconnected"].includes(pc.connectionState)) dropPeer();
+                }, graceMs);
+                peerRecoveryTimersRef.current.set(peerId, cleanup);
+              }
+            })();
+          } else {
+            const cleanup = window.setTimeout(() => {
+              peerRecoveryTimersRef.current.delete(peerId);
+              if (["failed", "disconnected"].includes(pc.connectionState)) dropPeer();
+            }, graceMs);
+            peerRecoveryTimersRef.current.set(peerId, cleanup);
+          }
+        }, graceMs);
+        peerRecoveryTimersRef.current.set(peerId, timer);
+      };
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
@@ -779,16 +888,20 @@ export default function LiveSessionPage() {
       };
 
       pc.onconnectionstatechange = () => {
-        if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
-          setRemoteFeeds((prev) => prev.filter((feed) => feed.userId !== peerId));
-          remoteVideoElementsRef.current.delete(peerId);
-          peersRef.current.delete(peerId);
+        if (pc.connectionState === "connected") {
+          clearRecoveryTimer();
+          return;
         }
+        if (pc.connectionState === "closed") {
+          dropPeer();
+          return;
+        }
+        if (["failed", "disconnected"].includes(pc.connectionState)) scheduleRecovery();
       };
 
       return pc;
     },
-    [sendSignal, room]
+    [applyPeerSenderLimits, room, sendSignal]
   );
 
   const flushIce = useCallback(async (peerId: number, pc: RTCPeerConnection) => {
@@ -1162,6 +1275,70 @@ export default function LiveSessionPage() {
       realtimeSocketRef.current = null;
     };
   }, [attendanceId, room, sessionId, handleSignal, loadPresence, loadFiles]);
+
+  useEffect(() => {
+    if (!attendanceId || !room) {
+      setRtcQuality("unknown");
+      setRtcQualityMetrics({ rttMs: null, jitterMs: null, packetLossPct: null, outgoingKbps: null });
+      return;
+    }
+    let cancelled = false;
+
+    async function collectQuality() {
+      const rtts: number[] = [];
+      const jitters: number[] = [];
+      let packetsLost = 0;
+      let packetsReceived = 0;
+      const outgoing: number[] = [];
+
+      for (const pc of peersRef.current.values()) {
+        if (pc.connectionState === "closed") continue;
+        try {
+          const report = await pc.getStats();
+          report.forEach((stat) => {
+            const item = stat as any;
+            if (item.type === "candidate-pair" && item.state === "succeeded" && (item.nominated || item.selected)) {
+              if (typeof item.currentRoundTripTime === "number") rtts.push(item.currentRoundTripTime * 1000);
+              if (typeof item.availableOutgoingBitrate === "number") outgoing.push(item.availableOutgoingBitrate / 1000);
+            }
+            if (item.type === "inbound-rtp" && !item.isRemote) {
+              if (typeof item.jitter === "number") jitters.push(item.jitter * 1000);
+              packetsLost += Math.max(0, Number(item.packetsLost || 0));
+              packetsReceived += Math.max(0, Number(item.packetsReceived || 0));
+            }
+          });
+        } catch {
+          // Un pair en cours de fermeture ne doit pas interrompre la collecte des autres.
+        }
+      }
+
+      const average = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+      const rttMs = average(rtts);
+      const jitterMs = average(jitters);
+      const packetLossPct = packetsLost + packetsReceived > 0 ? (packetsLost / (packetsLost + packetsReceived)) * 100 : null;
+      const outgoingKbps = average(outgoing);
+      let quality: RTCQuality = peersRef.current.size ? "good" : "unknown";
+      if ((packetLossPct ?? 0) >= 5 || (rttMs ?? 0) >= 500 || (jitterMs ?? 0) >= 80) quality = "poor";
+      else if ((packetLossPct ?? 0) >= 2 || (rttMs ?? 0) >= 250 || (jitterMs ?? 0) >= 40) quality = "fair";
+
+      if (cancelled) return;
+      setRtcQuality(quality);
+      setRtcQualityMetrics({ rttMs, jitterMs, packetLossPct, outgoingKbps });
+      void api.post(`/sessions/${sessionId}/quality/`, {
+        peers: peersRef.current.size,
+        rtt_ms: rttMs,
+        jitter_ms: jitterMs,
+        packet_loss_pct: packetLossPct,
+        outgoing_kbps: outgoingKbps,
+        quality,
+      }).catch(() => {});
+    }
+
+    void collectQuality();
+    const intervalMs = Math.max(5000, (room.rtc_policy?.quality_interval_seconds || 10) * 1000);
+    const timer = window.setInterval(() => void collectQuality(), intervalMs);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [attendanceId, room, sessionId]);
 
   async function startSession() {
     setActionBusy(true);
@@ -1979,6 +2156,7 @@ export default function LiveSessionPage() {
               <InlineMetric icon={<Hand size={16} />} label="Mains" value={`${raisedHandsCount}`} />
               <InlineMetric icon={<StopCircle size={16} />} label="Live" value={elapsedLabel} />
               <InlineMetric icon={<Monitor size={16} />} label="Planifié" value={`${room.planned_duration_minutes} min`} />
+              <InlineMetric icon={<ShieldCheck size={16} />} label="Réseau" value={rtcQualityLabel} />
             </div>
           )}
           <div className="flex shrink-0 items-center justify-self-end gap-1 overflow-x-auto">
@@ -2034,6 +2212,14 @@ export default function LiveSessionPage() {
         )}
 
         <div className="min-h-0 flex-1 overflow-y-auto pb-16 xl:overflow-hidden">
+        {(meshCapacityWarning || sfuRecommended) && (
+          <div className="mb-2 shrink-0 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-100">
+            Cette salle utilise encore une topologie WebRTC mesh ({participantsCount} participant(s), seuil conseillé {meshSoftLimit}).
+            {room.rtc_policy?.sfu_configured ? " Un SFU est configuré côté infrastructure mais aucun adaptateur client n'est activé dans cette version." : " Un SFU devient recommandé au-delà de ce seuil pour préserver la bande passante mobile."}
+            {rtcQualityMetrics.packetLossPct !== null && ` Perte locale: ${rtcQualityMetrics.packetLossPct.toFixed(1)}%.`}
+          </div>
+        )}
+
         {!attendanceId ? (
           <div className="mx-auto mt-8 max-w-md rounded-3xl border border-white/10 bg-white/5 p-5 text-center shadow-2xl">
             <ShieldCheck size={34} className="mx-auto mb-3 text-brand-300" />

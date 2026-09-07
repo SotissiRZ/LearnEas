@@ -754,3 +754,15 @@ WHATSAPP_DRY_RUN=True
 ```
 
 Activez ensuite WhatsApp dans **Administration → Paramètres** et configurez le template recrutement `kalanpro_recruitment_update`. Voir `docs/V82_NOTIFICATIONS.md` et `docs/WHATSAPP.md`.
+
+## V91 — Live WebRTC / TURN et décision SFU
+
+La salle live conserve Django Channels + WebRTC mesh mais résiste mieux aux coupures mobiles : délai de grâce et ICE restart avant suppression d'un pair. Plusieurs STUN/TURN peuvent être configurés, le bitrate mesh est borné/adapté, et les clients publient des métriques réseau éphémères (RTT, jitter, perte) visibles dans **Administration → Santé plateforme**.
+
+Le SFU n'est pas simulé. `RTC_SFU_URL` indique seulement qu'une infrastructure est préparée ; le frontend reste en mesh jusqu'à l'ajout d'un adaptateur réel. Pour mesurer quand cette étape devient nécessaire :
+
+```bash
+docker compose -f docker-compose.dev.yml exec backend python manage.py rtc_capacity_report --json
+```
+
+Voir `docs/V91_LIVE_SCALABILITY.md` et `VALIDATION_V91.md`.
