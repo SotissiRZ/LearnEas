@@ -17,11 +17,13 @@ import {
   BriefcaseBusiness,
   Bot,
   BarChart3,
+  Activity,
 } from "lucide-react";
 
 const ITEMS = [
   { tab: "overview", label: "Aperçu", icon: LayoutDashboard },
   { tab: "analytics", label: "Analytics", icon: BarChart3 },
+  { tab: "operations", label: "Santé plateforme", icon: Activity },
   { tab: "users", label: "Utilisateurs", icon: Users },
   { tab: "applications", label: "Demandes instructeur", icon: UserCheck },
   { tab: "content", label: "Contenus", icon: Library },

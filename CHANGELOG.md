@@ -1,3 +1,15 @@
+# KalanPro v89 — Production Media & Observability
+
+- Stockage S3/R2 via `KalanProS3Storage`, avec classification public/privé par préfixe sans rendre le bucket public.
+- `PUBLIC_MEDIA_BASE_URL` optionnel pour servir uniquement les assets publics via CDN ; cache long immutable public et `private, no-store` pour les médias sensibles.
+- Timeouts client S3 explicites et garde HTTPS du CDN lorsque la production impose HTTPS.
+- Suppression d'un HEAD S3 redondant avant l'accès média privé et cache de réponse HLS signé contrôlé.
+- Nettoyage Celery borné des multipart vidéo abandonnés toutes les six heures.
+- Commande `migrate_local_media_to_storage` non destructive et dry-run par défaut.
+- Endpoint admin-only `/api/ops/health/` : DB, Redis, broker/queues, stockage, HLS, incidents finance, support/modération, notifications et configuration fournisseur sans secrets.
+- Nouvel onglet `Admin → Santé plateforme`, avec scan stockage S3 déclenché manuellement et borné.
+- Aucune migration de schéma.
+
 ### V88.4 — Finalisation du contrat Opportunités legacy
 - Réintègre `frontend/lib/opportunities.ts` dans l’archive afin qu’une extraction par-dessus une installation ancienne remplace le fichier legacy au lieu de le laisser dériver localement.
 - Complète `OPPORTUNITY_KIND_LABELS` avec `mission`.

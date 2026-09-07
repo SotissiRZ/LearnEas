@@ -337,7 +337,37 @@ type AnalyticsOverview = {
   timeline: { date: string; registrations: number; active_users: number; paid_orders: number; gmv: number; applications: number }[];
 };
 
-const ADMIN_TABS: AdminTab[] = ["overview", "analytics", "users", "applications", "content", "orders", "payouts", "sessions", "certificates", "recruitment", "categories", "moderation", "ai", "settings"];
+type OperationsSnapshot = {
+  status: "ok" | "warning" | "error";
+  generated_at: string;
+  environment: { debug: boolean; remote_media: boolean; hls_enabled: boolean };
+  services: {
+    database: { status: string; detail?: string };
+    cache: { status: string; detail?: string };
+    broker: { status: string; detail?: string; queues: Record<string, number | null>; warning_depth: number; workers?: number; consumers?: Record<string, number> };
+    storage: {
+      status: string; detail?: string; backend: string; remote_required: boolean; direct_uploads: boolean; public_cdn: boolean;
+      bucket?: string; path?: string;
+      multipart?: { active: number; stale: number; truncated: boolean };
+      usage?: { objects_scanned?: number; bytes_scanned?: number; scan_truncated?: boolean; scan_limit?: number; total_bytes?: number; used_bytes?: number; free_bytes?: number; used_percent?: number };
+    };
+  };
+  metrics: {
+    streaming: { pending: number; processing: number; ready: number; failed: number };
+    finance: { open_issues: number; critical_issues: number; active_gateways: number };
+    support: { open: number; in_progress: number; urgent: number; moderation_pending: number };
+    notifications: { email_failed_24h: number; whatsapp_failed_24h: number };
+    live: { active_sessions: number; recent_participants: number };
+  };
+  providers: {
+    resend: { enabled: boolean; dry_run: boolean };
+    whatsapp: { enabled: boolean; dry_run: boolean };
+    ai: { configured: boolean; dry_run: boolean };
+    turn: { configured: boolean };
+  };
+};
+
+const ADMIN_TABS: AdminTab[] = ["overview", "analytics", "operations", "users", "applications", "content", "orders", "payouts", "sessions", "certificates", "recruitment", "categories", "moderation", "ai", "settings"];
 
 function unwrap<T>(data: Paginated<T> | T[]): T[] {
   return Array.isArray(data) ? data : data.results;
@@ -371,6 +401,7 @@ function AdminDashboardContent() {
           <main className="min-w-0 lg:ml-16 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:px-5 lg:py-4 lg:pb-8 lg:transition-[margin-left] lg:duration-200 lg:ease-out lg:peer-hover:ml-60">
             {tab === "overview" && <OverviewTab key={searchParams.toString()} />}
             {tab === "analytics" && <AnalyticsTab key={searchParams.toString()} />}
+            {tab === "operations" && <OperationsTab />}
             {tab === "users" && <UsersTab key={searchParams.toString()} />}
             {tab === "applications" && <ApplicationsTab key={searchParams.toString()} />}
             {tab === "content" && <ContentTab key={searchParams.toString()} />}
@@ -645,6 +676,100 @@ function FunnelCard({ title, rows }: { title: string; rows: { label: string; val
 
 function RankedList({ title, rows, empty }: { title: string; rows: { label: string; value: number }[]; empty: string }) {
   return <CompactCard title={title} subtitle="Classement sur la période">{rows.length ? <div className="space-y-2">{rows.slice(0, 8).map((row, index) => <div key={`${row.label}-${index}`} className="flex items-center gap-3 rounded-lg bg-slate-50 px-3 py-2"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white text-[10px] font-black text-slate-500">{index + 1}</span><span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-700">{row.label}</span><strong className="text-xs text-navy-950">{row.value}</strong></div>)}</div> : <Empty text={empty} />}</CompactCard>;
+}
+
+
+function formatOpsBytes(value?: number) {
+  const bytes = Number(value || 0);
+  if (!bytes) return "0 o";
+  const units = ["o", "Ko", "Mo", "Go", "To"];
+  const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  return `${(bytes / (1024 ** index)).toFixed(index > 1 ? 1 : 0)} ${units[index]}`;
+}
+
+function OpsStatus({ status }: { status: string }) {
+  const normalized = status === "ok" ? "OK" : status === "warning" ? "Attention" : "Erreur";
+  const classes = status === "ok"
+    ? "bg-emerald-50 text-emerald-700"
+    : status === "warning"
+      ? "bg-amber-50 text-amber-700"
+      : "bg-red-50 text-red-700";
+  return <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${classes}`}>{normalized}</span>;
+}
+
+function OperationsTab() {
+  const [data, setData] = useState<OperationsSnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [scanning, setScanning] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async (scanStorage = false) => {
+    scanStorage ? setScanning(true) : setLoading(true);
+    setError("");
+    try {
+      const suffix = scanStorage ? "?scan_storage=1" : "";
+      setData(await api.get<OperationsSnapshot>(`/ops/health/${suffix}`));
+    } catch (err) {
+      setError(toError(err));
+    } finally {
+      setLoading(false);
+      setScanning(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(false); }, [load]);
+
+  if (loading && !data) return <><PageHeader title="Santé plateforme" description="Disponibilité, files de traitement, médias et signaux opérationnels." /><LoadingBlock /></>;
+
+  const storage = data?.services.storage;
+  const usage = storage?.usage;
+  const queues = data?.services.broker.queues || {};
+  return <div>
+    <PageHeader
+      title="Santé plateforme"
+      description="Vue opérationnelle sans données personnelles ni secrets fournisseur."
+      actions={<div className="flex flex-wrap gap-2">
+        <button onClick={() => void load(false)} disabled={loading || scanning} className="btn-outline !py-2"><RefreshCw size={14} className={loading ? "animate-spin" : ""}/> Actualiser</button>
+        {storage?.backend === "s3" && <button onClick={() => void load(true)} disabled={loading || scanning} className="btn-outline !py-2"><Database size={14}/>{scanning ? "Analyse..." : "Analyser stockage"}</button>}
+      </div>}
+    />
+    {error && <Alert text={error} tone="error" />}
+    {data && <div className="space-y-5">
+      <div className="card p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-bold">État global</p><p className="mt-1 text-xs text-gray-500">Dernier contrôle : {new Date(data.generated_at).toLocaleString("fr-FR")}</p></div><OpsStatus status={data.status}/></div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {([
+          ["Base de données", data.services.database],
+          ["Cache Redis", data.services.cache],
+          ["Broker Celery", data.services.broker],
+          [storage?.backend === "s3" ? "Stockage S3/R2" : "Stockage local", storage],
+        ] as [string, { status: string; detail?: string }][]).map(([label, service]) => <div key={label} className="card p-4"><div className="flex items-center justify-between gap-2"><p className="text-sm font-bold">{label}</p><OpsStatus status={service?.status || "error"}/></div>{service?.detail && <p className="mt-2 text-xs text-red-600">{service.detail}</p>}</div>)}
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className="card p-4 sm:p-5"><div className="mb-4 flex items-center gap-2"><Activity size={17}/><h2 className="font-bold">Files Celery</h2></div><div className="grid gap-2 sm:grid-cols-3">{Object.entries(queues).map(([name, value]) => <div key={name} className="rounded-xl bg-slate-50 p-3"><p className="text-xs uppercase tracking-wide text-gray-400">{name}</p><p className="mt-1 text-xl font-black">{value ?? "—"}</p></div>)}</div><p className="mt-3 text-xs text-gray-400">Workers détectés : {data.services.broker.workers ?? "—"} · seuil d'alerte : {data.services.broker.warning_depth} tâche(s) par file.</p></div>
+        <div className="card p-4 sm:p-5"><div className="mb-4 flex items-center gap-2"><Video size={17}/><h2 className="font-bold">Pipeline média</h2></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(data.metrics.streaming).map(([name, value]) => <div key={name} className="rounded-xl bg-slate-50 p-3"><p className="text-[11px] uppercase tracking-wide text-gray-400">{name}</p><p className="mt-1 text-lg font-black">{value}</p></div>)}</div></div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <div className="card p-4"><p className="text-sm font-bold">Finance</p><div className="mt-3 space-y-2 text-sm"><p>Incidents ouverts <b className="float-right">{data.metrics.finance.open_issues}</b></p><p>Critiques <b className="float-right text-red-600">{data.metrics.finance.critical_issues}</b></p><p>Passerelles actives <b className="float-right">{data.metrics.finance.active_gateways}</b></p></div></div>
+        <div className="card p-4"><p className="text-sm font-bold">Support & modération</p><div className="mt-3 space-y-2 text-sm"><p>Tickets ouverts <b className="float-right">{data.metrics.support.open}</b></p><p>En cours <b className="float-right">{data.metrics.support.in_progress}</b></p><p>Urgents <b className="float-right text-red-600">{data.metrics.support.urgent}</b></p><p>Signalements à traiter <b className="float-right">{data.metrics.support.moderation_pending}</b></p></div></div>
+        <div className="card p-4"><p className="text-sm font-bold">Notifications & live</p><div className="mt-3 space-y-2 text-sm"><p>Emails en échec · 24 h <b className="float-right">{data.metrics.notifications.email_failed_24h}</b></p><p>WhatsApp en échec · 24 h <b className="float-right">{data.metrics.notifications.whatsapp_failed_24h}</b></p><p>Sessions live actives <b className="float-right">{data.metrics.live.active_sessions}</b></p><p>Participants vus &lt; 2 min <b className="float-right">{data.metrics.live.recent_participants}</b></p></div></div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className="card p-4 sm:p-5"><div className="mb-3 flex items-center gap-2"><Database size={17}/><h2 className="font-bold">Stockage média</h2></div><div className="grid gap-2 sm:grid-cols-2"><div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-gray-400">Backend</p><p className="mt-1 font-bold">{storage?.backend === "s3" ? "S3 / R2" : "Disque local"}</p></div><div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-gray-400">CDN public</p><p className="mt-1 font-bold">{storage?.public_cdn ? "Configuré" : "Non configuré"}</p></div></div>{storage?.multipart && <p className="mt-3 text-sm">Multipart actifs : <b>{storage.multipart.active}</b> · anciens : <b>{storage.multipart.stale}</b></p>}{usage && <div className="mt-3 rounded-xl border border-slate-100 p-3 text-sm">{"objects_scanned" in usage ? <><p>Objets analysés : <b>{usage.objects_scanned}</b>{usage.scan_truncated ? " (analyse plafonnée)" : ""}</p><p className="mt-1">Volume analysé : <b>{formatOpsBytes(usage.bytes_scanned)}</b></p></> : <><p>Utilisé : <b>{formatOpsBytes(usage.used_bytes)}</b> / {formatOpsBytes(usage.total_bytes)}</p><p className="mt-1">Libre : <b>{formatOpsBytes(usage.free_bytes)}</b> · {usage.used_percent ?? 0}% utilisé</p></>}</div>}</div>
+        <div className="card p-4 sm:p-5"><div className="mb-3 flex items-center gap-2"><Gauge size={17}/><h2 className="font-bold">Fournisseurs configurés</h2></div><div className="grid gap-2 sm:grid-cols-2">{[
+          ["Resend", data.providers.resend.enabled, data.providers.resend.dry_run ? "dry-run" : "actif"],
+          ["WhatsApp", data.providers.whatsapp.enabled, data.providers.whatsapp.dry_run ? "dry-run" : "actif"],
+          ["IA", data.providers.ai.configured, data.providers.ai.dry_run ? "dry-run" : "clé configurée"],
+          ["TURN", data.providers.turn.configured, "relay WebRTC"],
+        ].map(([label, enabled, detail]) => <div key={String(label)} className="rounded-xl bg-slate-50 p-3"><div className="flex items-center justify-between gap-2"><p className="text-sm font-bold">{String(label)}</p><span className={`h-2.5 w-2.5 rounded-full ${enabled ? "bg-emerald-500" : "bg-slate-300"}`}/></div><p className="mt-1 text-xs text-gray-400">{enabled ? String(detail) : "non configuré"}</p></div>)}</div></div>
+      </div>
+    </div>}
+  </div>;
 }
 
 function UsersTab() {

@@ -1,5 +1,7 @@
 # KalanPro
 
+> **v89 — médias production & observabilité :** stockage S3/R2 avec politique CDN public/privé, cache média différencié, nettoyage automatique des multipart abandonnés, migration non destructive des médias locaux et nouvel onglet admin Santé plateforme (PostgreSQL/Redis/Celery/HLS/finance/support/notifications). Voir [`docs/V89_PRODUCTION_MEDIA_OBSERVABILITY.md`](./docs/V89_PRODUCTION_MEDIA_OBSERVABILITY.md).
+
 > **v88 — Premium apprenant + modération/support :** pass 30 jours optionnel pour un catalogue cours/PDF sélectionné par l’administrateur, droits temporaires expirables et achats à l’unité permanents ; tickets privés, conversation support, signalements structurés, file de modération admin et journal de décision. Voir [`docs/V88_PREMIUM.md`](./docs/V88_PREMIUM.md) et [`docs/V88_SUPPORT_MODERATION.md`](./docs/V88_SUPPORT_MODERATION.md).
 
 
@@ -503,8 +505,8 @@ restent des **release gates obligatoires** de la CI/Docker avant déploiement.
 
 ## 📁 Prochaines étapes suggérées
 
-- Stockage objet/CDN production pour les médias volumineux, lifecycle et reprise d'upload.
-- Supervision production : erreurs applicatives, files Celery, qualité WebRTC/HLS et alertes de capacité.
+- V90 : qualification release complète — E2E navigateur, charge, coupures réseau, restauration et scénarios de panne contrôlés.
+- Mesurer la qualité WebRTC en conditions réelles et introduire un SFU uniquement si les limites mesh sont démontrées.
 - Étendre progressivement le realtime WebSocket au chat général si le besoin produit est confirmé.
 - Premium phase 2 éventuelle : renouvellement automatique natif prestataire et modèle contractuel de redistribution aux créateurs.
 - Recherche externe dédiée (Meilisearch/Algolia/OpenSearch) uniquement lorsque le volume rend PostgreSQL insuffisant.

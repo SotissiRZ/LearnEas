@@ -5,6 +5,7 @@ Plateforme de vente de cours (playlists complètes) et de PDF (seuls ou inclus d
 from pathlib import Path
 from datetime import timedelta
 from decouple import config, Csv
+from botocore.config import Config as BotoConfig
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -161,6 +162,27 @@ DIRECT_MEDIA_UPLOADS_ENABLED = config("DIRECT_MEDIA_UPLOADS_ENABLED", default=US
 DIRECT_UPLOAD_PART_SIZE_MB = config("DIRECT_UPLOAD_PART_SIZE_MB", default=16, cast=int)
 DIRECT_UPLOAD_URL_TTL_SECONDS = config("DIRECT_UPLOAD_URL_TTL_SECONDS", default=3600, cast=int)
 
+# V89 — politique de stockage production. Le bucket peut rester entièrement privé :
+# PUBLIC_MEDIA_BASE_URL pointe vers un CDN disposant d'un accès origine au bucket.
+PUBLIC_MEDIA_BASE_URL = config("PUBLIC_MEDIA_BASE_URL", default="")
+MEDIA_PUBLIC_CACHE_SECONDS = config("MEDIA_PUBLIC_CACHE_SECONDS", default=31536000, cast=int)
+MEDIA_PRIVATE_CACHE_CONTROL = config("MEDIA_PRIVATE_CACHE_CONTROL", default="private, no-store")
+MEDIA_PUBLIC_PREFIXES = tuple(config(
+    "MEDIA_PUBLIC_PREFIXES",
+    default=(
+        "avatars/,courses/thumbnails/,courses/pdfs/covers/,pdfs/covers/,"
+        "formations/thumbnails/,employers/logos/,employers/banners/,"
+        "opportunities/covers/,projects/covers/,projects/revision-covers/,portfolio/items/"
+    ),
+    cast=Csv(),
+))
+S3_CONNECT_TIMEOUT_SECONDS = config("S3_CONNECT_TIMEOUT_SECONDS", default=3, cast=int)
+S3_READ_TIMEOUT_SECONDS = config("S3_READ_TIMEOUT_SECONDS", default=10, cast=int)
+MULTIPART_UPLOAD_MAX_AGE_HOURS = config("MULTIPART_UPLOAD_MAX_AGE_HOURS", default=24, cast=int)
+MULTIPART_CLEANUP_MAX_ABORTS = config("MULTIPART_CLEANUP_MAX_ABORTS", default=200, cast=int)
+OPERATIONS_STORAGE_SCAN_MAX_OBJECTS = config("OPERATIONS_STORAGE_SCAN_MAX_OBJECTS", default=2000, cast=int)
+OPERATIONS_QUEUE_WARNING_DEPTH = config("OPERATIONS_QUEUE_WARNING_DEPTH", default=100, cast=int)
+
 # Normalisation vidéo navigateur : évite les MP4/MOV techniquement valides mais illisibles
 # côté HTML5 (HEVC/H.265, H.264 10-bit, audio incompatible, etc.). ffmpeg est déjà
 # installé dans l'image backend. Les uploads compatibles H.264/AAC ne sont pas réencodés.
@@ -195,7 +217,12 @@ if USE_S3:
     AWS_QUERYSTRING_EXPIRE = 300
     AWS_S3_FILE_OVERWRITE = False
     AWS_S3_OBJECT_PARAMETERS = {"CacheControl": "private, no-store"}
-    STORAGES["default"] = {"BACKEND": "storages.backends.s3.S3Storage"}
+    AWS_S3_CLIENT_CONFIG = BotoConfig(
+        connect_timeout=max(1, S3_CONNECT_TIMEOUT_SECONDS),
+        read_timeout=max(1, S3_READ_TIMEOUT_SECONDS),
+        retries={"max_attempts": 2, "mode": "standard"},
+    )
+    STORAGES["default"] = {"BACKEND": "apps.common.storage.KalanProS3Storage"}
     if AWS_S3_CUSTOM_DOMAIN:
         MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN.rstrip('/')}/"
     elif AWS_S3_ENDPOINT_URL:
@@ -490,6 +517,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.analytics.tasks.purge_old_product_events",
         "schedule": 86400.0,
     },
+    "media-stale-multipart-cleanup-every-6-hours": {
+        "task": "apps.common.tasks.cleanup_stale_multipart_uploads",
+        "schedule": 21600.0,
+    },
 }
 
 
@@ -576,6 +607,8 @@ if not DEBUG:
         for label, value in (("FRONTEND_URL", FRONTEND_URL), ("BACKEND_PUBLIC_URL", BACKEND_PUBLIC_URL)):
             if not str(value).lower().startswith("https://"):
                 raise RuntimeError(f"{label} doit utiliser https:// lorsque USE_HTTPS=True.")
+        if PUBLIC_MEDIA_BASE_URL and not str(PUBLIC_MEDIA_BASE_URL).lower().startswith("https://"):
+            raise RuntimeError("PUBLIC_MEDIA_BASE_URL doit utiliser https:// lorsque USE_HTTPS=True.")
         for label, origins in (
             ("CORS_ALLOWED_ORIGINS", CORS_ALLOWED_ORIGINS),
             ("REALTIME_ALLOWED_ORIGINS", REALTIME_ALLOWED_ORIGINS),

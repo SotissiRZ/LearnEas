@@ -47,3 +47,33 @@ class ImageUploadLimitTests(TestCase):
             validate_upload_limits(
                 upload, max_bytes=1024 * 1024, extensions={".png"}, field="image"
             )
+
+
+from rest_framework.test import APITestCase
+from apps.accounts.models import User
+
+
+class AdminOperationsEndpointTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="ops_admin", email="ops-admin@example.com", password="StrongPass123!", role="admin"
+        )
+        self.student = User.objects.create_user(
+            username="ops_student", email="ops-student@example.com", password="StrongPass123!", role="student"
+        )
+
+    @patch("apps.common.views.build_operations_snapshot")
+    def test_admin_can_read_operations_snapshot(self, snapshot):
+        snapshot.return_value = {"status": "ok", "services": {}, "metrics": {}, "providers": {}}
+        self.client.force_authenticate(self.admin)
+        response = self.client.get("/api/ops/health/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "ok")
+
+    @patch("apps.common.views.build_operations_snapshot")
+    def test_non_admin_cannot_read_operations_snapshot(self, snapshot):
+        snapshot.return_value = {"status": "ok"}
+        self.client.force_authenticate(self.student)
+        response = self.client.get("/api/ops/health/")
+        self.assertEqual(response.status_code, 403)
+        snapshot.assert_not_called()

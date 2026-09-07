@@ -11,13 +11,32 @@ from django.utils.http import content_disposition_header
 from django.views.decorators.clickjacking import xframe_options_exempt
 from urllib.parse import quote, urlparse
 from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, BasePermission
 from rest_framework.response import Response
-from apps.common.throttles import MediaRateThrottle, ClientTelemetryRateThrottle
+from apps.common.throttles import MediaRateThrottle, ClientTelemetryRateThrottle, AdminTestRateThrottle
 from apps.common.hls_media import rewrite_hls_playlist, unsign_hls_token_payload
+from apps.common.operations import build_operations_snapshot
 
 
 logger = logging.getLogger(__name__)
+
+
+class IsAdminRole(BasePermission):
+    def has_permission(self, request, view):
+        return bool(
+            request.user
+            and request.user.is_authenticated
+            and getattr(request.user, "role", None) == "admin"
+        )
+
+
+class AdminOperationsView(APIView):
+    permission_classes = [IsAdminRole]
+    throttle_classes = [AdminTestRateThrottle]
+
+    def get(self, request):
+        scan_storage = str(request.query_params.get("scan_storage") or "").lower() in {"1", "true", "yes"}
+        return Response(build_operations_snapshot(scan_storage=scan_storage))
 
 
 class ClientErrorTelemetryView(APIView):
@@ -93,8 +112,8 @@ class PrivateMediaView(APIView):
             return Response({"detail": "Cette vidéo doit être lue depuis le lecteur KalanPro."}, status=403)
 
         if getattr(settings, "USE_S3", False):
-            if not default_storage.exists(name):
-                return Response({"detail": "Fichier introuvable."}, status=404)
+            # V89: pas de HEAD préalable sur S3/R2. L'URL présignée répondra elle-même 404
+            # si l'objet a disparu, ce qui économise une requête réseau sur chaque ouverture.
             parameters = {
                 "ResponseContentDisposition": "inline",
                 "ResponseCacheControl": "private, no-store",
@@ -188,7 +207,15 @@ class HlsMediaView(APIView):
         # Segments : déléguer les octets à nginx en local ou au stockage S3 via URL présignée.
         if using_s3:
             try:
-                storage_url = default_storage.url(name)
+                parameters = {
+                    "ResponseCacheControl": f"private, max-age={settings.HLS_SEGMENT_CACHE_SECONDS}",
+                    "ResponseContentType": content_type,
+                    "ResponseContentDisposition": "inline",
+                }
+                try:
+                    storage_url = default_storage.url(name, parameters=parameters)
+                except TypeError:
+                    storage_url = default_storage.url(name)
             except Exception:
                 return Response({"detail": "Segment streaming indisponible."}, status=404)
             response = redirect(storage_url)
